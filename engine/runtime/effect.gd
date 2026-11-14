@@ -8,7 +8,7 @@ extends RefCounted
 ## limit (`up to 0`, `down to 5`).
 
 const SURVIVAL := ["drink", "eat", "heal", "hurt"]
-const PLAYER_STATS := ["humanity", "libido", "morale", "xp", "score", "freecred", "hp", "hunger", "thirst",
+const PLAYER_STATS := ["humanity", "libido", "morale", "xp", "score", "hp", "hunger", "thirst",
 	"strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]
 
 static var _cache: Dictionary = {}
@@ -60,6 +60,8 @@ static var _rules: Array = [
 	["enemy_attack", RegEx.create_from_string("^enemy attack(?: (\\d+)%)?$")],
 	["enemy_strike", RegEx.create_from_string("^enemy strike(?: (\\d+)%| for (.+?))?(?: (ignoring armor|through half armor|without shield))?$")],
 	["fight_result", RegEx.create_from_string("^(lose|win) fight(?: by (lust|injury|submitting|seduction|fighting))?$")],
+	# The player's own moves from a fight's scene (a pepper spray: spray, then attack twice or flee).
+	["player_move", RegEx.create_from_string("^(attack enemy|try to flee)$")],
 	# Items lying in a place, and an item's infection, changed during play.
 	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
 	["remove_from", RegEx.create_from_string("^remove (\\w+) from (\\w+)$")],
@@ -97,7 +99,7 @@ static var _rules: Array = [
 	["pregnancy_faster", RegEx.create_from_string("^pregnancy faster by (\\d+)$")],
 	["extend_heat", RegEx.create_from_string("^extend heat by (\\d+) turns?$")],
 	["survival", RegEx.create_from_string("^(drink|eat|heal|hurt) (.+)$")],
-	["stat", RegEx.create_from_string("^(humanity|libido|morale|hunger|thirst|xp|score|freecred) ([+-]) (.+)$")],
+	["stat", RegEx.create_from_string("^(humanity|libido|morale|hunger|thirst|xp|score) ([+-]) (.+)$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
 ]
@@ -222,6 +224,8 @@ static func _match(s: String) -> Dictionary:
 						return {"error": amt.error}
 					out["amount"] = amt
 				return out
+			"player_move":
+				return {"op": "player_move", "move": "attack" if m.get_string(1) == "attack enemy" else "flee"}
 			"fight_result":
 				var how := m.get_string(2)
 				var result := "lost" if m.get_string(1) == "lose" else "won"

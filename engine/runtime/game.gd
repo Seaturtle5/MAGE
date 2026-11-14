@@ -9,7 +9,7 @@ extends RefCounted
 
 const PLAYER_DEFAULTS := {
 	"fatigue": 0,
-	"hp": 20, "maxhp": 20, "xp": 0, "level": 1, "score": 0, "freecred": 0,
+	"hp": 20, "maxhp": 20, "xp": 0, "level": 1, "score": 0,
 	"strength": 12, "dexterity": 12, "stamina": 12, "charisma": 12, "intelligence": 12, "perception": 12,
 	"hunger": 0, "thirst": 0, "morale": 0, "libido": 0, "humanity": 100, "lust": 0,
 	"cocks": 0, "cunts": 1, "nipples": 2, "name": "Player",
@@ -177,7 +177,7 @@ func _fight_value(path: String) -> Variant:
 		return VoreSystem.scale_of(self, c.creature)
 	if key in CombatSystem.ATTRIBUTES:
 		return CombatSystem.stat(self, c.creature, key)
-	return CombatSystem.number(self, c.creature, key.replace("_", " "), 0)
+	return CombatSystem.number(self, c.creature, key.replace("_", " "), CombatSystem.ENEMY_DEFAULTS.get(key, 0))
 
 
 func _set_fight_value(path: String, v: Variant) -> void:
@@ -600,6 +600,10 @@ func describe(name: String) -> String:
 			return "["  # a literal bracket, which markup would otherwise read as a substitution
 		"close bracket":
 			return "]"
+		"The enemy", "Enemy name":
+			# At the start of a sentence (the original's EnemyCapNameOrTitle).
+			var lower := describe(n.to_lower())
+			return lower.left(1).to_upper() + lower.substr(1)
 		"enemy name", "the enemy":
 			# The original's EnemyNameOrTitle: the creature fought (or met last), "the wolf",
 			# or a unique creature's own title.
@@ -923,6 +927,15 @@ func apply(e: Dictionary) -> void:
 			var amount: int = Effect.resolve_amount(e.amount, self, cur)
 			var nv: int = amount if e.how == "=" else cur + (amount if e.how == "+" else -amount)
 			state.values["creature.%s.%s" % [e.creature, e.field]] = nv
+		"player_move":
+			if state.combat.is_empty() or state.combat.result != "":
+				if state.combat.is_empty():
+					warn("'%s' only works during a fight." % ("attack enemy" if e.move == "attack" else "try to flee"))
+				return
+			if e.move == "attack":
+				CombatSystem.player_attack(self)
+			else:
+				CombatSystem.player_flee(self)
 		"enemy_attack", "enemy_strike", "fight_result":
 			if state.combat.is_empty():
 				warn("'%s' only works during a fight." % e.op.replace("_", " "))
@@ -935,7 +948,7 @@ func apply(e: Dictionary) -> void:
 							emit({"type": "paragraph", "spans": spans})
 						CombatSystem.strike(self, CombatSystem.roll_damage(self, id, e.percent))
 					else:
-						notice("The enemy misses.", quiet)
+						notice(TextTemplate.plain(render(TextTemplate.compile("[The enemy] misses."))), quiet)
 				"enemy_strike":
 					var damage: int = Effect.resolve_amount(e.amount, self) if e.has("amount") else CombatSystem.roll_damage(self, id, e.percent)
 					CombatSystem.strike(self, damage, e.armor, not quiet)
@@ -1406,7 +1419,15 @@ func status_bar() -> Dictionary:
 		var v = value("player." + k)
 		out.append({"key": k, "label": label, "value": int(v) if v != null else 0, "max": top})
 	var money = value("player." + currency) if currency != "" else null
-	return {"meters": out, "currency": currency, "money": int(money) if money != null else 0}
+	# Values the character sheet lists besides the meters (`sheet:`).
+	var sheet: Array = []
+	if not defs.is_empty():
+		for k: String in content._list(content.get_def("status_bar", defs.keys()[0]), "sheet"):
+			var meter := MeterSystem.owner_of(self, "player." + k)
+			var label: String = content.typed_value("meter", meter, "name", k.capitalize()) if meter != "" else k.capitalize()
+			var sv = value("player." + k)
+			sheet.append({"key": k, "label": label, "value": int(sv) if sv != null else 0})
+	return {"meters": out, "currency": currency, "money": int(money) if money != null else 0, "sheet": sheet}
 
 
 ## Carried items for the inventory. "section" follows the original's

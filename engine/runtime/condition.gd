@@ -23,7 +23,7 @@ static var _rules: Array = [
 	["check_expr", RegEx.create_from_string("^check (.+) vs (.+)$")],
 	["quest", RegEx.create_from_string("^quest (\\w+) (is not|is|reached|has not reached|is before) (\\w+)$")],
 	["outcome", RegEx.create_from_string("^(\\w+) outcome is (not )?(\\w+)$")],
-	["time", RegEx.create_from_string("^time is (not )?(\\w+)$")],
+	["time", RegEx.create_from_string("^time is (not )?(\\w+(?: \\w+)?)$")],
 	["filter", RegEx.create_from_string("^filter (\\w+) is (not )?(allowed|banned|warded)$")],
 	["level", RegEx.create_from_string("^level (\\w+) is (not |at least |at most )?(\\w+)$")],
 	["mode", RegEx.create_from_string("^mode (\\w+)$")],

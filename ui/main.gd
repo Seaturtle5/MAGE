@@ -246,7 +246,7 @@ func _status_bar() -> Control:
 	level_label = _plain_label("", 15, FsTheme.TEXT_DIM)
 	money_label = _plain_label("", 15, FsTheme.ACCENT)
 	row.add_child(_with_icon("xp", level_label, FsTheme.METER.xp))
-	money_box = _with_icon("freecred", money_label, FsTheme.ACCENT)
+	money_box = _with_icon("currency", money_label, FsTheme.ACCENT)
 	row.add_child(money_box)
 	return band
 
@@ -1686,14 +1686,16 @@ func _sheet_stats(s: Dictionary) -> Control:
 	col.add_child(grid)
 	col.add_child(_gap(6))
 	col.add_child(FsTheme.section("Vitals"))
-	for spec in [["Health", int(st.hp), int(st.maxhp), FsTheme.METER.hp], ["Humanity", int(st.humanity), 100, FsTheme.METER.humanity],
-			["Libido", int(st.libido), 100, FsTheme.METER.libido], ["Hunger", int(st.hunger), 100, FsTheme.METER.hunger],
-			["Thirst", int(st.thirst), 100, FsTheme.METER.thirst]]:
-		col.add_child(_sheet_meter(spec[0], spec[1], spec[2], spec[3]))
+	# The game's own vitals: the meters of its status bar, then its sheet values and money.
+	var bar := game.status_bar()
+	for m in bar.meters:
+		col.add_child(_sheet_meter(str(m.label), int(m.value), int(m.max), FsTheme.METER.get(str(m.key), FsTheme.ACCENT)))
 	var facts := HBoxContainer.new()
-	facts.add_child(_sheet_fact("Morale", str(int(st.morale))))
+	for v in bar.sheet:
+		facts.add_child(_sheet_fact(str(v.label), str(int(v.value))))
 	facts.add_child(_sheet_fact("XP", str(int(st.xp))))
-	facts.add_child(_sheet_fact("Freecred", str(int(st.freecred))))
+	if str(bar.currency) != "":
+		facts.add_child(_sheet_fact(str(bar.currency).capitalize(), str(int(bar.money))))
 	col.add_child(facts)
 	col.add_child(_gap(6))
 	col.add_child(FsTheme.section("Feats"))

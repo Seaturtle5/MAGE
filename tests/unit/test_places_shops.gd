@@ -109,6 +109,10 @@ You feel refreshed.
 == scene dress
 Your [worn feet] squeak. [if player is barefoot]Bare.[end if]
 
+== values player
+values:
+    freecred: number 0
+
 == shop stall
 name: Market stall
 at: street

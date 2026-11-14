@@ -11,12 +11,12 @@ extends RefCounted
 
 const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
 	"cock", "cock size", "cup size", "strip crotch", "strip chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
-	"picked creature", "enemy name", "the enemy", "enemy body type", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
+	"picked creature", "enemy name", "the enemy", "Enemy name", "The enemy", "enemy body type", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
 	"lower breast curve", "marks", "gear description", "companions description"]
-const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "freecred", "strength", "dexterity", "stamina",
+const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "strength", "dexterity", "stamina",
 	"charisma", "intelligence", "perception", "hunger", "thirst", "morale", "libido", "humanity", "lust",
 	"cocks", "cunts", "nipples", "name", "heat", "pregnancy", "balls", "cock", "cunt", "sterile", "fatigue",
 	"capacity", "carried_weight", "scale", "gender_look", "style", "breasts", "pronouns",
@@ -132,6 +132,9 @@ func _check_slice_types() -> void:
 				var value: String = d.fields[field].value
 				if not value.is_valid_int() or int(value) < (1 if field == "hp" else 0):
 					_err(d.fields[field].line, "%s must be %s." % [field.capitalize(), "a positive whole number" if field == "hp" else "a non-negative whole number"])
+		for field in ["hit bonus", "dodge bonus", "mind bonus"]:
+			if d.fields.has(field) and not d.fields[field].value.is_valid_int():
+				_err(d.fields[field].line, "%s must be a whole number." % field.capitalize())
 		for zone in db._list(d, "found in"):
 			if zone != "nowhere":
 				_need(zone, "zone", d.fields["found in"].line)
@@ -433,7 +436,7 @@ func _check_shops() -> void:
 		if cur == "":
 			var bars: Array = db.all_of("status_bar").keys()
 			if bars.is_empty() or db.typed_value("status_bar", bars[0], "currency") == "":
-				_err(d.line, "A shop needs 'currency:' (a player value such as freecred, or 'item <id>') when the game's status bar has none.")
+				_err(d.line, "A shop needs 'currency:' (a player value such as coins, or 'item <id>') when the game's status bar has none.")
 		elif cur.begins_with("item "):
 			_need(cur.substr(5).strip_edges(), "item", d.fields.currency.line)
 		else:
@@ -555,6 +558,8 @@ func _check_status_bar() -> void:
 			_check_path("player." + str(k), d.fields.meters.line)
 		if d.fields.has("currency"):
 			_check_path("player." + d.fields.currency.value, d.fields.currency.line)
+		for k in db._list(d, "sheet"):
+			_check_path("player." + str(k), d.fields.sheet.line)
 
 
 func _check_survival_rules() -> void:
@@ -1056,6 +1061,11 @@ func _check_programs() -> void:
 								break
 				elif effects_ok and (_simple_effect(ins) or _combat_effect(ins)):
 					pass
+				elif effects_ok and ins.op == "play":
+					# A combat script may play a scene made of what it may hold itself.
+					var bad := _combat_unsafe(str(ins.target), 0)
+					if bad != "":
+						_err(ins.line, "A fight's script can only play scenes of text, conditions and value or fight effects ('%s' %s)." % [ins.target, bad])
 				elif ins.op not in ["text", "return", "jump", "unless"]:
 					_err(ins.line, "This description can contain text and conditions only; move actions and choices into a scene.")
 			# A text snippet is said inside other text: text, conditions and simple effects only.
@@ -1071,10 +1081,27 @@ const COMBAT_SCRIPTS := ["attack", "grapple", "escape", "struggle", "each round"
 	"hump", "pounce", "breath warning", "breath direct", "breath partial", "breath miss"]
 
 
+## Why a scene played from a fight's script cannot run there, or "" when it can.
+func _combat_unsafe(pid: String, depth: int) -> String:
+	var prog := db.program(pid)
+	if prog == null or depth > 8:
+		return ""
+	for ins in prog.code:
+		if ins.op in ["text", "return", "jump", "unless"] or _simple_effect(ins) or _combat_effect(ins):
+			continue
+		if ins.op in ["play", "goto"] and str(ins.target) not in ["back", "end"]:
+			var inner := _combat_unsafe(str(ins.target), depth + 1)
+			if inner != "":
+				return inner
+			continue
+		return "does more at line %d" % ins.line
+	return ""
+
+
 ## Effects only a fight's scripts can run: the creature's blows and the result.
 func _combat_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"enemy_attack", "enemy_strike", "fight_result", "creature_number", "creature_change", "sex"]
+		"enemy_attack", "enemy_strike", "fight_result", "player_move", "creature_number", "creature_change", "sex"]
 
 
 ## Effects a text can run while it is shown (an attack landing): values, survival
@@ -1131,7 +1158,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
-			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "put", "remove_from", "item_strain",
+			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy"]:
@@ -1381,6 +1408,9 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			_check_condition(c.b, line, owner)
 		"not":
 			_check_condition(c.a, line, owner)
+		"time":
+			if c.slot not in Game.TIME_SLOTS + ["day", "night"]:
+				_err(line, "Unknown time '%s'. Times: day, %s." % [c.slot, ", ".join(Game.TIME_SLOTS)])
 		"cmp":
 			for p in Expr.paths(c.left) + Expr.paths(c.right):
 				_check_path(p, line)
@@ -1456,7 +1486,9 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"knows", "visited":
 			_need(c.place, "location", line)
 		"part_tagged", "enemy_tagged":
-			_need(c.tag, "tag", line)
+			# A declared tag, or a filter (forms carry their creatures' filter tags too).
+			if not db.has(c.tag, "filter"):
+				_need(c.tag, "tag", line)
 		"check_expr":
 			for p in Expr.paths(c.bonus) + Expr.paths(c.target):
 				_check_path(p, line)
@@ -1564,8 +1596,8 @@ func _check_variants(id: String, d: FscParser.Definition) -> void:
 						_need(f.strip_edges(), "filter", line)
 				"when":
 					_check_condition_text(value, line, "creature:" + id)
-				"chance", "level", "damage", "libido", "hit bonus", "dodge bonus":
-					if not value.is_valid_int() or (int(value) < 0 and name not in ["hit bonus", "dodge bonus"]):
+				"chance", "level", "damage", "libido", "hit bonus", "dodge bonus", "mind bonus":
+					if not value.is_valid_int() or (int(value) < 0 and name not in ["hit bonus", "dodge bonus", "mind bonus"]):
 						_err(line, "Variant %s: %s must be a whole number." % [v, name])
 				"hp":
 					if not value.is_valid_int() or int(value) < 1:

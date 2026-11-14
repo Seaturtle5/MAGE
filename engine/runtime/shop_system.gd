@@ -9,7 +9,7 @@ extends RefCounted
 ##   at: dariuss_crib
 ##   run by: darius                  (only open while he is here)
 ##   open when: <condition>          (optional)
-##   currency: item food             (or a player value such as freecred; default:
+##   currency: item food             (or a player value such as coins; default:
 ##                                    the status bar's currency)
 ##   intro:   text when the shop opens
 ##   closed:  text when the place has the shop but it is not open now

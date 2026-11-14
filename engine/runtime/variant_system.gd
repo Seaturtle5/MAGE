@@ -30,7 +30,7 @@ extends RefCounted
 ## `goblin is variant female`.
 
 const FIELDS := ["gender", "filters", "when", "chance", "title", "image", "special", "loot", "level", "hp",
-	"damage", "stats", "libido", "hit bonus", "dodge bonus", "infection sex", "seduction immune"]
+	"damage", "stats", "libido", "hit bonus", "dodge bonus", "mind bonus", "infection sex", "seduction immune"]
 
 
 ## Variant names in the order written, with their fields.

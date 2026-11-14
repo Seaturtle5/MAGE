@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://b8vb02p85ngky"
-path="res://.godot/imported/freecred.svg-52183b53a99ef44003654ba9de45fc19.ctex"
+uid="uid://ce3tbatli3756"
+path="res://.godot/imported/currency.svg-ee8886109ee5cffb0ab49dda45fe2880.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://ui/icons/freecred.svg"
-dest_files=["res://.godot/imported/freecred.svg-52183b53a99ef44003654ba9de45fc19.ctex"]
+source_file="res://ui/icons/currency.svg"
+dest_files=["res://.godot/imported/currency.svg-ee8886109ee5cffb0ab49dda45fe2880.ctex"]
 
 [params]
 

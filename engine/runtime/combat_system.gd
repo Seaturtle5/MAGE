@@ -9,8 +9,20 @@ extends RefCounted
 ## where the original had one (Alt Combat.i7x, Table of Critter Combat).
 const SPECIALS := ["grapple", "hump", "pounce", "firebreath"]
 ## Fight-local numbers scripts can read and change as `enemy.<name>`.
-const ENEMY_NUMBERS := ["damage", "level", "hit_bonus", "dodge_bonus", "strength", "dexterity", "stamina",
+const ENEMY_NUMBERS := ["damage", "level", "hit_bonus", "dodge_bonus", "mind_bonus", "damage_low", "strength", "dexterity", "stamina",
 	"perception", "intelligence", "charisma"]
+## The player's own bonuses for this fight, read by the engine's rolls (the
+## original's plhitbonus, pldodgebonus, pldamagebonus, plfleebonus, plmindbonus,
+## plseducebonus): scripts change them as `fight.hit_bonus` and so on.
+const PLAYER_BONUSES := ["hit_bonus", "dodge_bonus", "damage_bonus", "flee_bonus", "mind_bonus", "seduce_bonus"]
+## Starting values of enemy numbers that are not 0 (`enemy.damage_low`: the low end of a blow's roll).
+const ENEMY_DEFAULTS := {"damage_low": 80}
+
+
+## One of the player's fight bonuses (`fight.<name>`), 0 when unset.
+static func bonus_of(game, name: String) -> int:
+	var c: Dictionary = game.state.combat
+	return 0 if c.is_empty() else int(c.get("vars", {}).get(name, 0))
 const ATTRIBUTES := ["strength", "dexterity", "stamina", "perception", "intelligence", "charisma"]
 
 
@@ -99,40 +111,15 @@ static func act(game, action: String) -> bool:
 		var id: String = c.creature
 		var level := int(game.value("player.level"))
 		var enemy_level := number(game, id, "level", 1)
-		var dex := int(game.value("player.dexterity"))
-		var enemy_dex := stat(game, id, "dexterity")
 		match action:
 			"submit", "throw":
 				c.result = "lost by submitting" if action == "submit" else "lost"
 			"attack":
-				var w := ItemSystem.weapon(game)
-				# Alt Combat.i7x:342: the creature's dodge bonus (mondodgebonus) adds to its defense.
-				if _roll(game, "Attack", dex + level * 2 + int(w.hit) - enemy_dex - enemy_level * 2 - number(game, id, "dodge bonus", 0), false, false, int(w.penalty)):
-					var damage: int = int(w.damage) * game.rng.range_int(80, 120 + level) / 100
-					var stat := "perception" if w.type == "ranged" else "strength"
-					damage += (int(game.value("player." + stat)) - 10) / 2 + ItemSystem.bonus(game, "damage bonus")
-					var motivated: bool = game.rng.chance(int(game.value("player.morale")), 200)
-					if motivated:
-						damage *= 2
-					c.hp = int(c.hp) - maxi(0, damage)
-					c.penalty = int(c.penalty) + 20
-					var weapon_text: String = TextTemplate.plain(game.render(TextTemplate.compile(str(w.text), "weapon:" + str(w.id))))
-					game.set_value("fight.weapon", weapon_text)
-					game.set_value("fight.dealt", damage)
-					game.set_value("fight.motivated", motivated)
-					game.notice(rule_text(game, "player hits",
-						"You hit [the enemy] with [fight.weapon] for [fight.dealt] damage."), false)
-					if int(c.hp) <= 0:
-						c.result = "won"
-					else:
-						# Hooks `on: player hits` (the original's helping children, Alt Combat.i7x:488-500).
-						hooks(game, "player hits")
-						if int(c.hp) <= 0 and c.result == "":
-							c.result = "won"
+				player_attack(game)
 			"seduce":
 				var immune: bool = game.creature_field(id, "seduction immune", "no") == "yes"
 				var defense := 20 - int(c.libido) / 3 + enemy_level * 2
-				var hit := _roll(game, "Seduce", int(game.value("player.perception")) + level * 2 - defense - int(c.penalty))
+				var hit := _roll(game, "Seduce", int(game.value("player.perception")) + level * 2 + bonus_of(game, "seduce_bonus") - defense - int(c.penalty))
 				if hit and not immune:
 					var gain: int = (int(game.value("player.charisma")) / 3) * game.rng.range_int(70, 130) / 100
 					if game.rng.chance(int(game.value("player.morale")), 200):
@@ -144,13 +131,7 @@ static func act(game, action: String) -> bool:
 				elif immune:
 					game.notice("This creature is immune to seduction.", false)
 			"flee":
-				# Alt Combat.i7x:807: the creature's hit bonus also works against fleeing.
-				var bonus := dex + int(game.value("player.intelligence")) + level * 2 + ItemSystem.bonus(game, "flee bonus") - enemy_dex - enemy_level * 2 - 10 - number(game, id, "hit bonus", 0)
-				if _roll(game, "Flee", bonus, false, true):
-					c.result = "fled"
-					game.notice(rule_text(game, "flee", "You get away from [the enemy]."), false)
-				else:
-					game.notice(rule_text(game, "flee fails", "You fail to get away."), false)
+				player_flee(game)
 			"pass":
 				pass
 			_:
@@ -158,11 +139,88 @@ static func act(game, action: String) -> bool:
 		if action in ["attack", "seduce"] and c.result == "":
 			CompanionSystem.act_in_fight(game, id)
 		if c.result == "":
+			player_round_end(game)
+		if c.result == "":
 			_retaliate(game)
 	c.round = int(c.round) + 1
 	if c.result == "":
 		show(game)
 	return true
+
+
+## The player's attack (the Attack button, or `~ attack enemy` from a fight's
+## item scene): the hit roll, the damage and the words for it.
+static func player_attack(game) -> void:
+	var c: Dictionary = game.state.combat
+	if c.is_empty() or c.result != "":
+		return
+	var id: String = c.creature
+	var level := int(game.value("player.level"))
+	var w := ItemSystem.weapon(game)
+	# Alt Combat.i7x:342: the creature's dodge bonus (mondodgebonus) adds to its defense.
+	var bonus: int = int(game.value("player.dexterity")) + level * 2 + int(w.hit) + bonus_of(game, "hit_bonus") \
+		- stat(game, id, "dexterity") - number(game, id, "level", 1) * 2 - number(game, id, "dodge bonus", 0)
+	if not _roll(game, "Attack", bonus, false, false, int(w.penalty)):
+		return
+	var damage: int = int(w.damage) * game.rng.range_int(80, 120 + level) / 100
+	var stat_name := "perception" if w.type == "ranged" else "strength"
+	damage += (int(game.value("player." + stat_name)) - 10) / 2 + ItemSystem.bonus(game, "damage bonus") + bonus_of(game, "damage_bonus")
+
+	var motivated: bool = game.rng.chance(int(game.value("player.morale")), 200)
+	if motivated:
+		damage *= 2
+	c.hp = int(c.hp) - maxi(0, damage)
+	c.penalty = int(c.penalty) + 20
+	var weapon_text: String = TextTemplate.plain(game.render(TextTemplate.compile(str(w.text), "weapon:" + str(w.id))))
+	game.set_value("fight.weapon", weapon_text)
+	game.set_value("fight.dealt", damage)
+	game.set_value("fight.motivated", motivated)
+	game.notice(rule_text(game, "player hits",
+		"You hit [the enemy] with [fight.weapon] for [fight.dealt] damage."), false)
+	if int(c.hp) <= 0:
+		c.result = "won"
+	else:
+		# Hooks `on: player hits` (the original's helping children, Alt Combat.i7x:488-500).
+		hooks(game, "player hits")
+		if int(c.hp) <= 0 and c.result == "":
+			c.result = "won"
+
+
+## The player's attempt to get away (the Flee button, or `~ try to flee`):
+## the rules' `before flee` script, then the roll.
+static func player_flee(game) -> void:
+	var c: Dictionary = game.state.combat
+	if c.is_empty() or c.result != "":
+		return
+	var id: String = c.creature
+	var rules := rules_id(game)
+	if rules != "":
+		_play(game, game.content.program("combat_rules:%s#before flee" % rules))
+	if c.result != "":
+		return
+	var level := int(game.value("player.level"))
+	# `fight.flee_now`: a bonus for this attempt only (a cover cloud), then cleared.
+	var once := bonus_of(game, "flee_now")
+	c.vars.erase("flee_now")
+	# Alt Combat.i7x:807: the creature's hit bonus also works against fleeing.
+	var bonus := int(game.value("player.dexterity")) + int(game.value("player.intelligence")) + level * 2 \
+		+ ItemSystem.bonus(game, "flee bonus") + bonus_of(game, "flee_bonus") + once \
+		- stat(game, id, "dexterity") - number(game, id, "level", 1) * 2 - 10 - number(game, id, "hit bonus", 0)
+	if _roll(game, "Flee", bonus, false, true):
+		c.result = "fled"
+		game.notice(rule_text(game, "flee", "You get away from [the enemy]."), false)
+	else:
+		game.notice(rule_text(game, "flee fails", "You fail to get away."), false)
+
+
+## After the player's action and before the creature's turn: the rules'
+## `each round` script (lasting effects such as the original's poison).
+static func player_round_end(game) -> void:
+	var rules := rules_id(game)
+	if rules == "":
+		return
+	_play(game, game.content.program("combat_rules:%s#each round" % rules))
+	_check_end(game)
 
 
 ## After an item was used in a fight, the enemy gets its turn
@@ -174,7 +232,9 @@ static func after_item(game) -> void:
 	if int(game.value("player.hp")) <= 0:
 		c.result = "lost"
 		return
-	_retaliate(game)
+	player_round_end(game)
+	if c.result == "":
+		_retaliate(game)
 	c.round = int(c.round) + 1
 
 
@@ -209,7 +269,7 @@ static func _standard_turn(game, id: String) -> void:
 		if game.content.program(id + "#miss") != null:
 			_script(game, id, "miss")
 		else:
-			game.notice("The enemy misses.", false)
+			game.notice(TextTemplate.plain(game.render(TextTemplate.compile("[The enemy] misses."))), false)
 		return
 	var grapple := _special_chance(game, id, "grapple")
 	if grapple > 0 and game.rng.chance(grapple, 100):
@@ -221,7 +281,7 @@ static func _standard_turn(game, id: String) -> void:
 	var hump := _special_chance(game, id, "hump")
 	if hump > 0 and game.part_form("player", "torso") == game.creature_field(id, "form", id) and game.rng.chance(hump, 100):
 		var level := number(game, id, "level", 1)
-		var damage: int = number(game, id, "damage", 3) * (game.rng.range_int(80, 120) + 30 + 2 * level) / 100
+		var damage: int = number(game, id, "damage", 3) * (spread(game, id) + 30 + 2 * level) / 100
 		_text(game, id, "hump", "You are grabbed by your opponent, who grinds against your body. The scent momentarily entices your infected body, and your drive to keep resisting wanes. You take %d damage!" % damage)
 		var lust: int = game.rng.range_int(2, 6) + (1 if "horny_bastard" in game.state.feats else 0) - (1 if "cold_fish" in game.state.feats else 0)
 		game.set_value("player.libido", int(game.value("player.libido")) + lust)
@@ -230,7 +290,7 @@ static func _standard_turn(game, id: String) -> void:
 	# Alt Combat.i7x, ftaurpounce rule: double damage, no shield.
 	var pounce := _special_chance(game, id, "pounce")
 	if pounce > 0 and game.rng.chance(pounce, 100):
-		var damage: int = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 50
+		var damage: int = number(game, id, "damage", 3) * spread(game, id) / 50
 		_text(game, id, "pounce", "Your opponent pounces atop you, knocking you down and clawing at you before you push it away.")
 		strike(game, damage, "no shield")
 		return
@@ -247,17 +307,25 @@ static func hit_roll(game, attribute: String = "dexterity") -> bool:
 	if attribute == "dexterity":
 		# Alt Combat.i7x:984: the creature's hit bonus (monhitbonus) adds to its attack.
 		bonus = stat(game, id, "dexterity") + number(game, id, "level", 1) * 2 + number(game, id, "hit bonus", 0)
-		bonus -= int(game.value("player.dexterity")) + int(game.value("player.level")) * 2 + ItemSystem.bonus(game, "dodge bonus")
+		bonus -= int(game.value("player.dexterity")) + int(game.value("player.level")) * 2 + ItemSystem.bonus(game, "dodge bonus") + bonus_of(game, "dodge_bonus")
 	else:
-		bonus = stat(game, id, attribute) + number(game, id, "level", 1) * 2 - 10
-		bonus -= int(game.value("player." + attribute)) + int(game.value("player.level")) * 2 - 10
+		# A mental attack (the original's intstrike): its mind bonus against the player's.
+		bonus = stat(game, id, attribute) + number(game, id, "level", 1) * 2 + number(game, id, "mind bonus", 0) - 10
+		bonus -= int(game.value("player." + attribute)) + int(game.value("player.level")) * 2 + bonus_of(game, "mind_bonus") - 10
 	return _roll(game, "Enemy attack", bonus, true)
+
+
+## The random part of a creature's blow, in percent: from its `damage low`
+## (80 unless a fight changes `enemy.damage_low`, as the original's pepper spray) to 120.
+static func spread(game, id: String) -> int:
+	var low := clampi(number(game, id, "damage low", 80), 0, 120)
+	return game.rng.range_int(low, 120)
 
 
 ## The creature's damage for one blow: its damage x 80-120%, scaled by `percent`,
 ## with the Hard mode critical hit.
 static func roll_damage(game, id: String, percent: int) -> int:
-	var damage: int = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 100 * percent / 100
+	var damage: int = number(game, id, "damage", 3) * spread(game, id) / 100 * percent / 100
 	if "hard" in game.settings.mode and game.rng.chance(1, 10):
 		damage = damage * 150 / 100
 	return damage
@@ -295,11 +363,11 @@ static func _firebreath(game, id: String) -> void:
 		game.emit({"type": "roll", "text": "Breath: %d vs %d" % [player, enemy]})
 		var damage := 0
 		if player * 2 < enemy:
-			damage = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 57
+			damage = number(game, id, "damage", 3) * spread(game, id) / 57
 			v["damage"] = damage
 			_text(game, id, "breath direct", "Your enemy unleashes a blast of fire at you. The flames wash over you, burning you badly. You take %d damage!" % damage)
 		elif player < enemy:
-			damage = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 90
+			damage = number(game, id, "damage", 3) * spread(game, id) / 90
 			v["damage"] = damage
 			_text(game, id, "breath partial", "Your enemy unleashes a blast of fire at you. You try to evade, but are still partially caught in the flames, taking %d damage!" % damage)
 		else:
@@ -415,7 +483,7 @@ static func _check_end(game) -> bool:
 
 static func _grapple_damage(game) -> void:
 	var id: String = game.state.combat.creature
-	var damage: int = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 125
+	var damage: int = number(game, id, "damage", 3) * spread(game, id) / 125
 	strike(game, damage)
 
 
