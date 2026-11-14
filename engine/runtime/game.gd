@@ -92,8 +92,8 @@ func value(path: String) -> Variant:
 		path = _subject + path.substr(6)
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
-	if path == "people.collected":
-		return collected_people()
+	if path.begins_with("people.") and path.count(".") == 1:
+		return people_at(path.substr(7).replace("_", " "))  # people.collected, people.bunker ...
 	if path.begins_with("party."):
 		match path:
 			"party.size":
@@ -115,7 +115,9 @@ func value(path: String) -> Variant:
 		var id := path.trim_prefix("level.")
 		return Array(content.levels.get(id, {}).get("options", [])).find(level(id)) + 1
 	if content.values.has(path):
-		return content.values[path].default
+		if content.values[path].get("kind", "") == "time":
+			return state.stamps.get(path)  # the turn it was set (null before that)
+		return content.values[path].get("default")
 	if path.begins_with("pregnancy."):
 		var key := path.substr(10)
 		if key in PregnancySystem.COMPUTED:
@@ -352,6 +354,22 @@ func ask(node: Dictionary) -> bool:
 			return part_form(node.who, node.part) == node.form
 		"part_tagged":
 			return node.tag in content.form_tags(part_form(node.who, node.part))
+		"at_flagged":
+			var at := state.location if node.who == "player" else where(node.who)
+			return at != "" and node.flag in content.list_field(at, "flags")
+		"parts_all":
+			# The original's purehuman: every body part one of the given strains.
+			for part in BodySystem.PARTS:
+				if part_form(node.who, part) not in node.forms:
+					return false
+			return true
+		"species_contains":
+			# The original's "BodyName of Player matches the text "Wolf"": the strain's name.
+			var form := part_form(node.who, node.part)
+			if node.who != "player" and content.has(node.who, "character") and value("%s.form" % node.who) != null:
+				form = str(value("%s.form" % node.who))
+			var species := content.typed_value("form", form, "name", form)
+			return species.to_lower().contains(str(node.text).to_lower())
 		"is":
 			return adjective(node.who, node.adjective)
 	warn("Condition '%s' is not supported yet." % node.op)
@@ -815,6 +833,12 @@ func apply(e: Dictionary) -> void:
 	match e.op:
 		"schedule":
 			ActionScheduler.schedule(self, e.scene, e.actions)
+		"extend_game":
+			# The rescue comes later (the original's "extend game by N").
+			state.values["game.extended"] = int(state.values.get("game.extended", 0)) + int(Expr._num(Expr.evaluate(e.by, self)))
+		"set_time":
+			# A turn stamp N turns in the past or the future (the original's "turns + 8").
+			state.stamps[e.path] = state.turn + e.sign * int(Expr._num(Expr.evaluate(e.by, self)))
 		"set":
 			if e.has("range"):
 				set_value(e.path, rng.range_int(Expr._num(Expr.evaluate(e.range[0], self)), Expr._num(Expr.evaluate(e.range[1], self))))
@@ -1308,14 +1332,19 @@ func zone_here(loc: String = "") -> String:
 	return ""
 
 
-## People staying at collected places (the original's "number of collected people").
-func collected_people() -> int:
+## People staying at places with a flag (`people.collected` is the original's
+## "number of collected people", `people.bunker` its bunkered people ...).
+## Characters tagged `uncounted` (a talking book, a ghost) are left out.
+func people_at(flag: String) -> int:
 	var n := 0
 	for c in content.all_of("character"):
+		if "uncounted" in content.list_field(c, "tags"):
+			continue
 		var at := where(c)
-		if at != "" and "collected" in content.list_field(at, "flags"):
+		if at != "" and flag in content.list_field(at, "flags"):
 			n += 1
 	return n
+
 
 
 func feat_bonus(field: String) -> int:

@@ -734,12 +734,55 @@ func _check_vore() -> void:
 
 ## Level rules, feats offered on levels, interests and combat rules.
 func _check_levels() -> void:
-	for type in ["level_rules", "combat_rules"]:
+	for type in ["level_rules", "combat_rules", "hunt_rules"]:
 		var defs: Dictionary = db.all_of(type)
 		for id in defs.keys().slice(1):
 			var d := db.get_def(type, id)
 			_path = d.path
 			_warn(d.line, "Only one %s is used (%s); this one is ignored." % [type, defs.keys()[0]])
+	for id in db.all_of("combat_rules"):
+		var d := db.get_def("combat_rules", id)
+		_path = d.path
+		if d.fields.has("creature chance") and not RegEx.create_from_string("^\\d+ in \\d+$").search(d.fields["creature chance"].value):
+			_err(d.fields["creature chance"].line, "Creature chance is written 'N in M', such as 4 in 20.")
+		if d.fields.has("creature chance modifiers"):
+			for l: FscParser.Line in d.fields["creature chance modifiers"].children:
+				if l.is_blank():
+					continue
+				var parts := l.text.rsplit(":", true, 1)
+				if parts.size() != 2:
+					_err(l.number, "Creature chance modifiers are 'condition: amount' lines.")
+					continue
+				_check_condition_text(parts[0].strip_edges(), l.number, "combat_rules:" + id)
+		if d.fields.has("auto action"):
+			_check_path(d.fields["auto action"].value, d.fields["auto action"].line)
+		if d.fields.has("second fight when"):
+			_check_condition_text(d.fields["second fight when"].value, d.fields["second fight when"].line, "combat_rules:" + id)
+	for id in db.all_of("hunt_rules"):
+		var d := db.get_def("hunt_rules", id)
+		_path = d.path
+		if d.fields.has("target weight"):
+			var e := Expr.parse(d.fields["target weight"].value)
+			if e.has("error"):
+				_err(d.fields["target weight"].line, "Target weight: %s." % e.error)
+			else:
+				for p in Expr.paths(e):
+					_check_path(p, d.fields["target weight"].line)
+		if d.fields.has("target weight modifiers"):
+			for l: FscParser.Line in d.fields["target weight modifiers"].children:
+				if l.is_blank():
+					continue
+				var parts := l.text.rsplit(":", true, 1)
+				if parts.size() != 2:
+					_err(l.number, "Target weight modifiers are 'condition: amount' lines.")
+					continue
+				_check_condition_text(parts[0].strip_edges(), l.number, "hunt_rules:" + id)
+				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
+				if amount.has("error"):
+					_err(l.number, "Target weight modifier: %s." % amount.error)
+		for f in ["others when", "other skipped when"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, "hunt_rules:" + id)
 	for id in db.all_of("level_rules"):
 		var d := db.get_def("level_rules", id)
 		_path = d.path
@@ -1108,7 +1151,7 @@ func _combat_effect(ins: Dictionary) -> bool:
 ## numbers, feats and conditions; nothing that moves the player or starts a scene.
 func _simple_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"set", "change", "survival", "feat", "condition", "meter", "infect"]
+		"set", "set_time", "change", "survival", "feat", "condition", "meter", "infect"]
 
 
 func _check_instruction(ins: Dictionary, owner: String) -> void:
@@ -1152,7 +1195,7 @@ func _check_target(target: String, line: int) -> void:
 
 
 func _check_effect(e: Dictionary, line: int, owner: String) -> void:
-	if e.op not in ["set", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
+	if e.op not in ["set", "set_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
 			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
@@ -1310,6 +1353,15 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"resolve":
 			if e.event != "":
 				_need(e.event, "event", line)
+		"extend_game":
+			for p in Expr.paths(e.by):
+				_check_path(p, line)
+		"set_time":
+			_check_path(e.path, line)
+			if db.values.get(e.path, {}).get("kind", "") != "time":
+				_err(line, "'%s' is not a time value; only time values can be set to some turns ago or in some turns." % e.path)
+			for p in Expr.paths(e.by):
+				_check_path(p, line)
 		"set", "change":
 			_check_path(e.path, line)
 			if e.op == "set":
@@ -1359,7 +1411,11 @@ func _check_path(path: String, line: int) -> void:
 		return
 	if parts[0] == "child" and parts.size() == 2 and parts[1] in PregnancySystem.CHILD_VALUES:
 		return
-	if path in ["people.collected", "shop.item", "shop.item_name", "shop.price", "party.size", "party.limit", "party.tamed",
+	if parts[0] == "people" and parts.size() == 2:
+		if parts[1].replace("_", " ") not in _location_flags():
+			_err(line, "'%s' counts people at places flagged '%s', but no place has that flag." % [path, parts[1].replace("_", " ")])
+		return
+	if path in ["shop.item", "shop.item_name", "shop.price", "party.size", "party.limit", "party.tamed",
 			"offspring.with_you", "offspring.bunker", "offspring.roaming", "offspring.total"]:
 		return
 	if parts[0] == "companion" and parts.size() == 2 and (parts[1] in ["id", "name"] or CompanionSystem.DEFAULTS.has(parts[1])):
@@ -1408,6 +1464,21 @@ func _check_condition_text(text: String, line: int, owner: String) -> void:
 		_err(line, c.error)
 	else:
 		_check_condition(c, line, owner)
+
+
+var _flags_cache: Array = []
+
+
+## The engine's location flags plus every flag a place in the content uses
+## (content may flag places for its own counts and tests: `bunker`, `library`).
+func _location_flags() -> Array:
+	if _flags_cache.is_empty():
+		_flags_cache = LOCATION_FLAGS.duplicate()
+		for id in db.all_of("location"):
+			for f in db.list_field(id, "flags"):
+				if f not in _flags_cache:
+					_flags_cache.append(f)
+	return _flags_cache
 
 
 func _check_condition(c: Dictionary, line: int, owner: String) -> void:
@@ -1482,8 +1553,8 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			if c.who == "player" and c.adjective == "pansexual":
 				return
 			if c.who == "here":
-				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in LOCATION_FLAGS):
-					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(LOCATION_FLAGS))
+				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in _location_flags()):
+					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(_location_flags()))
 				return
 			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
 					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
@@ -1494,6 +1565,20 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			_need(c.place, "location", line)
 		"knows", "visited":
 			_need(c.place, "location", line)
+		"species_contains":
+			if c.who != "player":
+				_need(c.who, "character", line)
+		"at_flagged":
+			if c.who != "player":
+				_need(c.who, "character", line)
+			if c.flag not in _location_flags():
+				_err(line, "No place has the flag '%s'. Flags in use: %s." % [c.flag, ", ".join(_location_flags())])
+		"parts_all":
+			if c.who != "player":
+				_need(c.who, "character", line)
+			for f in c.forms:
+				if f != "human":
+					_need(f, "form", line)
 		"part_tagged", "enemy_tagged":
 			# A declared tag, or a filter (forms carry their creatures' filter tags too).
 			if not db.has(c.tag, "filter"):

@@ -254,6 +254,22 @@ func run() -> void:
 				VariantSystem.pick(game, f.creature, f.get("hunted", false))
 				if f.get("title", false):
 					_encounter_title(f.creature)
+				# A random meeting (not a hunt, not inside an event) can be avoided:
+				# the combat rules' `before random fight` may say `~ no fight`.
+				var avoid: Program = game.content.program("combat_rules:%s#before random fight" % CombatSystem.rules_id(game))
+				if avoid != null and not f.get("hunted", false) and current_event() == "":
+					game.fight_cancelled = false
+					f.pc = 3
+					frames.append({"kind": "script", "pid": avoid.id, "pc": 0})
+					continue
+				_push_encounter(f.creature)
+				continue
+			if f.pc == 3:
+				f.pc = 2
+				if game.fight_cancelled:
+					game.fight_cancelled = false
+					_pop()
+					continue
 				_push_encounter(f.creature)
 				continue
 			if f.pc == 2:
@@ -264,7 +280,7 @@ func run() -> void:
 					continue
 				f["fight"] = {"creature": f.creature, "outcomes": {}, "after": 1}
 				CombatSystem.begin(game, f.creature)
-				if game.state.combat.result != "":
+				if game.state.combat.result != "" or CombatSystem.auto_fight(game):
 					_finish_fight()
 					continue
 				status = "combat"
@@ -389,7 +405,7 @@ func run() -> void:
 						continue
 					f["fight"] = ins
 					CombatSystem.begin(game, ins.creature)
-					if game.state.combat.result != "":
+					if game.state.combat.result != "" or CombatSystem.auto_fight(game):
 						_finish_fight()
 						continue
 					status = "combat"
@@ -1106,10 +1122,21 @@ func _act(action: String, arg: String) -> bool:
 		"scavenge":
 			return _scavenge(loc)
 		"hunt":
-			if arg not in encounter_pool(game.zone_here(loc), true):
+			var hunt_zone: String = game.zone_here(loc)
+			if arg not in encounter_pool(hunt_zone, true):
 				return false
 			frames.append({"kind": "turn", "turns": 1})
-			start_encounter(arg, true)
+			# Hunting rules may draw another creature, or nothing (HuntSystem).
+			var met: String = HuntSystem.pick(game, arg, hunt_zone)
+			if met == "":
+				var not_found: Program = db.program("hunt_rules:%s#not found" % HuntSystem.rules(game))
+				if not_found != null:
+					frames.append({"kind": "script", "pid": not_found.id, "pc": 0})
+				else:
+					game.emit({"type": "paragraph", "spans": [{"text": "You search for a while but find no trace of it.", "bold": false, "italic": false, "class": ""}]})
+				run()
+				return true
+			start_encounter(met, met == arg)
 			return true
 		"travel":
 			# Fast travel between known fast-travel points; spends a turn.
@@ -1212,7 +1239,8 @@ func _explore(loc: String, zone: String = "") -> bool:
 	var room_first: bool = not game.rng.chance(2, 5)
 	var bonus: int = (int(game.value("player.perception")) - 10) / 2 + game.feat_bonus("exploration bonus")
 	var pool := encounter_pool(zone)
-	if not pool.is_empty() and game.rng.chance(4, 20):
+	if not pool.is_empty() and _creature_roll():
+		_queue_second_fight(pool)
 		start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
 		return true
 	if room_first and _explore_location(zone, bonus):
@@ -1446,8 +1474,51 @@ func _fight_chance(f: Dictionary) -> void:
 	if pool.is_empty() or game.rng.range_int(1, 20) >= 10 + bonus:
 		return
 	var id: String = pool[game.rng.range_int(0, pool.size() - 1)]
+	_queue_second_fight(pool)
 	frames.append({"kind": "encounter", "creature": id, "pc": 0, "title": true})
 	frames.append({"kind": "pause"})
+
+
+## Exploring meets a creature with the combat rules' `creature chance` ("4 in 20",
+## the original's 20%) plus `creature chance modifiers` on the first number
+## (Stealthy, Bad Luck); without rules, 4 in 20.
+func _creature_roll() -> bool:
+	var id := CombatSystem.rules_id(game)
+	var text := "4 in 20" if id == "" else db_value("combat_rules", id, "creature chance", "4 in 20")
+	var parts := text.split(" in ")
+	var n := int(parts[0]) if parts.size() == 2 else 4
+	var d := int(parts[1]) if parts.size() == 2 else 20
+	var def: FscParser.Definition = game.content.get_def("combat_rules", id) if id != "" else null
+	if def != null and def.fields.has("creature chance modifiers"):
+		for l: FscParser.Line in def.fields["creature chance modifiers"].children:
+			if l.is_blank() or not ":" in l.text:
+				continue
+			var p := l.text.rsplit(":", true, 1)
+			if Condition.evaluate(Condition.compile(p[0].strip_edges()), game):
+				var amount := Expr.parse(CompanionSystem.amount_text(p[1]))
+				if not amount.has("error"):
+					n += int(Expr._num(Expr.evaluate(amount, game)))
+	return game.rng.chance(maxi(0, n), d)
+
+
+## After a random fight another creature may find the player (the combat rules'
+## `second fight when`, the original's Hard Mode and Bad Luck): queued below the
+## first meeting, with the `second fight` text before it.
+func _queue_second_fight(pool: Array) -> void:
+	var id := CombatSystem.rules_id(game)
+	if id == "":
+		return
+	var when := db_value("combat_rules", id, "second fight when", "")
+	if when == "" or not Condition.evaluate(Condition.compile(when), game):
+		return
+	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true})
+	var intro: Program = game.content.program("combat_rules:%s#second fight" % id)
+	if intro != null:
+		frames.append({"kind": "script", "pid": intro.id, "pc": 0})
+
+
+func db_value(type: String, id: String, field: String, fallback: String) -> String:
+	return game.content.typed_value(type, id, field, fallback)
 
 
 func _explore_location(zone: String, bonus: int) -> bool:

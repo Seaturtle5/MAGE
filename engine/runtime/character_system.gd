@@ -104,5 +104,8 @@ static func declarations(d: FscParser.Definition) -> Dictionary:
 			if p.key == "tamed":
 				tamed = p.value == "yes"
 		out["tamed"] = {"kind": "flag", "default": tamed, "path": d.path, "line": d.fields.companion.line}
-		out["last_fight"] = {"kind": "number", "default": -1, "path": d.path, "line": d.fields.companion.line}
+		out["last_fight"] = {"kind": "time", "default": null, "path": d.path, "line": d.fields.companion.line}
+	# When the character last had sex (SexSystem stamps it): `since x.last_sex > 8 turns`.
+	if not out.has("last_sex"):
+		out["last_sex"] = {"kind": "time", "default": null, "path": d.path, "line": d.line}
 	return out

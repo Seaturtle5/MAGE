@@ -274,7 +274,7 @@ static func after_fight(game, creature: String, won: bool) -> void:
 	if not game.state.combat.is_empty():
 		game.set_value("fight.level", CombatSystem.number(game, creature, "level", 1))
 	for id: String in party(game):
-		game.state.values["%s.last_fight" % id] = game.state.turn
+		game.state.stamps["%s.last_fight" % id] = game.state.turn  # a time value: `since x.last_fight`
 		if not won:
 			continue
 		_with(game, id)

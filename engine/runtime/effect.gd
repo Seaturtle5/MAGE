@@ -102,6 +102,7 @@ static var _rules: Array = [
 	["extend_heat", RegEx.create_from_string("^extend heat by (\\d+) turns?$")],
 	["survival", RegEx.create_from_string("^(drink|eat|heal|hurt) (.+)$")],
 	["stat", RegEx.create_from_string("^(humanity|libido|morale|hunger|thirst|xp|score) ([+-]) (.+)$")],
+	["extend_game", RegEx.create_from_string("^extend game by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
 ]
@@ -332,7 +333,19 @@ static func _match(s: String) -> Dictionary:
 				if amt.has("error"):
 					return {"error": amt.error}
 				return {"op": "change", "path": "player." + m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
+			"extend_game":
+				var by := Expr.parse(m.get_string(1))
+				if by.has("error"):
+					return {"error": "cannot read the turns in '%s': %s" % [m.get_string(1), by.error]}
+				return {"op": "extend_game", "by": by}
 			"set":
+				# A time value: "~ x.last_sex = 8 turns ago" or "= in 8 turns" (plain "= now" also works).
+				var shifted := RegEx.create_from_string("^(?:(.+) turns? ago|in (.+) turns?)$").search(m.get_string(2))
+				if shifted != null:
+					var by := Expr.parse(shifted.get_string(1) if shifted.get_string(1) != "" else shifted.get_string(2))
+					if by.has("error"):
+						return {"error": "cannot read the turns in '%s': %s" % [m.get_string(2), by.error]}
+					return {"op": "set_time", "path": m.get_string(1), "by": by, "sign": -1 if shifted.get_string(1) != "" else 1}
 				# "~ x = 6 to 16" or "~ x = 1 to player.charisma" picks a whole number in the range.
 				var bounds := m.get_string(2).split(" to ")
 				if bounds.size() == 2:

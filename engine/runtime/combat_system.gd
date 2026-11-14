@@ -107,6 +107,34 @@ static func _roll(game, label: String, bonus: int, enemy: bool = false, flee: bo
 	return roll + bonus > 20
 
 
+## The automatic action the combat rules name (`auto action: player.auto_combat`,
+## the original's Instinctive Combat): attack, seduce, pass, flee or submit; "".
+static func auto_action(game) -> String:
+	var id := rules_id(game)
+	if id == "":
+		return ""
+	var path: String = game.content.typed_value("combat_rules", id, "auto action", "")
+	if path == "":
+		return ""
+	var v = game.value(path)
+	var action := str(v) if v != null else ""
+	return action if action in ["attack", "seduce", "pass", "flee", "submit"] else ""
+
+
+## Plays the fight with the automatic action until it ends (struggling when
+## grappled). Returns true when the fight ended.
+static func auto_fight(game) -> bool:
+	var action := auto_action(game)
+	if action == "":
+		return false
+	for _i in 200:
+		var c: Dictionary = game.state.combat
+		if c.is_empty() or c.result != "":
+			break
+		act(game, "struggle" if c.grappled else action)
+	return game.state.combat.is_empty() or game.state.combat.result != ""
+
+
 static func act(game, action: String) -> bool:
 	var c: Dictionary = game.state.combat
 	if c.is_empty() or c.result != "":

@@ -54,6 +54,12 @@ static var _rules: Array = [
 	["in", RegEx.create_from_string("^player is (not )?in (\\w+)$")],
 	["knows", RegEx.create_from_string("^player (knows|does not know) (\\w+)$")],
 	["visited", RegEx.create_from_string("^player (has visited|has not visited) (\\w+)$")],
+	# "fang is at a place flagged library": the character's place carries that flag.
+	["at_flagged", RegEx.create_from_string("^(\\w+) is (not )?at a place flagged ([a-z][a-z ]*)$")],
+	# "player parts are all human, herm_human": every body part has one of these forms.
+	["parts_all", RegEx.create_from_string("^(\\w+) parts are (not )?all (\\w+(?:, ?\\w+)*)$")],
+	# "player tail species contains wolf": the name of the part's strain contains the text.
+	["species_contains", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) species (contains|does not contain) ([a-z][a-z ]*)$")],
 	["part_tagged", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?tagged (\\w+)$")],
 	["part_is", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?(\\w+)$")],
 	["parity", RegEx.create_from_string("^([a-z0-9_.]+) is (not )?(odd|even)$")],
@@ -260,6 +266,12 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "knows", "place": m.get_string(2), "neg": m.get_string(1) != "knows"}
 			"visited":
 				return {"op": "visited", "place": m.get_string(2), "neg": m.get_string(1) != "has visited"}
+			"at_flagged":
+				return {"op": "at_flagged", "who": m.get_string(1), "flag": m.get_string(3).strip_edges(), "neg": m.get_string(2) != ""}
+			"parts_all":
+				return {"op": "parts_all", "who": m.get_string(1), "forms": Array(m.get_string(3).split(",")).map(func(x): return x.strip_edges()), "neg": m.get_string(2) != ""}
+			"species_contains":
+				return {"op": "species_contains", "who": m.get_string(1), "part": m.get_string(2), "text": m.get_string(4).strip_edges(), "neg": m.get_string(3) != "contains"}
 			"part_tagged":
 				return {"op": "part_tagged", "who": m.get_string(1), "part": m.get_string(2), "tag": m.get_string(4), "neg": m.get_string(3) != ""}
 			"part_is":

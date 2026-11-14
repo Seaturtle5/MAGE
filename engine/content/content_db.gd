@@ -15,11 +15,13 @@ const SCHEMA := {
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
 		"menu icons": "list"},
+	"hunt_rules": {"target weight": "text", "target weight modifiers": "fields", "others when": "text",
+		"other skipped when": "text", "not found": "script", "source": "meta"},
 	"survival_rules": {"hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
 		"lust descriptions": "fields", "humanity ending": "text", "rescue ending": "text", "anticipation within": "text",
-		"rescue anticipation": "text", "healing": "script", "hunger rises": "script", "thirst rises": "script", "source": "meta"},
+		"rescue anticipation": "text", "rescue after": "text", "healing": "script", "hunger rises": "script", "thirst rises": "script", "source": "meta"},
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
 		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "body text": "text", "group": "text", "available when": "text",
@@ -29,7 +31,9 @@ const SCHEMA := {
 	"interest": {"name": "text", "description": "text", "default": "text", "group": "text", "source": "meta"},
 	"combat_rules": {"unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text",
 		"flee fails": "text", "won": "script", "lost": "script", "each round": "script", "before flee": "script",
-		"fight starts": "script", "player damage": "script", "avoid": "script", "enemy damage": "script", "source": "meta"},
+		"fight starts": "script", "player damage": "script", "avoid": "script", "enemy damage": "script",
+		"before random fight": "script", "creature chance": "text", "creature chance modifiers": "fields",
+		"second fight when": "text", "second fight": "script", "auto action": "text", "source": "meta"},
 	"scavenge_rules": {"generic": "text", "generic chance": "text", "target": "text", "start": "text", "found": "text",
 		"failure": "text", "only at": "text", "source": "meta"},
 	"creature": {"name": "text", "vore": "script", "vore when": "text", "hard vore": "script", "hard vore when": "text", "unbirth": "script", "unbirth when": "text", "species": "text", "image": "text", "found in": "list", "active": "text",
@@ -138,7 +142,7 @@ const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "sc
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
 	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "vore_rules",
-	"interest"]
+	"interest", "hunt_rules"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
