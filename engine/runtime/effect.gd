@@ -45,6 +45,8 @@ static var _rules: Array = [
 	["cancel_companion", RegEx.create_from_string("^cancel (summon|dismiss)$")],
 	["check_level", RegEx.create_from_string("^check level$")],
 	["choose_feat", RegEx.create_from_string("^choose feat (\\w+)$")],
+	# Typed text into a value: "~ ask child.name: Please name your child".
+	["ask", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+)(?: up to (\\d+) letters)?:\\s*(.+)$")],
 	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
 	["send_children", RegEx.create_from_string("^send children from (\\w+) to (\\w+)$")],
 	["condition", RegEx.create_from_string("^condition (\\w+) for (\\d+) (hours?|turns?)$")],
@@ -169,6 +171,12 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "check_level"}
 			"choose_feat":
 				return {"op": "choose_feat", "group": m.get_string(1)}
+			"ask":
+				var prompt := TextTemplate.compile(m.get_string(3))
+				if prompt.has("error"):
+					return {"error": prompt.error}
+				return {"op": "ask", "path": m.get_string(1), "prompt": prompt,
+					"max": int(m.get_string(2)) if m.get_string(2) != "" else 40}
 			"companion_level":
 				return {"op": "companion_level", "who": m.get_string(1)}
 			"send_children":

@@ -70,6 +70,8 @@ static func _step(game: Game, line: String) -> bool:
 			return game.runner.choose(int(arg) - 1)
 		"continue":
 			return game.runner.proceed()
+		"type":
+			return game.runner.enter_text(arg)
 		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss":
 			return game.runner.act(cmd, arg)
 		"save":
@@ -102,6 +104,8 @@ static func _print(events: Array, out: PackedStringArray) -> void:
 				out.append("[image %s]" % e.image)
 			"page_break":
 				out.append("{continue}")
+			"input":
+				out.append("{type: %s}" % e.prompt)
 			"choices":
 				if e.get("title", "") != "":
 					out.append(e.title)

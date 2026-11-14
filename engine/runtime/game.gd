@@ -140,6 +140,10 @@ func value(path: String) -> Variant:
 				return ItemSystem.scale(self)
 			"heat_turns", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration":
 				return HeatSystem.computed(self, key)
+		if key.ends_with(".strain_damage"):
+			# The damage of the creature whose strain a body part has (natural weapons:
+			# the original's Natural Armaments and Tail Strike read its Table row).
+			return CombatSystem.strain_damage(self, part_form("player", key.trim_suffix(".strain_damage")))
 		if key.begins_with("carried."):
 			return ItemSystem.count(self, key.trim_prefix("carried."))  # how many of an item the player carries
 		if key.begins_with("style.") or key == "gender_look":
@@ -175,6 +179,8 @@ func _fight_value(path: String) -> Variant:
 		return c[ENEMY_STATE[key]]
 	if key == "scale":
 		return VoreSystem.scale_of(self, c.creature)
+	if key == "form":
+		return creature_field(c.creature, "form", c.creature)  # the strain it infects with
 	if key in CombatSystem.ATTRIBUTES:
 		return CombatSystem.stat(self, c.creature, key)
 	return CombatSystem.number(self, c.creature, key.replace("_", " "), CombatSystem.ENEMY_DEFAULTS.get(key, 0))
@@ -893,6 +899,8 @@ func apply(e: Dictionary) -> void:
 			LevelSystem.check(self)
 		"choose_feat":
 			runner.choose_feat(e.group)
+		"ask":
+			runner.ask_text(e.path, e.prompt, e.max)
 		"send_children":
 			CompanionSystem.move_children(self, e.from, e.to)
 		"quest":

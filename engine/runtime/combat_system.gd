@@ -63,9 +63,17 @@ static func begin(game, id: String) -> void:
 	if int(game.state.combat.libido) >= 100:
 		game.state.combat.result = "won by seduction"
 		return
+	_weapon_values(game)
+	# The rules' `fight starts`: the fight's bonuses (the original's start-of-fight
+	# plhitbonus, pldodgebonus ...); `fight.no_surprise` stops a first strike.
+	var rules := rules_id(game)
+	if rules != "":
+		_play(game, game.content.program("combat_rules:%s#fight starts" % rules))
+	if game.state.combat.result != "":
+		return
 	# Fighting.i7x:73-88: an alert, agile creature can strike first.
 	var surprise: int = (int(game.value("player.perception")) - 10) / 2 - (stat(game, id, "dexterity") - 10) / 2
-	if surprise + game.rng.range_int(1, 20) < 6:
+	if bonus_of(game, "no_surprise") == 0 and surprise + game.rng.range_int(1, 20) < 6:
 		game.notice("The creature gets the drop on you!", false)
 		_retaliate(game)
 	if game.state.combat.result == "":
@@ -163,6 +171,14 @@ static func player_attack(game) -> void:
 	if not _roll(game, "Attack", bonus, false, false, int(w.penalty)):
 		return
 	var damage: int = int(w.damage) * game.rng.range_int(80, 120 + level) / 100
+	# The rules' `player damage`: feats and weapons change `fight.damage` before
+	# the attribute bonus (the original's Martial Artist, Powerful, Weaponsmaster ...).
+	var rules := rules_id(game)
+	if rules != "" and game.content.program("combat_rules:%s#player damage" % rules) != null:
+		_weapon_values(game)
+		c.vars["damage"] = damage
+		_play(game, game.content.program("combat_rules:%s#player damage" % rules))
+		damage = int(c.vars.get("damage", damage))
 	var stat_name := "perception" if w.type == "ranged" else "strength"
 	damage += (int(game.value("player." + stat_name)) - 10) / 2 + ItemSystem.bonus(game, "damage bonus") + bonus_of(game, "damage_bonus")
 
@@ -302,12 +318,25 @@ static func _standard_turn(game, id: String) -> void:
 ## (dexterity: dodging; any other: the original's intstrike, against the same
 ## attribute of the player).
 static func hit_roll(game, attribute: String = "dexterity") -> bool:
-	var id: String = game.state.combat.creature
+	var c: Dictionary = game.state.combat
+	var id: String = c.creature
+	# The rules' `avoid`: the player may escape the blow before it is rolled
+	# (`~ fight.avoided = yes`: the original's Dazzle, bo staff block, Black Belt).
+	var rules := rules_id(game)
+	if rules != "" and game.content.program("combat_rules:%s#avoid" % rules) != null:
+		c.vars.erase("avoided")
+		_play(game, game.content.program("combat_rules:%s#avoid" % rules))
+		if Condition._truthy(c.vars.get("avoided", false)):
+			c.vars.erase("avoided")
+			return false
 	var bonus: int
 	if attribute == "dexterity":
 		# Alt Combat.i7x:984: the creature's hit bonus (monhitbonus) adds to its attack.
 		bonus = stat(game, id, "dexterity") + number(game, id, "level", 1) * 2 + number(game, id, "hit bonus", 0)
 		bonus -= int(game.value("player.dexterity")) + int(game.value("player.level")) * 2 + ItemSystem.bonus(game, "dodge bonus") + bonus_of(game, "dodge_bonus")
+		# `fight.dodge_now`: a bonus for this one roll (the original's Flash), then cleared.
+		bonus -= bonus_of(game, "dodge_now")
+		c.vars.erase("dodge_now")
 	else:
 		# A mental attack (the original's intstrike): its mind bonus against the player's.
 		bonus = stat(game, id, attribute) + number(game, id, "level", 1) * 2 + number(game, id, "mind bonus", 0) - 10
@@ -326,8 +355,14 @@ static func spread(game, id: String) -> int:
 ## with the Hard mode critical hit.
 static func roll_damage(game, id: String, percent: int) -> int:
 	var damage: int = number(game, id, "damage", 3) * spread(game, id) / 100 * percent / 100
-	if "hard" in game.settings.mode and game.rng.chance(1, 10):
-		damage = damage * 150 / 100
+	# The rules' `enemy damage`: content changes `fight.incoming` (the original's
+	# Hard Mode critical hit and Toughened live in the game's rules, not here).
+	var rules := rules_id(game)
+	if rules != "" and game.content.program("combat_rules:%s#enemy damage" % rules) != null:
+		var c: Dictionary = game.state.combat
+		c.vars["incoming"] = damage
+		_play(game, game.content.program("combat_rules:%s#enemy damage" % rules))
+		damage = maxi(0, int(c.vars.get("incoming", damage)))
 	return damage
 
 
@@ -548,6 +583,31 @@ static func aftermath(game, id: String, result: String) -> void:
 
 
 ## The combat rules in use (one `== combat_rules` per game), or "".
+## What the player fights with, for the rules' scripts: `fight.unarmed`,
+## `fight.weapon_id` and `fight.weapon_type` (melee or ranged).
+static func _weapon_values(game) -> void:
+	var c: Dictionary = game.state.combat
+	var w := ItemSystem.weapon(game)
+	c.vars["unarmed"] = str(w.id) == ""
+	c.vars["weapon_id"] = str(w.id)
+	c.vars["weapon_type"] = str(w.type)
+
+
+## The damage of the creature that infects with `form` (0 for none or human):
+## natural weapons borrowed from a strain.
+static func strain_damage(game, form: String) -> int:
+	if form in ["", "human"]:
+		return 0
+	if game.content.has(form, "creature") and game.content.typed_value("creature", form, "form", form) == form:
+		return number(game, form, "damage", 0)
+	var ids: Array = game.content.all_of("creature").keys()
+	ids.sort()
+	for id in ids:
+		if game.content.typed_value("creature", id, "form", id) == form:
+			return number(game, id, "damage", 0)
+	return 0
+
+
 static func rules_id(game) -> String:
 	var defs: Dictionary = game.content.all_of("combat_rules")
 	return "" if defs.is_empty() else str(defs.keys()[0])

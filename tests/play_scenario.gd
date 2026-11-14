@@ -7,6 +7,7 @@ extends SceneTree
 ##
 ## Scenario steps, one per line ("#" starts a comment):
 ##   choose N         pick option N (1-based) of the current choice list
+##   type TEXT        answer a typed question (~ ask) with TEXT
 ##   continue         past a page break
 ##   go DIRECTION     take an exit
 ##   talk ID          talk to a character

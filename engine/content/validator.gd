@@ -1160,11 +1160,16 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
-			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat",
+			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
+		"ask":
+			_check_path(e.path, line)
+			if e.path.begins_with("player.") and not db.values.has(e.path):
+				_err(line, "~ ask stores text: give it a declared text value, not the player value '%s'." % e.path)
+			_check_template(e.prompt, line, "")
 		"choose_feat":
 			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
 				_err(line, "No feat has group '%s'." % e.group)
@@ -1338,8 +1343,12 @@ func _check_path(path: String, line: int) -> void:
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
 		return  # a fight's own scratch numbers
 	if parts[0] == "enemy" and parts.size() == 2:
-		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido"]):
-			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido"])])
+		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido", "form"]):
+			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido", "form"])])
+		return
+	if parts[0] == "player" and parts.size() == 3 and parts[2] == "strain_damage":
+		if parts[1] not in BodySystem.PARTS and not BodySystem.ALIASES.has(parts[1]):
+			_err(line, "'%s' is not a body part. Parts: %s." % [parts[1], ", ".join(BodySystem.PARTS)])
 		return
 	if parts[0] == "sex" and parts.size() == 2 and parts[1] in ["taker", "giver", "act", "with"]:
 		return  # the last sex record (SexSystem), for `after sex` hooks

@@ -444,6 +444,9 @@ func _drain() -> void:
 			"choices":
 				_page_choices(e)
 				waiting = true
+			"input":
+				_page_input(e)
+				waiting = true
 			"page_break":
 				_page_continue(func(): _continue())
 				waiting = true
@@ -861,6 +864,38 @@ func _page_choices(e: Dictionary) -> void:
 		var index := n - 1
 		_face_button(choices_box, row, func(): _choose(index), not o.enabled, 14, 11)
 	choice_count = n
+	page_new = true
+
+
+## A typed answer (`~ ask`): a text box and OK; Enter also answers.
+func _page_input(e: Dictionary) -> void:
+	_ensure_page()
+	if str(e.prompt) != "":
+		page_box.add_child(_plain_label(e.prompt, 16, FsTheme.TEXT_DIM))
+	for c in choices_box.get_children():
+		c.queue_free()
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var field := LineEdit.new()
+	field.text = str(e.get("value", ""))
+	field.max_length = int(e.get("max", 40))
+	field.size_flags_horizontal = SIZE_EXPAND_FILL
+	field.custom_minimum_size = Vector2(0, 44)
+	field.add_theme_font_size_override("font_size", 17)
+	row.add_child(field)
+	var ok := Button.new()
+	ok.text = "OK"
+	ok.custom_minimum_size = Vector2(110, 44)
+	ok.add_theme_font_override("font", FsTheme.strong_font())
+	ok.add_theme_font_size_override("font_size", 17)
+	row.add_child(ok)
+	choices_box.add_child(row)
+	var submit := func(_t = ""):
+		if game.runner.enter_text(field.text):
+			_drain()
+	field.text_submitted.connect(submit)
+	ok.pressed.connect(submit)
+	field.grab_focus.call_deferred()
 	page_new = true
 
 

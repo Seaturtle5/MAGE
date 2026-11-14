@@ -12,6 +12,13 @@ extends RefCounted
 const RESCUE_TURNS := 480  ## Turns starts at 240 and the rescue comes at -240
 
 
+## One of the rules' scripts (`healing`, `hunger rises`, `thirst rises`), if it has it.
+static func _script(game, field: String) -> void:
+	var r := rules(game)
+	if r != null and game.content.program("survival_rules:%s#%s" % [r.id, field]) != null:
+		game.runner.play_now("survival_rules:%s#%s" % [r.id, field])
+
+
 static func rules(game) -> FscParser.Definition:
 	var definitions: Dictionary = game.content.all_of("survival_rules")
 	return null if definitions.is_empty() else definitions.values()[0]
@@ -58,12 +65,15 @@ static func tick(game) -> void:
 	var stamina := int(game.value("player.stamina"))
 	if "no_heal" not in game.settings.mode:
 		game.set_value("player.hp", int(game.value("player.hp")) + stamina / 2)
+	_script(game, "healing")  # the rules' extra healing (feats that heal each turn)
 	if int(game.value("player.hp")) < 0:
 		game.set_value("player.hp", 1)
 	if game.rng.range_int(1, 20) > game.rng.range_int(1, stamina + 1):
 		game.set_value("player.hunger", int(game.value("player.hunger")) + 1)
+		_script(game, "hunger rises")  # feats that slow it, others who share your food
 	if game.rng.range_int(1, 25) > game.rng.range_int(1, stamina + 1):
 		game.set_value("player.thirst", int(game.value("player.thirst")) + 3)
+		_script(game, "thirst rises")
 	if (241 - game.state.turn) % 3 == 0:
 		var hunger := int(game.value("player.hunger"))
 		var thirst := int(game.value("player.thirst"))

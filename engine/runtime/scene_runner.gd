@@ -35,7 +35,7 @@ var _deferred: Array = []
 
 ## Runs a program right away (for effects that trigger scenes during a turn).
 func play_now(pid: String) -> void:
-	if status in ["choice", "continue", "combat"]:
+	if status in ["choice", "continue", "combat", "input"]:
 		_deferred.append(pid)  # not on top of the frame that waits for the player
 		return
 	_push(pid, {})
@@ -299,6 +299,15 @@ func run() -> void:
 		if f.kind == "feat_choice":
 			if _feat_choice_step(f):
 				return
+			continue
+		if f.kind == "ask":
+			if not f.shown:
+				f.shown = true
+				game.emit({"type": "input", "prompt": TextTemplate.plain(game.render(f.prompt)),
+					"value": str(game.value(f.path)) if game.value(f.path) != null else "", "max": f.max})
+				status = "input"
+				return
+			frames.erase(f)
 			continue
 		if f.kind == "menu":
 			if _menu_step(f):
@@ -682,6 +691,26 @@ func _vore_do(f: Dictionary, kind: String) -> void:
 		_push_if(str(f.creature) + "#defeated")
 		return
 	VoreSystem.perform(game, kind)
+
+
+## `~ ask <value>: <prompt>`: the player types a short text into a value (the
+## original's "get typed command": naming children and pets). The scene waits.
+func ask_text(path: String, prompt: Dictionary, max_length: int = 40) -> void:
+	frames.append({"kind": "ask", "path": path, "prompt": prompt, "max": max_length, "shown": false})
+	if status == "idle":
+		run()
+
+
+## The player's typed answer: stored in the value, then the scene goes on.
+func enter_text(text: String) -> bool:
+	if status != "input" or frames.is_empty() or frames[-1].kind != "ask":
+		return false
+	var f: Dictionary = frames[-1]
+	var clean := text.strip_edges().replace("\n", " ").replace("[", "(").replace("]", ")")
+	game.set_value(str(f.path), clean.left(int(f.max)))
+	frames.pop_back()
+	run()
+	return true
 
 
 func choose_feat(group: String) -> void:
@@ -1521,5 +1550,8 @@ func load_frames(saved: Array) -> void:
 	status = "idle" if frames.is_empty() else "continue"
 	for f in frames:
 		f.pc = int(f.get("pc", 0))
+		if f.kind == "ask":
+			f.shown = false  # asked again after loading
+			f.max = int(f.get("max", 40))
 	if not game.state.combat.is_empty() and game.state.combat.get("result", "") == "":
 		status = "combat"
