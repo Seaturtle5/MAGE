@@ -1,0 +1,38 @@
+// A shop: buying, selling and trading. It shows as an action tile named after
+// the shop at its place, and opens a menu of Buy, Sell and Trade lines; lines
+// the player can't afford are shown but can't be picked.
+
+== shop wren_shelf
+name: Wren's barter shelf
+// Where it is, who must be there, and when it is open.
+at: clearing
+run by: wren
+open when: time is day
+// What the player pays with: a player value (the coins of rules/interface.fsc),
+// or an item (`currency: item copper_coin`); without it, the status bar's currency.
+currency: coins
+intro:
+    Wren clears a space on the flat stone she uses as a counter. 'Coin or trade, I'm not fussy.'
+// Shown instead while the shop is closed (at night, or when Wren is away).
+closed:
+    The flat stone by the lean-to is bare. Wren keeps her wares indoors at night.
+// What she sells, and the price. A line can have a condition.
+stock:
+    herbal_tea: 2
+    bandage: 3
+    slingshot: 4 [if wren.trust is at least friendly]
+// What she buys from the player, and what she pays.
+buys:
+    wild_berries: 1
+    truffle: 3
+// Items with `trades for` (items/items.fsc) can be swapped here, and the
+// Forager feat sometimes gets a second item thrown in.
+trades: yes
+trade bonus when: player has feat forager
+trade bonus chance: 1 in 3
+// After each purchase and sale: [shop.price] is the price ([shop.item] names
+// the item too).
+bought:
+    Wren wraps it in a scrap of cloth. '[shop.price] well spent. Pleasure doing business.'
+sold:
+    Wren counts out [shop.price] and tucks your goods into her basket.

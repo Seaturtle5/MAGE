@@ -1,13 +1,45 @@
-// A character: values that track the relationship, a talk menu whose options
-// depend on those values, a quest with several stages, and a scene scheduled to
-// play a few actions later.
+// A character: her body, stats and relationship, values that track the
+// friendship, a presence line, a talk menu and an actions menu whose options
+// depend on those values, a quest with several stages, and a scene scheduled
+// to play a few actions later. The interface shows Talk, Actions, Look and
+// Smell buttons for her while the player is in the same place.
 
 == character wren
 name: Wren
 pronouns: she
 lives at: clearing
 description:
-    A small, weathered woman in a patched green coat, whittling something that might become a bird.
+    A small, weathered woman in a patched green coat, whittling something that might become a bird. [if wren.trust is at least friendly]She hums while she works.[end if]
+// The Smell button.
+scent: Woodsmoke and pine resin.
+// A line added to the place's description while she is there.
+presence: Wren sits by the lean-to, whittling.
+// Her body, fighting numbers and relationship start at these values; scenes
+// read and change them like any value: wren.scale, wren.level, wren.met.
+// "wren is female" reads her body, as it does for the player.
+body:
+    scale: 2
+    weight: 3
+    definition: 6
+    androgyny: 6
+stats:
+    level: 3
+    max hp: 30
+    perception: 16
+relationship:
+    met: no
+// Other things to do with her (the Actions button), written like a menu.
+actions:
+    title: What do you want to do?
+    leave: Never mind
+    * Help with firewood -- Carry an armful of wood to her fire
+        You stack the wood by the lean-to. Wren nods her thanks.
+        if wren.trust is wary:
+            ~ wren.trust = friendly
+        ~ spend 1 turn
+    * Share some berries -- Offer her your wild berries [if player has wild_berries]
+        ~ take wild_berries
+        Wren eats them one at a time, slowly, as if they were sweets.
 // Values belong to the character and are saved with the game.
 // A list of states is in order, so "wren.trust is at least friendly" works.
 values:
@@ -16,17 +48,12 @@ values:
     visits: number
 talk:
     ~ wren.visits + 1 quietly
+    ~ wren.met = yes quietly
     [if wren.trust is wary]Wren looks up. 'Oh. A visitor.'[else if wren.trust is friendly]Wren smiles. 'Back again?'[else]Wren pats the stone beside her. 'Sit, sit.'[end if]
     -> wren.talk
 
 // The quest: its stages in order, each with its journal line. The first stage
 // is the start. The journal shows it once it passes its first stage.
-// A line in the clearing's description while Wren is there. It is added to the
-// location from this file with `extend`, so everything about Wren stays here.
-== extend location clearing
-presence:
-    [if wren is here]Wren sits by the lean-to, whittling.[end if]
-
 == quest lost_knife
 name: Wren's knife
 region: woods
@@ -66,6 +93,9 @@ leave text: Wren goes back to her whittling.
     ~ give shed_key
 
 == scene wren.about_woods
+// "player has visited X": the player has been to that place.
+if player has visited old_bridge and not wren.heard_story:
+    'You've been down to the old bridge? Then you've seen the mist,' Wren says. 'Don't follow it unless you mean to leave for good.'
 if not wren.heard_story:
     'The foxes here are odd,' Wren says. 'Lose a scuffle with one and you might grow a tail.'
     ~ wren.heard_story = yes quietly

@@ -1,0 +1,81 @@
+// Endings: what became of the player, told when the game ends.
+//
+// A scene ends the game with "~ ending <id>" (the mist at the bridge, the cold,
+// the brambles). Then the epilogue plays: every ending below whose `when`
+// holds, lowest `priority` first. An ending that says "~ player dies" or
+// "~ player is imprisoned" stops the epilogue after it. Then the game is over
+// and the player returns to the title screen.
+//
+// "~ ending <id>" marks that ending as triggered, so its own `when` can say
+// "ending <id> is triggered". Scenes can also mark an ending during play
+// without ending the game ("~ trigger ending <id>"), for later endings to test.
+
+// The opening of every epilogue: priority 1 plays before everything else,
+// even before a death that stops the endings after it.
+== ending epilogue_opening
+name: The end of the story
+type: epilogue
+priority: 1
+play:
+    **The Quiet Woods**
+
+    Here is how your story ends.
+
+// How the game ended. Each of these plays only for its own cause.
+== ending left_the_woods
+name: Left the woods
+type: leaving
+priority: 100
+when: ending left_the_woods is triggered
+play:
+    You walk out of the mist onto a quiet road. Behind you, the woods are just trees again.
+    ~ player leaves
+
+== ending frozen_in_the_woods
+name: Frozen in the woods
+type: death
+priority: 10
+when: ending frozen_in_the_woods is triggered
+play:
+    In spring, someone finds a coat and a pair of boots under the pines, and nothing else.
+    // A death stops the epilogue: no later ending plays.
+    ~ player dies
+
+// The engine ends the game by itself when the player starves or dies of
+// thirst; "the game ended by <cause>" tells which (hunger, thirst, humanity,
+// rescue, or an ending's id).
+== ending died_of_thirst
+name: Died of thirst
+type: death
+priority: 10
+when: the game ended by thirst
+play:
+    The river was so close. Next time, drink from it.
+    ~ player dies
+
+== ending lost_in_the_brambles
+name: Lost in the brambles
+type: bad_end
+priority: 5
+when: ending lost_in_the_brambles is triggered
+play:
+    The brambles keep you. In time, roses grow where you stood.
+    ~ player is imprisoned
+
+// Endings that depend on what the player did, told after the cause.
+// `type` groups endings so a scene can switch a kind off ("~ exclude npc endings").
+== ending wrens_friend
+name: Wren's friend
+type: npc
+priority: 900
+when: quest lost_knife is shared_supper
+play:
+    Wren keeps a cup for you on the flat stone by the lean-to. [if ending left_the_woods is triggered]Some evenings she looks at the road and wonders how you are.[else]Most evenings you share it.[end if]
+
+== ending fox_touched
+name: Fox-touched
+type: infection
+priority: 1000
+when: player tail is forest_fox
+play:
+    Your bushy red tail never goes away. You get used to it, and then you grow fond of it.

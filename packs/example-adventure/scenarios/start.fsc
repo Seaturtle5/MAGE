@@ -8,6 +8,7 @@ start: cabin
 description: You wake in a small cabin at the edge of the Quiet Woods.
 setup:
     ~ give wild_berries quietly
+    ~ meter coins + 3 quietly
 intro:
     You wake to birdsong and the smell of cold ashes. Your cabin is quiet, and the woods outside are waiting.
     ---

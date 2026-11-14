@@ -48,6 +48,20 @@ observe:
         [weather]
     * The night -- Listen to the woods [if time is night]
         -> woods.night_sounds
+// Things to do here: an Actions tile with this menu.
+actions:
+    title: Around the cabin
+    leave: Done
+    * Light the stove -- Warm yourself by the fire [if player.cold > 0]
+        You feed the stove until it roars. The chill leaves your fingers.
+        ~ meter cold - 5
+    * Drink from the barrel -- Fresh rainwater [if player.thirst > 0]
+        You drink deeply from the rain barrel by the door.
+        ~ drink 40
+    * Patch yourself up -- Use a bandage on your scrapes [if player has bandage and player.hp < player.maxhp]
+        // "~ use <item>" uses an item from a scene, as if from the inventory:
+        // its use scene plays and one is used up.
+        ~ use bandage
 
 // A door between two places, named in both places' exits ("door shed_door").
 // `locked` can be yes, no or a condition.
@@ -90,6 +104,7 @@ map: 4, 3
 flags: fast travel
 exits:
     west: forest_path
+    north: trailhead
 description:
     A ring of mossy stones around a patch of open sky. Someone has built a lean-to at the edge.
 // An observe menu: things the player can watch here (the Observe button).
@@ -98,6 +113,36 @@ observe:
         A pair of jays squabble over a pinecone. [one of]The bigger one wins.[or]The smaller one wins, this time.[at random]
     * The sky -- Look up at the sky [if time is night]
         Stars, more than you've ever seen in town.
+
+// A place without a zone of its own, with a dangerous door out of it. Going
+// through the door explores the deep woods; the exit shows as
+// "Deep woods (explore)". A place whose own zone is "none" also explores,
+// hunts, scavenges and rests in its dangerous door's zone, so the Explore and
+// Hunt buttons here search the deep woods too.
+== location trailhead
+name: Trailhead
+region: woods
+zone: none
+map: 4, 2
+exits:
+    south: clearing
+    north: door deep_woods_trail
+description:
+    The path ends at a wall of dark trees. An old wooden post marks the way in.
+
+// A dangerous door: `leads to zone` makes going through it explore that zone
+// (its events and creatures) instead of moving the player.
+== door deep_woods_trail
+name: Deep woods
+leads to zone: deep_woods
+shown in room: A narrow trail leads north into the deep woods, where the trees grow close and dark.
+
+== zone deep_woods
+name: The deep woods
+ambient:
+    The trees grow so close that it feels like dusk at noon.
+
+    Something large moves between the trunks, then stops.
 
 == location old_bridge
 name: Old Bridge
@@ -108,3 +153,11 @@ exits:
     north: forest_path
 description:
     A mossy stone bridge over a quick, clear river. The far side is lost in mist.
+actions:
+    title: By the river
+    leave: Done
+    * Drink from the river -- Cold, clear water [if player.thirst > 0]
+        You kneel on the bank and drink until your teeth ache.
+        ~ drink 50
+    * Fill up on water -- Drink your fill before a long walk [if player.thirst is 0]
+        You drink a little more, just in case.

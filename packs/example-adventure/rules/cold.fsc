@@ -12,8 +12,9 @@ limit: 10
 stages:
     3: chilled
     6: shivering
-// At the limit the game ends. "~ ending <id>" ends any game. Days are warm
-// enough that a single night outdoors never gets this far; it shows the field.
+// At the limit the game ends: "~ ending <id>" ends the game and the epilogue
+// (rules/endings.fsc) plays. Days are warm enough that a single night outdoors
+// rarely gets this far.
 at limit:
     The cold settles into your bones, and you curl up under the pines for good.
     ~ ending frozen_in_the_woods

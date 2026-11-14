@@ -75,6 +75,23 @@ name: A forgotten basket
 found by: scavenging in forest
 repeat: once
 play:
-    Half-hidden under a fern is an old wicker basket. Inside: a clean bandage and a slingshot.
+    Half-hidden under a fern is an old wicker basket. Inside: a clean bandage, a slingshot and two copper coins.
     ~ give bandage
     ~ give slingshot
+    ~ meter coins + 2
+
+// A counter on an event: every event has a number, <event>.resolution, that
+// starts at 0 and that scenes can read and change. Here it counts how often
+// the patch was picked; after three times it is bare for good.
+== event berry_patch
+name: A berry patch
+found by: exploring in forest
+repeat: until resolved
+play:
+    ~ berry_patch.resolution + 1 quietly
+    if berry_patch.resolution < 3:
+        A bramble heavy with dark berries. You pick a handful.
+        ~ give wild_berries
+    else:
+        The berry patch has been picked clean. Maybe next year.
+        ~ resolve

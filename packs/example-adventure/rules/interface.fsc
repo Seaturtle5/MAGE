@@ -1,0 +1,15 @@
+// The top bar: the meters and the money shown while playing. Without a status
+// bar, the top bar shows health only.
+
+== status_bar woods
+// Player values: hp shows against max health, a meter's value against its limit.
+meters: hp, hunger, thirst, cold
+// A player value shown as money.
+currency: coins
+
+// Money. A meter is how a pack adds a player value of its own: player.coins.
+// It never wears off (no decay) and has no stages; scenes change it with
+// "~ meter coins + 2" or "~ player.coins - 1", and the shop pays with it.
+== meter coins
+name: Coins
+value: player.coins

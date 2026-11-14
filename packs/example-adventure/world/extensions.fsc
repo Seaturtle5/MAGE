@@ -1,7 +1,26 @@
-// Extending another definition: this file adds an option to Wren's talk menu
+// Extending other definitions from outside their files, the way another pack
+// adds to this one. First: an option for Wren's talk menu
 // (characters/wren.fsc) from outside her file. Another pack can extend this
 // pack's content the same way, without copying it. Replacing a field needs
 // "== replace <type> <id>" instead.
 == extend menu wren.talk
 * The cabin -- Ask about your cabin
     'Old Tomas built it,' Wren says. 'He left one spring and never came back. It's yours now, I suppose.'
+
+// Adding exits to a place from outside its file, as another pack would: a new
+// place east of the old bridge. The way back is written on the new place.
+== extend location old_bridge
+exits:
+    east: hollow_log
+
+== location hollow_log
+name: Hollow Log
+region: woods
+zone: riverbank
+map: 4, 4
+items: smooth_pebble, smooth_pebble
+exits:
+    west: old_bridge
+description:
+    A fallen oak, hollow from end to end, big enough to crawl through. Someone has left a row of smooth pebbles along its top.
+

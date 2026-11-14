@@ -26,9 +26,9 @@ play:
     * Stay in
         You close the door again.
 
-// An ending the player chooses. "~ ending <id>" ends the game; the id is shown
-// as its title ("Left the woods"). This event comes up half the time
-// (`chance`) and not again for 6 turns after (`cooldown`).
+// An ending the player chooses. "~ ending <id>" ends the game, and the
+// epilogue in rules/endings.fsc tells what became of them. This event comes up
+// half the time (`chance`) and not again for 6 turns after (`cooldown`).
 == event mist_beckons
 name: The mist
 found by: walking into old_bridge
@@ -42,3 +42,21 @@ play:
         ~ ending left_the_woods
     * Not today
         You stay where you are. The mist closes again.
+
+// A travel event that replaces the trip: fast-travelling to the clearing at
+// night may play this instead. No time passes, nothing is met on the way, and
+// the player stays where they are unless the scene moves them ("~ go to X").
+== event lost_in_the_dark
+name: Lost in the dark
+found by: travelling to clearing
+replaces trip: yes
+requires: time is night
+chance: 50%
+repeat: always
+play:
+    You set off for the clearing, but in the dark every trunk looks the same.
+    * Push on
+        You keep going until, at last, you see the mossy stones.
+        ~ go to clearing
+    * Turn back
+        You find your way back to where you started. The clearing can wait until morning.

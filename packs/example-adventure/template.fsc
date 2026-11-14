@@ -23,19 +23,33 @@
 // name: Sam
 // pronouns: they
 // lives at: my_place
+// description: A tall figure in a rain-soaked coat.      (the Look button)
+// scent: Wet wool and coffee.                            (the Smell button)
+// presence: Sam leans against the wall.                  (a line in the place's description)
+// body:                                                  (my_person.scale, my_person.cocks ...)
+//     scale: 3
+// stats:                                                 (my_person.level ...)
+//     level: 2
+// relationship:                                          (yes/no: met, romanced, friended, ...)
+//     met: no
 // values:
 //     trust: wary, friendly, close
-//     met: flag
 // talk:
 //     Sam waves. 'Hello there.'
+//     ~ my_person.met = yes quietly
 //     -> my_person.talk
+// actions:                                               (the Actions button)
+//     title: What do you want to do?
+//     leave: Never mind
+//     * Shake hands -- Offer your hand
+//         Sam shakes it firmly.
 //
 // == menu my_person.talk
 // title: What do you want to talk about?
 // leave: Goodbye
-// * A topic -- A short description [if not my_person.met]
+// * A topic -- A short description [if my_person.trust is wary]
 //     'Nice to meet you,' Sam says.
-//     ~ my_person.met = yes
+//     ~ my_person.trust = friendly
 //
 // ---------------------------------------------------------------- quest
 // == quest my_quest
@@ -105,6 +119,13 @@
 // locked text: The gate is locked.
 // shown in room: A garden gate leads north.
 // (use it in both places' exits:  north: other_place, door my_door)
+//
+// A dangerous door explores a zone instead of leading to a place:
+// == door my_wilds
+// name: The wilds
+// leads to zone: my_zone
+// shown in room: A trail leads into the wilds.
+// (in the place's exits:  north: door my_wilds)
 //
 // ---------------------------------------------------------------- arrival / leaving event
 // == event my_arrival
@@ -228,4 +249,57 @@
 // found: You come across
 // failure: You find nothing.
 // only at: You can only scavenge at fast travel points.
+//
+// ---------------------------------------------------------------- shop
+// == shop my_shop
+// name: The general store
+// at: my_place
+// run by: my_person                   (must be there; optional)
+// open when: time is day              (optional)
+// currency: coins                     (a player value, or "item <id>")
+// intro: 'What can I get you?'
+// closed: The shutters are down.
+// stock:
+//     my_item: 3
+//     other_item: 5 [if my_person.trust is at least friendly]
+// buys:
+//     my_item: 1
+// trades: yes                         (items with "trades for" can be swapped)
+//
+// ---------------------------------------------------------------- ending
+// == ending my_ending
+// name: Home at last
+// type: leaving                       (one word: leaving, death, npc, infection ...)
+// priority: 100                       (lowest plays first in the epilogue)
+// when: ending my_ending is triggered (a scene ended the game with "~ ending my_ending")
+// play:
+//     You walk home, and life goes on.
+//     ~ player leaves                 (or "~ player dies": no later ending plays)
+//
+// ---------------------------------------------------------------- status bar
+// == status_bar my_bar
+// meters: hp, hunger, thirst
+// currency: coins
+//
+// ---------------------------------------------------------------- adding to another place
+// == extend location other_place
+// exits:
+//     east: my_place
+//
+// ---------------------------------------------------------------- travel event that replaces the trip
+// == event my_shortcut
+// name: A shortcut
+// found by: travelling to my_place
+// replaces trip: yes                  (the player stays unless the scene moves them)
+// play:
+//     You find a shortcut.
+//     ~ go to my_place
+//
+// ---------------------------------------------------------------- handy one-liners
+// ~ use my_item                       (use an item from a scene)
+// ~ my_event.resolution + 1           (every event has a counter)
+// if player has visited my_place:     (been there)
+// plural: yes                         (on an item named in the plural)
+// special: pounce 30%                 (on a creature: grapple, hump, pounce, firebreath)
+// loot: my_item 25%                   (on a creature: dropped after a win)
 

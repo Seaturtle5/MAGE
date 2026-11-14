@@ -3,8 +3,10 @@
 // `consumed: no` or the scene says "~ cancel use".
 
 // Food and drink restore hunger and thirst.
+// `plural: yes` for a name in the plural, so messages say "them".
 == item wild_berries
 name: wild berries
+plural: yes
 description: A handful of dark, sweet berries.
 weight: 1
 category: food
@@ -96,3 +98,21 @@ name: shed key
 description: A small iron key, rusty at the teeth.
 weight: 1
 category: other
+
+// Loot: the wild boar drops it sometimes (creatures/deep_woods.fsc).
+== item truffle
+name: truffle
+description: A knobbly black truffle that smells wonderful.
+weight: 1
+category: food
+use:
+    You nibble the truffle. It tastes of earth and autumn.
+    ~ eat 20
+
+// `trades for`: at a shop that trades, this can be swapped for that item.
+== item smooth_pebble
+name: smooth pebble
+description: A flat river pebble, polished smooth. Wren collects them.
+weight: 1
+category: collectible
+trades for: herbal_tea

@@ -1,0 +1,71 @@
+// Creatures of the deep woods (reached through the dangerous door north of
+// the clearing): built-in special attacks, loot, and a creature with its own
+// scripted fight that reads its state during the fight.
+
+// Creatures more than one level above the player are not met, so these two
+// are level 1 like the player's other foes.
+//
+// A built-in special: `pounce 30%` (double damage, no shield) with its own
+// text. Other built-ins are grapple, hump and firebreath. `loot` drops after a
+// win, with the chance given (feats' `loot bonus` and perception add to it).
+== creature wild_boar
+name: Wild Boar
+found in: deep_woods
+level: 1
+hp: 18
+damage: 4
+stats: strength 14, dexterity 9, stamina 14, perception 10, intelligence 4, charisma 6
+gender: male
+infectious: no
+tags: woodland
+special: pounce 30%
+loot: truffle 50%
+encounter:
+    A bristly boar shoulders out of the undergrowth, snuffling, and lowers its tusks at you.
+attack:
+    [one of]The boar shoves you with its snout![or]The boar slashes at your legs with a tusk![at random]
+pounce:
+    The boar charges, head down, and slams into you with its whole weight!
+defeated:
+    The boar squeals and crashes away through the ferns.
+victory:
+    The boar knocks you flat, roots through your pockets for anything edible and wanders off.
+
+// A creature with its own fight. Each round it first runs `each round`, then
+// the first of its `attacks:` whose condition holds (that is its whole turn);
+// otherwise it attacks normally (`attack` text and a hit roll).
+// During the fight, `enemy.hp` and the other `enemy.*` values are its state.
+== creature mossback_stag
+name: Mossback Stag
+found in: deep_woods
+level: 1
+hp: 20
+damage: 4
+stats: strength 15, dexterity 13, stamina 14, perception 14, intelligence 6, charisma 12
+gender: male
+infectious: no
+tags: woodland
+encounter:
+    An old stag steps between the trees, moss hanging from his antlers like a beard. He lowers his head.
+each round:
+    // Hurt badly, he gives up: "~ win fight" ends the fight as the player's win.
+    if enemy.hp < 7:
+        The stag snorts, tosses his antlers and bounds away between the trees.
+        ~ win fight
+attacks:
+    * Charge [if chance 1 in 3]
+        The stag lowers his antlers and charges.
+        // A visible roll; on a hit, a strike for one and a half times his damage.
+        if enemy hits:
+            ~ enemy strike 150%
+        else:
+            You throw yourself aside and the stag thunders past.
+    * Stamp [if enemy.round > 2 and chance 1 in 4]
+        The stag rears and stamps the ground. Leaves and needles shower down around you.
+        ~ enemy.dodge_bonus + 2
+attack:
+    [one of]The stag jabs at you with his antlers![or]The stag kicks out with a hoof![at random]
+defeated:
+    The stag is gone. A few strands of moss hang from the branches where he passed.
+victory:
+    The stag knocks you down, looks at you for a long moment, and walks away.
