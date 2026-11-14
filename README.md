@@ -68,11 +68,19 @@ The engine looks for packs in these places:
 - the player's own data folder (`user://packs`)
 - any folder given with `--packs`
 
-No packs come with the engine. A small test pack is in `tests/packs/test-core`.
+One small example game comes with the engine: `packs/example-adventure` (*The Quiet Woods*). It shows the content format at work in small, commented pieces: two starts, places with a locked door and fast travel, a character with a talk menu and a quest, items of every kind, creatures with variants and a transformation, exploration, arrival and scavenging events, a fight with branches, a captivity, a meter with conditions and a hook, content settings and an ending. Its [README](packs/example-adventure/README.md) maps each feature to its file, and `template.fsc` holds the common definitions with their fields, ready to copy. To start your own game, copy the folder, rename it and change the pack's ID in `pack.fsc`.
+
+Check your packs with the validator, which lists every problem with its file and line:
+
+```
+godot --headless --path . --script res://tests/validate_packs.gd
+```
+
+Add folders after `--` to check packs elsewhere. A small test pack for the engine's own tests is in `tests/packs/test-core`.
 
 ## Running it
 
-Open the folder in the Godot 4.7 editor and press Play, or start it from a terminal:
+Open the folder in the Godot 4.7 editor and press Play to play the example game, or start it from a terminal:
 
 ```
 godot --path . -- --packs /path/to/packs
@@ -113,7 +121,7 @@ The unit tests cover the parser, validator, conditions, effects, text, the scene
 | `engine/save/` | Save slots |
 | `ui/` | The interface: screens, map, theme, fonts and icons |
 | `tests/` | Unit tests, scenario tests and the test pack |
-| `packs/` | Empty; packs shipped with a build go here |
+| `packs/` | The example game; packs shipped with a build go here |
 
 The code in `engine/` does not use Godot's scene tree, so the rules can run headless and be tested on their own. The interface only draws what the engine reports and passes the player's input back.
 

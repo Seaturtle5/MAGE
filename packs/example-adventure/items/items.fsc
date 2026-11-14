@@ -1,0 +1,98 @@
+// Items. `category` decides the default icon; `icon:` picks another one.
+// `use:` is the scene when the item is used; it is used up unless
+// `consumed: no` or the scene says "~ cancel use".
+
+// Food and drink restore hunger and thirst.
+== item wild_berries
+name: wild berries
+description: A handful of dark, sweet berries.
+weight: 1
+category: food
+use:
+    You eat the berries. Your fingers come away purple.
+    ~ eat 15
+
+== item herbal_tea
+name: herbal tea
+description: A flask of tea that smells of mint.
+weight: 1
+category: drink
+icon: bottle
+use:
+    The tea is warm and calming.
+    ~ drink 20
+    ~ meter cold - 3
+    ~ condition warmed_up for 6 hours
+
+// Medical items heal. `in combat: yes` lets the player use it during a fight.
+== item bandage
+name: clean bandage
+description: A roll of clean linen.
+weight: 1
+category: medical
+in combat: yes
+use:
+    You wrap the worst of your scrapes.
+    ~ heal 10
+
+// Clothing: `equipment:` makes an item wearable. `slot` is where it goes (one
+// item per slot); `armor` protects; `worn text` joins the player's description.
+== item wool_coat
+name: wool coat
+description: A heavy coat that smells faintly of woodsmoke.
+weight: 3
+category: clothing
+equipment:
+    slot: chest
+    armor: 2
+    worn text: You wear a heavy wool coat.
+
+== item boots
+name: hiking boots
+description: Sturdy boots with good soles.
+weight: 2
+category: clothing
+equipment:
+    slot: feet
+    plural: yes
+    armor: 1
+    worn text: Sturdy hiking boots keep your feet dry.
+
+// Weapons: `weapon:` makes an item wieldable. Melee weapons add strength to
+// the damage, ranged ones perception.
+== item carving_knife
+name: carving knife
+description: A small, well-kept knife with a worn wooden handle.
+weight: 1
+category: weapon
+weapon:
+    damage: 4
+    type: melee
+    size: 3
+    attack text: [one of]the carving knife[or]the little blade[at random]
+
+== item slingshot
+name: slingshot
+description: A forked stick and a strip of rubber. Surprisingly accurate.
+weight: 1
+category: weapon
+weapon:
+    damage: 3
+    type: ranged
+    attack text: [one of]a pebble from your slingshot[or]a well-aimed stone[at random]
+
+// A usable item that is not used up: it only gives a bit of luck.
+== item lucky_acorn
+name: lucky acorn
+description: A perfectly round acorn, polished smooth by many thumbs.
+weight: 1
+category: collectible
+consumed: no
+use:
+    You rub the acorn for luck. [one of]You feel a little braver.[or]Nothing happens, but it's nice to hold.[at random]
+
+== item shed_key
+name: shed key
+description: A small iron key, rusty at the teeth.
+weight: 1
+category: other

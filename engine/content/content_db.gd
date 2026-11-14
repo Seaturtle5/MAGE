@@ -13,7 +13,8 @@ const SCHEMA := {
 		"collapse at": "text", "collapse fatigue": "text", "collapse turns": "text",
 		"statuses": "fields", "warnings": "fields", "refreshed": "script", "collapse": "script", "wake": "script", "source": "meta"},
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
-		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text"},
+		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
+		"menu icons": "list"},
 	"survival_rules": {"hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
@@ -21,7 +22,7 @@ const SCHEMA := {
 		"rescue anticipation": "text", "source": "meta"},
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
-		"scavenge bonus": "text", "body text": "text", "source": "meta"},
+		"scavenge bonus": "text", "loot bonus": "text", "body text": "text", "source": "meta"},
 	"scavenge_rules": {"generic": "text", "generic chance": "text", "target": "text", "start": "text", "found": "text",
 		"failure": "text", "only at": "text", "source": "meta"},
 	"creature": {"name": "text", "species": "text", "image": "text", "found in": "list", "active": "text",
@@ -29,16 +30,19 @@ const SCHEMA := {
 		"gender": "text", "special": "text", "seduction immune": "text", "tags": "list", "source": "meta",
 		"title": "text", "personal name": "text", "unique": "text", "group": "text", "infectious": "text",
 		"cross infection": "text", "research bypass": "text", "magic": "text", "loot": "text",
-		"hit bonus": "text", "dodge bonus": "text",
-		"encounter": "script", "attack": "script", "grapple": "script", "escape": "script", "struggle": "script", "defeated": "script", "victory": "script"},
+		"hit bonus": "text", "dodge bonus": "text", "variants": "fields", "pick variant": "text",
+		"encounter": "script", "attack": "script", "grapple": "script", "escape": "script", "struggle": "script", "defeated": "script", "victory": "script",
+		"strike with": "text", "attacks": "menu", "each round": "script", "before attack": "script", "after attack": "script",
+		"miss": "script", "hump": "script", "pounce": "script", "breath warning": "script", "breath direct": "script",
+		"breath partial": "script", "breath miss": "script"},
 	"form": {"name": "text", "sex": "text", "scale": "text", "body type": "text", "descriptor": "text",
 		"stats": "text", "libido": "text", "tags": "list", "source": "meta", "head": "fields", "torso": "fields",
-		"milk item": "text", "cum item": "text", "each turn": "script", "sex by preference": "text",
+		"milk item": "text", "cum item": "text", "each turn": "script", "sex by preference": "text", "heat": "text", "offspring gender": "text",
 		"back": "fields", "arms": "fields", "legs": "fields", "ass": "fields", "tail": "fields", "cock": "fields",
 		"cunt": "fields", "skin": "fields", "breasts": "fields", "balls": "fields"},
 	"character": {"name": "text", "pronouns": "text", "image": "text", "scent": "script", "description": "script",
 		"lives at": "text", "presence": "script", "body": "fields", "stats": "fields", "relationship": "fields",
-		"values": "values", "talk": "script", "sex": "script", "actions": "menu", "companion": "fields", "tags": "list", "source": "meta"},
+		"values": "values", "talk": "script", "sex": "script", "impregnation": "script", "actions": "menu", "companion": "fields", "tags": "list", "source": "meta"},
 	"menu": {"title": "text", "leave": "text", "leave text": "script", "pause after each": "text", "sort": "text",
 		"intro": "script", "source": "meta"},
 	"scene": {"source": "meta", "tags": "list"},
@@ -46,7 +50,7 @@ const SCHEMA := {
 	"quest": {"name": "text", "region": "text", "stages": "stages", "done at": "text", "source": "meta"},
 	"event": {"name": "text", "found by": "text", "repeat": "text", "outcomes": "list", "values": "values", "tags": "list",
 		"source": "meta", "play": "script", "level": "text", "min score": "text", "requires": "text", "chance": "text",
-		"priority": "text", "cooldown": "text", "active": "text", "blocks": "text"},
+		"priority": "text", "cooldown": "text", "active": "text", "blocks": "text", "replaces trip": "text"},
 	"location": {"name": "text", "region": "text", "zone": "text", "map": "text", "flags": "list", "image": "text",
 		"items": "list", "source": "meta", "exits": "fields", "description": "script", "scent": "script", "observe": "menu",
 		"actions": "menu", "rest": "text", "rest text": "text", "microwave": "text", "instead of": "fields", "presence": "script", "enter": "script"},
@@ -54,7 +58,7 @@ const SCHEMA := {
 		"leads to zone": "text", "source": "meta"},
 	"region": {"name": "text", "travel order": "text", "map grid": "text", "image": "text", "source": "meta"},
 	"zone": {"name": "text", "ambient": "script", "source": "meta"},
-	"item": {"name": "text", "description": "script", "image": "text", "scent": "script", "weight": "text", "category": "text",
+	"item": {"name": "text", "icon": "text", "plural": "text", "description": "script", "image": "text", "scent": "script", "weight": "text", "category": "text",
 		"use": "script", "consumed": "text", "trades for": "text", "purified": "text", "infectious": "text", "aliases": "list",
 		"rest": "text", "carried rest text": "text", "ground rest text": "text", "keep": "text", "use action": "text",
 		"in combat": "text", "purify refusal": "text",
@@ -67,21 +71,51 @@ const SCHEMA := {
 		"enters": "script", "still": "script", "each update": "script",
 		"blocks rest": "text", "rest refusal": "script",
 		"source": "meta"},
+	## Heat: one strain's cycle (Needy Heat), and the one active policy.
+	"heat": {"name": "text", "cycle": "text", "duration": "text", "female": "text", "mpreg": "text",
+		"description": "text", "trigger": "script", "mpreg trigger": "script", "start": "script",
+		"each turn": "script", "end": "script", "source": "meta"},
+	## Pregnancy (PregnancySystem): who can carry, odds, gestation, litters, children.
+	"pregnancy_rules": {"female when": "text", "male when": "text", "blocked when": "text", "odds": "text",
+		"self odds": "text", "odds modifiers": "fields", "ask when": "text", "fathers": "fields", "gestation": "text",
+		"quickens": "fields", "extra children": "text", "extra child bonus": "fields", "most children": "text",
+		"single child when": "text", "child like father when": "text", "child like mother when": "text",
+		"child like mother at birth when": "text", "feral when": "text", "child genders": "fields",
+		"personalities": "list", "albino": "text", "melanism": "text", "sire when": "text", "sire odds": "text",
+		"sire odds modifiers": "fields", "sire anal tag": "text", "sire turns": "text",
+		"ask": "script", "conceived": "script", "each turn": "script", "birth": "script", "child": "script",
+		"after birth": "script", "sired": "script", "sired birth": "script", "source": "meta"},
+	"heat_rules": {"default": "text", "female when": "text", "mpreg when": "text", "off when": "text",
+		"intense when": "text", "intense lengthens": "text", "intense quickens": "text",
+		"vulnerable": "script", "not vulnerable": "script", "switches": "script", "ends": "script", "source": "meta"},
+	## Captivity: rounds of Struggle / Oblige / Endure while the player is held (bound states).
+	"captivity": {"name": "text", "escape at": "text", "climax at": "text", "obliging when": "text",
+		"pause after each": "text", "status": "text", "struggle label": "text", "oblige label": "text",
+		"abide label": "text", "endure label": "text", "recover label": "text", "start": "script",
+		"each round": "script", "climax": "script", "situation": "script", "struggle": "script",
+		"escape": "script", "oblige": "script", "abide": "script", "endure": "script", "recover": "script",
+		"lost": "script", "actions": "menu", "source": "meta"},
 	## A hook: content that runs at a moment of play instead of an every-turn rule.
 	"hook": {"on": "text", "when": "text", "while incapacitated": "text", "do": "script", "source": "meta"},
 	"image": {"artist": "text", "link": "text", "tags": "list", "description": "text", "source": "meta"},
-	"filter": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
+	"filter": {"name": "text", "group": "text", "description": "text", "genders": "list", "from": "text", "source": "meta"},
 	"level": {"name": "text", "description": "text", "default": "text", "options": "fields", "from": "text", "source": "meta"},
 	"tag": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
+	"ending": {"name": "text", "type": "text", "priority": "text", "when": "text", "play": "script", "source": "meta"},
+	"status_bar": {"meters": "list", "currency": "text", "source": "meta"},
+	"shop": {"name": "text", "at": "list", "run by": "text", "open when": "text", "closed": "script", "intro": "script",
+		"currency": "text", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
+		"trade bonus when": "text", "trade bonus chance": "text", "source": "meta"},
 }
 ## Types the format defines but the engine does not run yet. They load with a warning.
-const PENDING_TYPES := ["shop", "ending", "epilogue"]
+const PENDING_TYPES := ["epilogue"]
 ## When several types share an ID (a creature and its form, an item and its
 ## condition, a location and its image), lookups by ID alone return the type
 ## that comes first here.
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
-	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag"]
+	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
+	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
@@ -92,6 +126,7 @@ var values: Dictionary = {}  ## "owner.name" -> {"kind", "states", "default", "l
 var quests: Dictionary = {}  ## id -> {"stages": [names], "journal": {name: text}}
 var menus: Dictionary = {}  ## menu id -> {"def", "options": [option nodes], "settings": {}}
 var extra_scripts: Dictionary = {}  ## "type:id#field" -> [node lists added by extend]
+var line_paths: Dictionary = {}  ## Line -> path, for lines another file added by extend (exits)
 ## Content levels: id -> {"options": [ids], "text": {option: description},
 ## "bans": {option: [filters]}, "allows": {option: [filters]}, "default", "lines": {option: line}}
 var levels: Dictionary = {}
@@ -188,6 +223,7 @@ func branding() -> Dictionary:
 			out = {"pack": p.id, "path": p.path}
 			for key in ["title", "subtitle", "logo", "background", "about"]:
 				out[key] = d.fields[key].value if d.fields.has(key) else ""
+			out["menu icons"] = _list(d, "menu icons")  # pictures shown beside a hovered menu entry
 	return out
 
 
@@ -282,8 +318,17 @@ func _index(d: FscParser.Definition, r: FscParser.Result) -> void:
 		"event":
 			var outs: Array = ["none"] + _list(d, "outcomes")
 			values["%s.outcome" % d.id] = {"kind": "states", "states": outs, "default": "none", "path": d.path, "line": d.line}
+			# A counter per event (the original's Resolution of X used as a number).
+			values["%s.resolution" % d.id] = {"kind": "number", "default": 0, "path": d.path, "line": d.line}
 	if d.fields.has("values"):
 		_index_values(d, d.fields["values"], r)
+	if d.type == "character":
+		# body:, stats: and relationship: become the character's values (CharacterSystem).
+		var decls := CharacterSystem.declarations(d)
+		for name in decls:
+			var path := "%s.%s" % [d.id, name]
+			if not values.has(path):
+				values[path] = decls[name]
 	# Inline menus in fields (observe:, actions:) become menus "<id>.<field>".
 	var schema: Dictionary = SCHEMA.get(d.type, {})
 	for name in d.field_order:
@@ -460,6 +505,27 @@ func _finish() -> void:
 					target.field_order.append(name)
 				else:
 					tf.value = tf.value + ", " + f.value
+			elif kind == "fields" and d.type == "location" and name == "exits":
+				# More ways out of another pack's place ("== extend location bunker" with "exits:").
+				var tf: FscParser.Field = target.fields.get(name, null)
+				if tf == null:
+					target.fields[name] = f
+					target.field_order.append(name)
+					tf = f
+				else:
+					var taken: Array = []
+					for l: FscParser.Line in tf.children:
+						if not l.is_blank():
+							taken.append(l.text.split(":", true, 1)[0].strip_edges())
+					for l: FscParser.Line in f.children:
+						if l.is_blank():
+							continue
+						if l.text.split(":", true, 1)[0].strip_edges() in taken:
+							error(d.path, l.number, "%s already has an exit %s." % [d.id, l.text.split(":", true, 1)[0].strip_edges()])
+							continue
+						tf.children.append(l)
+				for l: FscParser.Line in f.children:
+					line_paths[l] = d.path
 			else:
 				error(d.path, f.line, "Field '%s' cannot be extended; use '== replace %s %s' to change it." % [name, d.type, d.id])
 		for o in d.options:
@@ -495,21 +561,62 @@ func credits() -> Dictionary:
 ## "form" is "zones" for the forms the engine runs, "nowhere", "pending" for
 ## documented forms not run yet, or "unknown".
 static func found_by(text: String) -> Dictionary:
-	var out := {"exploring": false, "scavenging": false, "zones": [], "form": "unknown"}
-	var t := text.strip_edges()
-	for prefix in ["exploring or scavenging in ", "scavenging in ", "exploring in "]:
-		if t.begins_with(prefix):
-			out.exploring = prefix.begins_with("exploring")
-			out.scavenging = "scavenging" in prefix
-			for z in t.substr(prefix.length()).split(","):
-				if z.strip_edges() != "":
-					out.zones.append(z.strip_edges())
-			out.form = "zones"
-			return out
-	if t in ["", "nowhere"]:
-		out.form = "nowhere"
-	elif t == "hunting" or t.begins_with("arriving at ") or t.begins_with("leaving ") or t.begins_with("travelling to "):
-		out.form = "pending"
+	# Parts are separated by ";": "exploring in outside; walking into grey_abbey_library".
+	var out := {"exploring": false, "scavenging": false, "zones": [], "form": "unknown", "walking": [], "travelling": [],
+		"leaving": []}
+	var forms: Array = []
+	for part in text.split(";"):
+		var t := part.strip_edges()
+		var done := false
+		for prefix in ["exploring or scavenging in ", "scavenging in ", "exploring in "]:
+			if t.begins_with(prefix):
+				out.exploring = out.exploring or prefix.begins_with("exploring")
+				out.scavenging = out.scavenging or "scavenging" in prefix
+				for z in t.substr(prefix.length()).split(","):
+					if z.strip_edges() != "":
+						out.zones.append(z.strip_edges())
+				forms.append("zones")
+				done = true
+				break
+		if done:
+			continue
+		# Arrival: walking in (the original's walk-in events), fast travel (nav-in) or either.
+		for prefix in ["walking into ", "travelling to ", "arriving at "]:
+			if t.begins_with(prefix):
+				for p in t.substr(prefix.length()).split(","):
+					var place := p.strip_edges()
+					if place == "":
+						continue
+					if prefix != "travelling to ":
+						out.walking.append(place)
+					if prefix != "walking into ":
+						out.travelling.append(place)
+				forms.append("arrival")
+				done = true
+				break
+		if done:
+			continue
+		# "leaving <place> <direction>": a scene instead of walking out that way.
+		if t.begins_with("leaving "):
+			var ok := true
+			for p in t.substr(8).split(","):
+				var w := p.strip_edges().split(" ", false)
+				if w.size() == 2:
+					out.leaving.append([w[0], w[1]])
+				else:
+					ok = false
+			forms.append("leaving" if ok else "unknown")
+			continue
+		if t in ["", "nowhere"]:
+			forms.append("nowhere")
+		elif t == "hunting":
+			forms.append("pending")
+		else:
+			forms.append("unknown")
+	for f in ["unknown", "pending", "zones", "arrival", "leaving", "nowhere"]:
+		if f in forms:
+			out.form = f
+			break
 	return out
 
 

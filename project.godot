@@ -1,15 +1,21 @@
 ; Engine configuration file.
-; Edited by hand and by the Godot editor.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
 [application]
 
 config/name="MAGE"
-config/icon="res://icon.png"
 config/description="Modular Adventure Game Engine: an offline engine for text-driven adventure games built from content packs."
-config/features=PackedStringArray("4.7")
+config/version="B.0.1"
 run/main_scene="res://ui/main.tscn"
+config/features=PackedStringArray("4.7")
+config/icon="res://icon.png"
 
 [display]
 

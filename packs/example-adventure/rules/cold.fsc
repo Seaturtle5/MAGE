@@ -1,0 +1,58 @@
+// A meter, conditions, a hook and an ending working together: the night chill.
+//
+// The meter keeps a number (player.cold) that drops by itself each turn and has
+// stages; each stage is a condition with effects that last while it is active.
+
+== meter cold
+name: Cold
+value: player.cold
+// One point wears off every turn.
+decay: 1
+limit: 10
+stages:
+    3: chilled
+    6: shivering
+// At the limit the game ends. "~ ending <id>" ends any game. Days are warm
+// enough that a single night outdoors never gets this far; it shows the field.
+at limit:
+    The cold settles into your bones, and you curl up under the pines for good.
+    ~ ending frozen_in_the_woods
+
+== condition chilled
+name: Chilled
+shows: Dex -1.
+while active:
+    player.dexterity - 1
+enters:
+    **You're getting cold.** A warm drink or a coat would help.
+still:
+    You're still chilled.
+
+== condition shivering
+name: Shivering
+shows: Dex -2, Str -1.
+while active:
+    player.dexterity - 2
+    player.strength - 1
+enters:
+    **You're shivering hard.** Get indoors before the night gets worse.
+still:
+    You can't stop shivering.
+
+// A condition with a duration, given by an item: "~ condition warmed_up for 6 hours".
+== condition warmed_up
+name: Warmed up
+shows: The tea keeps you warm.
+while active:
+    player.stamina + 1
+ends:
+    The warmth of the tea fades.
+
+// A hook runs at a moment in time; "each turn" is every three-hour turn.
+// `when:` is checked each time. Here: outdoors at night, the cold creeps in,
+// unless the player wears the wool coat or is warmed up.
+== hook night_chill
+on: each turn
+when: time is night and not player is in cabin and not player wears wool_coat and not player has condition warmed_up
+do:
+    ~ meter cold + 2

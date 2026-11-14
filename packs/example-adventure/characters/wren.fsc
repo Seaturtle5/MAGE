@@ -1,0 +1,84 @@
+// A character: values that track the relationship, a talk menu whose options
+// depend on those values, a quest with several stages, and a scene scheduled to
+// play a few actions later.
+
+== character wren
+name: Wren
+pronouns: she
+lives at: clearing
+description:
+    A small, weathered woman in a patched green coat, whittling something that might become a bird.
+// Values belong to the character and are saved with the game.
+// A list of states is in order, so "wren.trust is at least friendly" works.
+values:
+    trust: wary, friendly, trusted
+    heard_story: flag
+    visits: number
+talk:
+    ~ wren.visits + 1 quietly
+    [if wren.trust is wary]Wren looks up. 'Oh. A visitor.'[else if wren.trust is friendly]Wren smiles. 'Back again?'[else]Wren pats the stone beside her. 'Sit, sit.'[end if]
+    -> wren.talk
+
+// The quest: its stages in order, each with its journal line. The first stage
+// is the start. The journal shows it once it passes its first stage.
+// A line in the clearing's description while Wren is there. It is added to the
+// location from this file with `extend`, so everything about Wren stays here.
+== extend location clearing
+presence:
+    [if wren is here]Wren sits by the lean-to, whittling.[end if]
+
+== quest lost_knife
+name: Wren's knife
+region: woods
+stages:
+    not_started
+    asked: Wren lost her carving knife somewhere in the forest.
+    returned: You gave Wren her knife back.
+    shared_supper: Wren shared her supper with you. You have a friend in the woods.
+done at: shared_supper
+
+// The talk menu. Options: "* Label -- description [if condition]".
+// The menu shows again after each option, until the player leaves; an option
+// with [then leave] closes it.
+== menu wren.talk
+title: What do you want to talk about?
+leave: Say goodbye
+pause after each: yes
+leave text: Wren goes back to her whittling.
+
+* The woods -- Ask about the forest
+    -> wren.about_woods
+* Anything you need? -- Offer to help [if quest lost_knife is not_started]
+    'I dropped my carving knife somewhere in the forest. Can't find it anywhere.'
+    ~ quest lost_knife = asked
+* Return the knife -- Hand over the carving knife [if quest lost_knife is asked and player has carving_knife]
+    ~ take carving_knife
+    ~ quest lost_knife = returned
+    ~ wren.trust = friendly
+    'My knife!' Wren turns it over in her hands. 'Here, take this for your trouble.'
+    ~ give herbal_tea
+    // A scene that plays after three more actions, wherever the player is.
+    ~ schedule wren.invitation after 3 actions
+* Supper -- Join Wren for supper [if quest lost_knife is returned and time is night] [then leave]
+    -> wren.supper
+* The shed key -- Ask about the padlocked shed [if wren.trust is at least friendly and not player has shed_key]
+    'That old shed? The key's under the third stone.' She digs it out and hands it over.
+    ~ give shed_key
+
+== scene wren.about_woods
+if not wren.heard_story:
+    'The foxes here are odd,' Wren says. 'Lose a scuffle with one and you might grow a tail.'
+    ~ wren.heard_story = yes quietly
+else:
+    Wren shrugs. '[one of]Stay on the path.[or]The foxes like the clearing at dusk.[or]Mind the brambles by the river.[at random]'
+
+== scene wren.invitation
+A paper bird flutters down beside you, folded from birch bark. Inside, in careful letters: *Supper at the clearing, after dark. W.*
+
+== scene wren.supper
+Wren stirs a pot of mushroom stew over a small fire. You eat in comfortable silence while the stars come out.
+---
+'Not bad company,' she says at last. 'For a visitor.'
+~ eat 30
+~ quest lost_knife = shared_supper
+~ wren.trust = trusted

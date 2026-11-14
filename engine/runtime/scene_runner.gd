@@ -28,8 +28,16 @@ func start(target: String, extra: Dictionary = {}) -> void:
 	run()
 
 
+## Programs started while the runner waits on the player (a choice, a page
+## break, a fight): they play when the current scene ends.
+var _deferred: Array = []
+
+
 ## Runs a program right away (for effects that trigger scenes during a turn).
 func play_now(pid: String) -> void:
+	if status in ["choice", "continue", "combat"]:
+		_deferred.append(pid)  # not on top of the frame that waits for the player
+		return
 	_push(pid, {})
 	if status == "idle":
 		# Content run between actions (hooks, meters): if it says nothing, the player's
@@ -62,6 +70,9 @@ func _push(target: String, extra: Dictionary) -> void:
 	if game.content.menus.has(target):
 		frames.append({"kind": "menu", "id": target, "then_leave": false, "fresh": true})
 		return
+	if game.content.has(target, "captivity") and not game.content.has(target, "scene"):
+		frames.append({"kind": "captivity", "id": target, "step": "start"})
+		return
 	var prog: Program = game.content.program(target)
 	if prog == null:
 		game.warn("Nothing to play: '%s'" % target)
@@ -72,11 +83,71 @@ func _push(target: String, extra: Dictionary) -> void:
 	frames.append(f)
 
 
+func _push_if(pid: String) -> void:
+	if game.content.program(pid) != null:
+		frames.append({"kind": "script", "pid": pid, "pc": 0})
+
+
+## A shop's steps: its title and intro, then its menu until the player leaves.
+func _shop_step(f: Dictionary) -> bool:
+	if f.step == "start":
+		f.step = "menu"
+		emit_title(ShopSystem.field(game, f.id, "name", f.id))
+		_push_if("shop:%s#intro" % f.id)
+		return false
+	var opts := ShopSystem.options(game, f.id)
+	var cur := ShopSystem.currency(game, f.id)
+	game.emit({"type": "paragraph", "spans": [{"text": "You have %d %s." % [ShopSystem.money(game, cur), cur.label],
+		"bold": false, "italic": true, "class": ""}]})
+	pending = opts.map(func(o): return o)
+	game.emit({"type": "choices", "options": opts.map(func(o): return {"text": o.text, "description": "", "enabled": o.enabled})})
+	status = "choice"
+	return true
+
+
+## `~ use X` in a scene (the original's "process X"): the item's use text plays
+## now, one is used up if it is carried and used up by use, and an infectious
+## item infects after its text, as using it from the inventory would.
+func use_item_now(id: String) -> void:
+	var db: ContentDB = game.content
+	if not db.has(id, "item"):
+		return
+	if db.typed_value("item", id, "consumed", "yes") != "no" and int(game.state.inventory.get(id, 0)) > 0:
+		game.apply({"op": "take", "item": id, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
+	var strain := str(game.state.values.get("item.%s.infectious" % id, db.typed_value("item", id, "infectious")))
+	if strain != "" and strain != "nothing":
+		frames.append({"kind": "item_infect", "form": strain})
+	_push_if(id + "#use")
+	if status == "idle" and not frames.is_empty():
+		run()
+
+
+## A birth: its steps run as a frame (see PregnancySystem.birth).
+func start_birth(litter: int) -> void:
+	frames.append({"kind": "birth", "step": "birth", "n": 0, "litter": litter})
+	if status == "idle":
+		var before: int = game.output.size()
+		run()
+		if status == "idle" and game.output.slice(before).all(func(e): return e.type in ["scene_end", "location"]):
+			game.output.resize(before)
+
+
 ## Plays a creature's encounter field as a scene, if it has one.
 func _push_encounter(creature: String) -> void:
 	game.fight_cancelled = false  # only the encounter that is about to play can call off its fight
 	if game.content.program(creature + "#encounter") != null:
 		frames.append({"kind": "script", "pid": creature + "#encounter", "pc": 0})
+
+
+## The creature whose meeting is under way (its encounter scene or fight), or "".
+func meeting() -> String:
+	for i in range(frames.size() - 1, -1, -1):
+		var f: Dictionary = frames[i]
+		if f.kind == "encounter":
+			return str(f.creature)
+		if f.has("encountering"):
+			return str(f.encountering.creature)
+	return ""
 
 
 func current_event() -> String:
@@ -88,6 +159,42 @@ func current_event() -> String:
 
 # --- Running ----------------------------------------------------------------
 
+## The game has ended: whatever was playing stops and the epilogue plays
+## (EndingSystem). Called by Game.end_game, also from inside a running scene.
+func begin_epilogue() -> void:
+	frames.clear()
+	pending = []
+	_deferred.clear()
+	frames.append({"kind": "epilogue", "step": "start", "pc": 0})
+	if status != "running":
+		run()
+
+
+func _epilogue_step(f: Dictionary) -> bool:
+	match f.step:
+		"start":
+			f.step = "endings"
+			f["list"] = EndingSystem.ordered(game)
+			f["i"] = 0
+			emit_title("The end")
+		"endings":
+			if f.i >= f.list.size() or EndingSystem.stopped(game):
+				f.step = "done"
+				return true
+			var id: String = f.list[f.i]
+			f.i += 1
+			if EndingSystem.applies(game, id):
+				EndingSystem.trigger(game, id)
+				if game.content.program("%s#play" % id, "ending") != null:
+					frames.append({"kind": "script", "pid": "%s#play" % id, "pc": 0})
+		"done":
+			frames.pop_back()
+			status = "ended"
+			game.emit({"type": "game_over"})
+			return false
+	return true
+
+
 func run() -> void:
 	status = "running"
 	var guard := 0
@@ -97,8 +204,28 @@ func run() -> void:
 			game.warn("Scene runner stopped: too many steps (a loop in content?)")
 			break
 		var f: Dictionary = frames[-1]
+		if f.kind == "epilogue":
+			if not _epilogue_step(f):
+				return
+			continue
+		if f.kind == "move_on":
+			# After a leaving event: the move happens only if the event said "~ continue moving".
+			frames.pop_back()
+			if game.continue_moving:
+				game.continue_moving = false
+				_walk(f.dir)
+			continue
+		if f.kind == "arrival":
+			# After arriving (and the place's own enter scene): an arrival event, if one comes up.
+			frames.pop_back()
+			var ev := arrival_event(f.mode)
+			if ev != "":
+				_queue_event(ev)
+			continue
 		if f.kind in ["travel", "discover"]:
 			frames.pop_back()
+			if f.kind == "travel":
+				frames.append({"kind": "arrival", "mode": "travel"})
 			if f.kind == "discover":
 				game.notice("Following movement, you end up at %s." % game.content.typed_value("location", f.place, "name", f.place), false)
 			game.go_to(f.place)
@@ -124,9 +251,9 @@ func run() -> void:
 			# the fight; 1 is after the fight.
 			if f.pc == 0:
 				f.pc = 2
+				VariantSystem.pick(game, f.creature, f.get("hunted", false))
 				if f.get("title", false):
-					emit_title("Encounter: " + game.content.typed_value("creature", f.creature, "name", f.creature), "",
-						game.content.typed_value("creature", f.creature, "image"))
+					_encounter_title(f.creature)
 				_push_encounter(f.creature)
 				continue
 			if f.pc == 2:
@@ -168,6 +295,32 @@ func run() -> void:
 			if _menu_step(f):
 				return
 			continue
+		if f.kind == "captivity":
+			if _captivity_step(f):
+				return
+			continue
+		if f.kind == "shop":
+			if _shop_step(f):
+				return
+			continue
+		if f.kind == "birth":
+			# A birth (PregnancySystem): `birth`, then each child's script, then `after birth`.
+			var rid := PregnancySystem.rules(game)
+			if f.step == "birth":
+				f.step = "child"
+				_push_if("pregnancy_rules:%s#birth" % rid)
+			elif f.step == "child" and int(f.n) < int(f.litter):
+				f.n = int(f.n) + 1
+				PregnancySystem.make_child(game, int(f.n))
+				_push_if("pregnancy_rules:%s#child" % rid)
+			elif f.step == "child":
+				f.step = "done"
+				PregnancySystem.after_children(game)
+				_push_if("pregnancy_rules:%s#after birth" % rid)
+			else:
+				frames.pop_back()
+				PregnancySystem.finish_birth(game)
+			continue
 		var prog: Program = game.content.program(f.pid)
 		if prog == null or f.pc >= prog.code.size():
 			_pop()
@@ -198,7 +351,15 @@ func run() -> void:
 			"goto":
 				_goto(ins.target)
 			"play":
-				_push(ins.target, {})
+				var target: String = ins.target
+				if target.begins_with("@picked#"):
+					# "play picked creature victory": that field of the creature a scene picked.
+					var picked := str(game.state.values.get("picked.creature", ""))
+					if picked == "" or game.content.program(picked + target.substr(7)) == null:
+						continue
+					target = picked + target.substr(7)
+				for _i in (Effect.resolve_amount(ins.times, game) if ins.has("times") else 1):
+					_push(target, {})
 			"fight":
 				if f.has("encountering"):
 					# Second pass, after the creature's encounter scene: start the fight.
@@ -217,15 +378,18 @@ func run() -> void:
 					return
 				if ins.creature == "random":
 					# The original's plain Fight: a random creature of this zone.
-					var zone: String = game.content.typed_value("location", game.state.location, "zone")
+					var zone: String = game.zone_here()
 					var pool := encounter_pool("outside" if zone in ["", "none"] else zone)
 					if pool.is_empty():
 						f.pc = ins.after
 						continue
 					ins = ins.duplicate()
 					ins.creature = pool[game.rng.range_int(0, pool.size() - 1)]
-					emit_title("Encounter: " + game.content.typed_value("creature", ins.creature, "name", ins.creature), "",
-						game.content.typed_value("creature", ins.creature, "image"))
+					VariantSystem.pick(game, ins.creature)
+					_encounter_title(ins.creature)
+				else:
+					# `fight goblin (female):` meets that variant; otherwise one is picked.
+					VariantSystem.pick(game, ins.creature, false, ins.variant)
 				# The creature's encounter plays first, then this instruction runs again.
 				f["encountering"] = ins
 				f.pc -= 1
@@ -233,6 +397,15 @@ func run() -> void:
 				continue
 			"return":
 				_pop()
+	if game.state.ending != "":
+		status = "ended"  # the epilogue has played; nothing more happens
+		return
+	if not _deferred.is_empty():
+		for pid in _deferred:
+			_push(pid, {})
+		_deferred.clear()
+		run()
+		return
 	if _queue_scheduled_scenes():
 		run()
 		return
@@ -321,6 +494,135 @@ func _menu_step(m: Dictionary) -> bool:
 	return true
 
 
+## One step of a captivity (CaptivitySystem). Each round: the climax when lust
+## is full, `each round`, the loss at humanity 0, else `situation` and the
+## menu. Scripts run as frames above this one; it resumes at the next step.
+## Returns true when the player must act (a choice or a page break).
+func _captivity_step(f: Dictionary) -> bool:
+	var id: String = f.id
+	var v: Dictionary = game.state.values
+	if game.captivity_exit != "" and f.step not in ["start", "pause"]:
+		_end_captivity(game.captivity_exit == "escape")
+		return false
+	match f.step:
+		"start":
+			CaptivitySystem.begin(game, id)
+			var title := CaptivitySystem.field(game, id, "name")
+			if title != "":
+				emit_title(title)
+			f.step = "round"
+			_push_field(id, "start")
+			game.run_hooks("captivity starts")
+		"round":
+			v["captivity.round"] = CaptivitySystem.number(game, "round") + 1
+			# Once obliging, the player stays so for the rest of this captivity, as in the original.
+			var cond := Condition.compile(CaptivitySystem.field(game, id, "obliging when", CaptivitySystem.DEFAULT_OBLIGING))
+			if not cond.has("error") and Condition.evaluate(cond, game):
+				v["captivity.obliging"] = true
+			CaptivitySystem.roll_recover(game)
+			f.step = "each"
+			if game.content.program("captivity:%s#climax" % id) != null \
+					and CaptivitySystem.number(game, "lust") >= int(CaptivitySystem.field(game, id, "climax at", "100")):
+				f.step = "climaxed"
+				_push_field(id, "climax")
+		"climaxed":
+			v["captivity.lust"] = int(game.value("player.libido"))  # lust starts over from libido
+			f.step = "each"
+		"each":
+			f.step = "check"
+			_push_field(id, "each round")
+			game.run_hooks("captivity round")
+		"check":
+			if int(game.value("player.humanity")) < 1:
+				f.step = "done"
+				_push_field(id, "lost")
+			else:
+				f.step = "menu"
+				_push_field(id, "situation")
+		"menu":
+			v["captivity.enduring"] = false
+			game.emit({"type": "paragraph", "spans": [{"text": CaptivitySystem.status_line(game, id)}]})
+			var shown: Array = []
+			pending = []
+			for c in CaptivitySystem.choices(game, id):
+				shown.append({"text": c.text, "description": "", "enabled": true})
+				pending.append({"captivity": c.action, "enabled": true})
+			var menu_id := id + ".actions"
+			if game.content.menus.has(menu_id):
+				var options: Array = game.content.menus[menu_id].options
+				for i in options.size():
+					var o: Dictionary = options[i]
+					var c := Condition.compile(o.condition) if o.condition != "" else {}
+					if c.is_empty() or (not c.has("error") and Condition.evaluate(c, game)):
+						shown.append({"text": o.label, "description": o.description, "enabled": true})
+						pending.append({"captivity": "action", "index": i, "enabled": true})
+			game.emit({"type": "choices", "title": CaptivitySystem.field(game, id, "name"), "options": shown})
+			status = "choice"
+			return true
+		"pause":
+			f.step = "round"
+			if game.captivity_exit != "":
+				return false
+			game.emit({"type": "page_break"})
+			status = "continue"
+			return true
+		"escaped":
+			_end_captivity(true)
+		"done":
+			_end_captivity(false)
+	return false
+
+
+## A captivity choice: struggle, oblige (or abide), endure (or recover), or one of its actions.
+func _captivity_choice(f: Dictionary, p: Dictionary) -> void:
+	var id: String = f.id
+	var v: Dictionary = game.state.values
+	f.step = "pause" if CaptivitySystem.field(game, id, "pause after each", "yes") != "no" else "round"
+	match p.captivity:
+		"struggle":
+			# With `escape at`, the engine counts struggles and frees the player at that many;
+			# without it, the struggle script decides (with ~ escape captivity).
+			if CaptivitySystem.field(game, id, "escape at") == "":
+				_push_field(id, "struggle")
+				return
+			v["captivity.struggle"] = CaptivitySystem.number(game, "struggle") + 1
+			if CaptivitySystem.number(game, "struggle") >= CaptivitySystem.escape_at(game, id):
+				f.step = "escaped"
+				_push_field(id, "escape")
+			else:
+				_push_field(id, "struggle")
+		"oblige":
+			var obliging := CaptivitySystem.flag(game, "obliging")
+			if obliging or game.content.program("captivity:%s#abide" % id) == null:
+				_push_field(id, "oblige")
+			else:
+				_push_field(id, "abide")
+		"endure":
+			v["captivity.enduring"] = true
+			if CaptivitySystem.flag(game, "recover") and game.content.program("captivity:%s#recover" % id) != null:
+				v["captivity.recover"] = false
+				_push_field(id, "recover")
+			else:
+				_push_field(id, "endure")
+		"action":
+			frames.append({"kind": "script", "pid": "%s.actions@%d" % [id, p.index], "pc": 0})
+
+
+## Ends the captivity frame; an escape lets a turn pass, as in the original.
+func _end_captivity(escaped: bool) -> void:
+	CaptivitySystem.reset(game)
+	game.captivity_exit = ""
+	frames.pop_back()
+	if escaped:
+		frames.append({"kind": "turn", "turns": 1})
+
+
+func _push_field(id: String, field: String) -> void:
+	var pid := "captivity:%s#%s" % [id, field]
+	if game.content.program(pid) != null:
+		frames.append({"kind": "script", "pid": pid, "pc": 0})
+
+
 # --- Input ------------------------------------------------------------------
 
 ## Picks option `index` (0-based) of the current choice list.
@@ -330,7 +632,14 @@ func choose(index: int) -> bool:
 	var p: Dictionary = pending[index]
 	pending = []
 	var f: Dictionary = frames[-1]
-	if p.has("to"):
+	if p.has("shop"):
+		if p.shop == "leave":
+			frames.pop_back()
+		else:
+			_push_if(ShopSystem.act(game, f.id, p))
+	elif p.has("captivity"):
+		_captivity_choice(f, p)
+	elif p.has("to"):
 		f.pc = p.to
 	elif p.has("leave"):
 		frames.pop_back()
@@ -402,7 +711,7 @@ func _combat_item(id: String) -> bool:
 ## Builds the location view: what the player sees and can do.
 func show_location() -> void:
 	var loc: String = game.state.location
-	if loc == "" or not frames.is_empty():
+	if loc == "" or not frames.is_empty() or game.state.ending != "":
 		return
 	var db: ContentDB = game.content
 	var view := {"type": "location", "id": loc, "name": db.field_value(loc, "name", loc),
@@ -419,23 +728,32 @@ func show_location() -> void:
 			if l.is_blank():
 				continue
 			var parts := l.text.split(":", true, 1)
-			var target := parts[1].split(",")[0].strip_edges() if parts.size() > 1 else ""
+			var target := exit_target(parts[1]) if parts.size() > 1 else ""
 			var door := _exit_door(parts[1]) if parts.size() > 1 else ""
-			view.exits.append({"direction": parts[0].strip_edges(), "to": target, "name": db.field_value(target, "name", target),
-				"enabled": not _door_locked(door)})
+			var danger := db.typed_value("door", door, "leads to zone") if door != "" else ""
+			# A dangerous door shows as the door ("Skyscrapers"), explored rather than entered.
+			var exit_name: String = db.field_value(door, "name", door) if danger != "" or target == "" else db.field_value(target, "name", target)
+			view.exits.append({"direction": parts[0].strip_edges(), "to": "" if danger != "" else target, "name": exit_name,
+				"explore": danger != "", "enabled": not _door_locked(door)})
 			if door != "" and door not in shown_doors:
 				view.description.append_array(render_paragraphs(db.program(door + "#shown in room")))
 				shown_doors.append(door)
 	for c in db.all_of("character"):
 		if game.where(c) == loc:
+			var fields: Dictionary = db.get_def("character", c).fields
 			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
-				"image": db.typed_value("character", c, "image"), "talk": db.get_def("character", c).fields.has("talk")})
+				"image": db.typed_value("character", c, "image"), "talk": fields.has("talk"), "sex": fields.has("sex"),
+				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c)})
+			# A character's presence line ("Wren is whittling by the lean-to.") joins the description.
+			var presence: Program = db.program("%s#presence" % c, "character")
+			if presence != null:
+				view.description.append_array(render_paragraphs(presence))
 	var here := ItemSystem.ground(game, loc)
 	for it in ItemSystem.ground_ids(game, loc):
 		view.items.append({"id": it, "name": db.typed_value("item", it, "name", it), "count": int(here[it])})
-	if db.field_value(loc, "zone") not in ["", "none"]:
+	if game.zone_here(loc) != "":
 		view.actions.append({"id": "explore", "label": "Explore"})
-		if not encounter_pool(db.field_value(loc, "zone"), true).is_empty():
+		if not encounter_pool(game.zone_here(loc), true).is_empty():
 			view.actions.append({"id": "hunt", "label": "Hunt"})
 	if "fast travel" in db.list_field(loc, "flags") and not db.all_of("scavenge_rules").is_empty():
 		view.actions.append({"id": "scavenge", "label": "Scavenge"})
@@ -444,6 +762,11 @@ func show_location() -> void:
 	view.actions.append({"id": "wait", "label": "Wait"})
 	if db.menus.has("%s.observe" % loc):
 		view.actions.append({"id": "observe", "label": "Observe"})
+	if db.menus.has("%s.actions" % loc):
+		var settings: Dictionary = db.menus["%s.actions" % loc].settings
+		view.actions.append({"id": "actions", "label": str(settings.get("title", "Actions"))})
+	for shop in ShopSystem.here(game):
+		view.actions.append({"id": "shop", "arg": shop, "label": ShopSystem.field(game, shop, "name", shop)})
 	game.emit(view)
 
 
@@ -471,7 +794,9 @@ func render_paragraphs(prog: Program, depth: int = 0, run_effects: bool = false)
 					pc = ins.to
 			"effect":
 				if run_effects and not ins.effect.has("error"):
-					game.apply(ins.effect)
+					var e: Dictionary = ins.effect.duplicate()
+					e["quiet"] = true  # effects inside shown text never add notices of their own
+					game.apply(e)
 			"goto":
 				# A text field may hand over to a scene of text and conditions ("attack: -> wolf_attacks").
 				paras += render_paragraphs(game.content.program(ins.target), depth + 1, run_effects)
@@ -481,9 +806,11 @@ func render_paragraphs(prog: Program, depth: int = 0, run_effects: bool = false)
 	return paras
 
 
+## A text snippet said inside other text ("[pewtercharacterassess]"): its text,
+## with its simple effects (scratch numbers, flags) applied as it is shown.
 func render_inline(prog: Program) -> String:
 	var out: PackedStringArray = []
-	for p in render_paragraphs(prog):
+	for p in render_paragraphs(prog, 0, true):
 		out.append(TextTemplate.plain(p))
 	return " ".join(out)
 
@@ -492,7 +819,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
 		return false
 	game.state.action_pending = true
@@ -526,37 +853,51 @@ func _act(action: String, arg: String) -> bool:
 			run()
 			return true
 		"go":
-			var exits: FscParser.Field = db.get_def("location", loc).fields.get("exits", null)
-			if exits == null:
-				return false
-			if ItemSystem.overburdened(game):
-				# Inventory.i7x:308-309; fast travel is not blocked.
-				game.notice("You are too overburdened to move. Drop some of that junk!", false)
-				return false
-			for l in exits.children:
-				if l.is_blank():
-					continue
-				var parts := l.text.split(":", true, 1)
-				if parts[0].strip_edges() == arg and parts.size() > 1:
-					var door := _exit_door(parts[1])
-					if _door_locked(door):
-						var text: String = render_inline(db.program(door + "#locked text")) if db.program(door + "#locked text") != null else "The door is locked."
-						game.notice(text, false)
-						return false
-					if door != "":
-						var key := "door_state.%s.open" % door
-						if not game.state.values.get(key, false):
-							game.state.values[key] = true
-							game.notice("(first opening the %s)" % db.typed_value("door", door, "name", door).to_lower(), false)
-					game.go_to(parts[1].split(",")[0].strip_edges())
-					return true
-			return false
+			# A leaving event for this way out plays instead of the move (the original's
+			# "instead of going north from X"); "~ continue moving" lets the move go on after it.
+			var leaving := leaving_event(loc, arg)
+			if leaving != "":
+				game.continue_moving = false
+				frames.append({"kind": "move_on", "dir": arg})
+				_queue_event(leaving)
+				run()
+				return true
+			return _walk(arg)
 		"talk":
 			if game.where(arg) != loc or not db.get_def("character", arg).fields.has("talk"):
 				return false
 			game.set_value("%s.met" % arg, true)
 			emit_title("Talking with %s" % db.typed_value("character", arg, "name", arg), arg)
 			start("%s#talk" % arg)
+			return true
+		"sex", "smell", "look":
+			# A character here: its sex scene, scent or description.
+			var field: String = {"sex": "sex", "smell": "scent", "look": "description"}[action]
+			if not db.has(arg, "character") or game.where(arg) != loc or db.program("%s#%s" % [arg, field], "character") == null:
+				return false
+			if action == "sex":
+				game.set_value("%s.met" % arg, true)
+				emit_title(db.typed_value("character", arg, "name", arg), arg)
+			start("%s#%s" % [arg, field])
+			return true
+		"shop":
+			# A shop here: its menu when open, else what it says about being closed.
+			if arg not in ShopSystem.here(game):
+				return false
+			if not ShopSystem.is_open(game, arg):
+				start("shop:%s#closed" % arg)
+				return true
+			frames.append({"kind": "shop", "id": arg, "step": "start"})
+			run()
+			return true
+		"actions":
+			# The place's actions menu, or a character's here ("actions:" fields).
+			var owner := arg if arg != "" else loc
+			if arg != "" and (not db.has(arg, "character") or game.where(arg) != loc):
+				return false
+			if not db.menus.has("%s.actions" % owner):
+				return false
+			start("%s.actions" % owner)
 			return true
 		"use":
 			if int(game.state.inventory.get(arg, 0)) <= 0:
@@ -573,7 +914,7 @@ func _act(action: String, arg: String) -> bool:
 				game.apply({"op": "take", "item": arg, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
 				extra["refund"] = arg
 			# Infectious items infect after their use text (Game Objects.i7x:165-172).
-			var strain := db.typed_value("item", arg, "infectious")
+			var strain := str(game.state.values.get("item.%s.infectious" % arg, db.typed_value("item", arg, "infectious")))
 			if strain != "":
 				frames.append({"kind": "item_infect", "form": strain})
 			start("%s#use" % arg, extra)
@@ -615,10 +956,10 @@ func _act(action: String, arg: String) -> bool:
 		"scavenge":
 			return _scavenge(loc)
 		"hunt":
-			if arg not in encounter_pool(db.field_value(loc, "zone"), true):
+			if arg not in encounter_pool(game.zone_here(loc), true):
 				return false
 			frames.append({"kind": "turn", "turns": 1})
-			start_encounter(arg)
+			start_encounter(arg, true)
 			return true
 		"travel":
 			# Fast travel between known fast-travel points; spends a turn.
@@ -626,6 +967,13 @@ func _act(action: String, arg: String) -> bool:
 			if arg == loc or not game.state.known.has(arg) or "fast travel" not in flags_here \
 					or "fast travel" not in db.list_field(arg, "flags"):
 				return false
+			# An event that replaces the trip (the original's "instead of navigating X"):
+			# it plays here, and the player only goes if the scene moves them.
+			var instead := arrival_event("travel", arg, true)
+			if instead != "":
+				_queue_event(instead)
+				run()
+				return true
 			game.pass_turn()
 			game.emit({"type": "paragraph", "spans": [{"text": "You travel to %s, keeping to the shadows." % db.field_value(arg, "name", arg), "bold": false, "italic": false, "class": ""}]})
 			frames.append({"kind": "travel", "place": arg})
@@ -648,7 +996,7 @@ func _act(action: String, arg: String) -> bool:
 				return false
 			if not can_rest():
 				return false
-			var pool := encounter_pool(db.typed_value("location", loc, "zone"))
+			var pool := encounter_pool(game.zone_here(loc))
 			if "safe rest" not in db.list_field(loc, "flags") and not pool.is_empty() and game.rng.chance(3, 20):
 				game.notice("...but your nap is interrupted by the arrival of a creature.", false)
 				start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
@@ -668,11 +1016,32 @@ func can_rest() -> bool:
 
 
 func _exit_door(exit: String) -> String:
-	for option in exit.split(",").slice(1):
+	for option in exit.split(","):
 		var value: String = option.strip_edges()
 		if value.begins_with("door "):
 			return value.substr(5).strip_edges()
 	return ""
+
+
+## Where an exit leads: its place, or "" for a door alone ("north: door skyscrapers").
+static func exit_target(exit: String) -> String:
+	var first := exit.split(",")[0].strip_edges()
+	return "" if first.begins_with("door ") else first
+
+
+## The doors on a place's exits.
+func exit_doors(loc: String) -> Array:
+	var out: Array = []
+	var d: FscParser.Definition = game.content.get_def("location", loc)
+	var exits: FscParser.Field = d.fields.get("exits", null) if d != null else null
+	if exits == null:
+		return out
+	for l in exits.children:
+		if not l.is_blank() and ":" in l.text:
+			var door := _exit_door(l.text.split(":", true, 1)[1])
+			if door != "" and door not in out:
+				out.append(door)
+	return out
 
 
 func _door_locked(id: String) -> bool:
@@ -682,10 +1051,11 @@ func _door_locked(id: String) -> bool:
 	return Condition.evaluate(Condition.compile(locked), game)
 
 
-func _explore(loc: String) -> bool:
+func _explore(loc: String, zone: String = "") -> bool:
 	var db: ContentDB = game.content
-	var zone := db.field_value(loc, "zone")
-	if zone in ["", "none"]:
+	if zone == "":
+		zone = game.zone_here(loc)
+	if zone == "":
 		return false
 	# Exploring spends its turn after the event or combat, as in the original.
 	frames.append({"kind": "turn", "turns": 1})
@@ -722,6 +1092,136 @@ func explore_events(zone: String) -> Array:
 ## Events that scavenging in a zone can find now, sorted by ID.
 func scavenge_events(zone: String) -> Array:
 	return _events_found(zone, "scavenging")
+
+
+## Walks out of the current place by an exit (doors, carrying weight), then any arrival event.
+func _walk(arg: String) -> bool:
+	var db: ContentDB = game.content
+	var loc: String = game.state.location
+	var exits: FscParser.Field = db.get_def("location", loc).fields.get("exits", null)
+	if exits == null:
+		return false
+	if ItemSystem.overburdened(game):
+		# Inventory.i7x:308-309; fast travel is not blocked.
+		game.notice("You are too overburdened to move. Drop some of that junk!", false)
+		return false
+	for l in exits.children:
+		if l.is_blank():
+			continue
+		var parts := l.text.split(":", true, 1)
+		if parts[0].strip_edges() == arg and parts.size() > 1:
+			var door := _exit_door(parts[1])
+			var danger := db.typed_value("door", door, "leads to zone") if door != "" else ""
+			if danger != "" and not _door_locked(door):
+				# A dangerous door: going through explores its zone (Basic Locations.i7x:22-28).
+				if int(game.value("player.hp")) < 1:
+					game.notice("You are too injured to go far. You rest instead.", false)
+					return _act("rest", "")
+				return _explore(loc, danger)
+			if _door_locked(door):
+				var text: String = render_inline(db.program(door + "#locked text")) if db.program(door + "#locked text") != null else "The door is locked."
+				game.notice(text, false)
+				return false
+			if door != "":
+				var key := "door_state.%s.open" % door
+				if not game.state.values.get(key, false):
+					game.state.values[key] = true
+					game.notice("(first opening the %s)" % db.typed_value("door", door, "name", door).to_lower(), false)
+			if exit_target(parts[1]) == "":
+				return false
+			game.go_to(exit_target(parts[1]))
+			if status == "idle":
+				var ev := arrival_event("walk")
+				if ev != "":
+					start_event(ev)
+			return true
+	return false
+
+
+## A leaving event for this way out of `loc` (`found by: leaving <place> <direction>`):
+## available, its `requires` holding, the lowest `priority` first.
+func leaving_event(loc: String, dir: String) -> String:
+	var db: ContentDB = game.content
+	var best := ""
+	var best_priority := 1 << 30
+	for ev in db.all_of("event"):
+		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
+		if [loc, dir] not in found.leaving:
+			continue
+		var st: Dictionary = game._event(ev)
+		if st.resolved or not st.active:
+			continue
+		var req := db.typed_value("event", ev, "requires")
+		if req != "":
+			var c := Condition.compile(req)
+			if c.has("error") or not Condition.evaluate(c, game):
+				continue
+		var pr: int = int(db.typed_value("event", ev, "priority", "3"))
+		if pr < best_priority:
+			best = ev
+			best_priority = pr
+	return best
+
+
+## The event that comes up when the player arrives here ("walk" or "travel"), as the
+## original's WalkInEvent_Check and NavInEvent_Check: available events for this place,
+## by `priority` (lowest first, ties in random order), past their `cooldown` turns,
+## whose `requires` holds; each rolls its `chance` (default 100%) until one comes up.
+func arrival_event(mode: String, place: String = "", replacing: bool = false) -> String:
+	var db: ContentDB = game.content
+	var loc: String = game.state.location if place == "" else place
+	game.state.values["arrival.mode"] = mode
+	var candidates: Array = []
+	for ev in db.all_of("event"):
+		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
+		if loc not in (found.walking if mode == "walk" else found.travelling):
+			continue
+		if (db.typed_value("event", ev, "replaces trip", "no") == "yes") != replacing:
+			continue
+		var st: Dictionary = game._event(ev)
+		if st.resolved or not st.active:
+			continue
+		if game.filter_block(db._list(db.get_def("event", ev), "tags"), true) != "":
+			continue
+		if int(db.typed_value("event", ev, "level", "0")) > int(game.value("player.level")) + 1:
+			continue
+		if int(st.get("last_turn", -1)) >= 0 and game.state.turn - int(st.last_turn) <= int(db.typed_value("event", ev, "cooldown", "0")):
+			continue
+		var req := db.typed_value("event", ev, "requires")
+		if req != "":
+			var c := Condition.compile(req)
+			if c.has("error") or not Condition.evaluate(c, game):
+				continue
+		candidates.append(ev)
+	candidates.sort()
+	# Shuffle, then a stable sort by priority (the original sorts randomly, then by priority).
+	for k in range(candidates.size() - 1, 0, -1):
+		var j: int = game.rng.range_int(0, k)
+		var tmp = candidates[k]
+		candidates[k] = candidates[j]
+		candidates[j] = tmp
+	var order := {}
+	for k in candidates.size():
+		order[candidates[k]] = k
+	candidates.sort_custom(func(a, b):
+		var pa: int = int(db.typed_value("event", a, "priority", "3"))
+		var pb: int = int(db.typed_value("event", b, "priority", "3"))
+		return pa < pb if pa != pb else order[a] < order[b])
+	for ev in candidates:
+		var chance: int = int(db.typed_value("event", ev, "chance", "100").trim_suffix("%"))
+		if chance >= 100 or game.rng.chance(chance, 100):
+			return ev
+	return ""
+
+
+## Starts an event on top of the frames that are running (no run of its own).
+func _queue_event(event_id: String) -> void:
+	game._event(event_id).last_turn = game.state.turn
+	if game.content.field_value(event_id, "repeat", "once") == "once":
+		game._event(event_id).resolved = true
+	if game.content.typed_value("event", event_id, "name") != "":
+		emit_title(game.content.field_value(event_id, "name", event_id))
+	frames.append({"kind": "script", "pid": "%s#play" % event_id, "pc": 0, "event": event_id})
 
 
 func _events_found(zone: String, way: String) -> Array:
@@ -761,8 +1261,8 @@ func _scavenge(loc: String) -> bool:
 	if "fast travel" not in db.list_field(loc, "flags"):
 		game.notice(ScavengeRules.text(game, "only at", "You can only scavenge from quick travel points."), false)
 		return false
-	var zone := db.typed_value("location", loc, "zone")
-	if zone in ["", "none"]:
+	var zone: String = game.zone_here(loc)
+	if zone == "":
 		zone = "outside"
 	frames.append({"kind": "turn", "turns": 1})
 	frames.append({"kind": "fight_chance", "zone": zone})
@@ -823,6 +1323,39 @@ func _explore_location(zone: String, bonus: int) -> bool:
 	return true
 
 
+## "~ pick random creature tagged feline nearby": a creature of the player's zone
+## (or the named one), with the tag if given (on the creature or its form), the
+## favored ones counted twice. With none there, the scene falls back to the
+## outside; "a creature is picked" is false when none can be found.
+func pick_creature(tag: String, zone: String, favoring: Array, with_outside: bool = false) -> void:
+	game.state.values.erase("picked.creature")
+	var here: String = game.zone_here()
+	var zones: Array = [zone] if zone != "" else [here if here != "" else "outside"]
+	if zone == "" and zones[0] != "outside":
+		zones.append("outside")
+	# "nearby or outside": one pool from both.
+	var groups: Array = [zones] if with_outside else zones.map(func(z): return [z])
+	for group: Array in groups:
+		var pool: Array = []
+		var ids: Array = []
+		for z: String in group:
+			for id: String in encounter_pool(z):
+				if id not in ids:
+					ids.append(id)
+		for id: String in ids:
+			if tag != "" and tag not in game.content._list(game.content.get_def("creature", id), "tags") \
+					and tag not in game.content.form_tags(game.content.typed_value("creature", id, "form", id)):
+				continue
+			pool.append(id)
+			if id in favoring:
+				pool.append(id)
+		if not pool.is_empty():
+			var picked: String = pool[game.rng.range_int(0, pool.size() - 1)]
+			game.state.values["picked.creature"] = picked
+			VariantSystem.pick(game, picked)
+			return
+
+
 ## Creatures that can be met in a zone. Banned creatures are never met;
 ## warded ones only when `hunted` (the player hunts for that creature).
 func encounter_pool(zone: String, hunted: bool = false) -> Array:
@@ -831,7 +1364,11 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 		var d: FscParser.Definition = game.content.get_def("creature", id)
 		if zone not in Array(game.creature_field(id, "found in").split(",")).map(func(z): return z.strip_edges()):
 			continue
-		if game.filter_block(game.content._list(d, "tags"), hunted) != "":
+		# Variants answer for their own filters (a goblin with banned males is met as a female).
+		var skip := VariantSystem.all_filters(game.content, id)
+		if game.filter_block(game.content._list(d, "tags").filter(func(t): return t not in skip), hunted) != "":
+			continue
+		if not VariantSystem.meetable(game, id, hunted):
 			continue
 		var active: String = game.content.typed_value("creature", id, "active", "always")
 		if (active == "day" and not game.is_day()) or (active == "night" and game.is_day()):
@@ -843,11 +1380,13 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 	return out
 
 
-func start_encounter(id: String) -> void:
-	emit_title("Encounter: " + game.content.typed_value("creature", id, "name", id), "",
-			game.content.typed_value("creature", id, "image"))
-	frames.append({"kind": "encounter", "creature": id, "pc": 0})
+func start_encounter(id: String, hunted: bool = false) -> void:
+	frames.append({"kind": "encounter", "creature": id, "pc": 0, "title": true, "hunted": hunted})
 	run()
+
+
+func _encounter_title(id: String) -> void:
+	emit_title("Encounter: " + game.creature_field(id, "name", id), "", game.creature_field(id, "image"))
 
 
 # --- Saving -----------------------------------------------------------------

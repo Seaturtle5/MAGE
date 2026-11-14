@@ -14,6 +14,7 @@ var action_pending := false
 var scheduled: Array = []  ## {scene, due: completed action count}
 var location := ""  ## the player's location
 var known: Dictionary = {}  ## location id -> true when discovered
+var visited: Dictionary = {}  ## location id -> true once the player has been there
 var inventory: Dictionary = {}  ## item id -> count
 var equipped: Array = []  ## worn item ids, in the order put on
 var wielded := ""  ## the weapon in hand; "" fights unarmed
@@ -39,7 +40,7 @@ var encountered: Array = []  ## creature ids the player has fought, in order met
 
 func to_dict() -> Dictionary:
 	return {
-		"values": values, "turn": turn, "location": location, "known": known, "inventory": inventory,
+		"values": values, "turn": turn, "location": location, "known": known, "visited": visited, "inventory": inventory,
 		"equipped": equipped, "wielded": wielded, "ground": ground,
 		"feats": feats, "traits": traits, "char_location": char_location, "residence": residence,
 		"companions": companions, "events": events, "conditions": conditions, "variations": variations,
@@ -60,6 +61,7 @@ static func from_dict(d: Dictionary) -> GameState:
 		entry.due = int(entry.due)
 	s.location = d.get("location", "")
 	s.known = d.get("known", {})
+	s.visited = d.get("visited", d.get("known", {}).duplicate())  # older saves: what was known
 	s.inventory = _ints(d.get("inventory", {}))
 	s.equipped = d.get("equipped", [])
 	s.wielded = d.get("wielded", "")
@@ -84,10 +86,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.ending = d.get("ending", "")
 	s.rng_state = d.get("rng", []).map(func(n): return int(n))
 	s.runner = d.get("runner", [])
-	s.combat = d.get("combat", {})
-	for key in ["hp", "maxhp", "libido", "penalty", "round"]:
-		if s.combat.has(key):
-			s.combat[key] = int(s.combat[key])
+	s.combat = _whole(d.get("combat", {}))  # nested per-fight numbers included
 	s.settings = d.get("settings", {})
 	s.encountered = d.get("encountered", [])
 	# JSON turns whole numbers into floats; restore them.
@@ -96,6 +95,20 @@ static func from_dict(d: Dictionary) -> GameState:
 		if v is float and v == floor(v):
 			s.values[k] = int(v)
 	return s
+
+
+## JSON turns whole numbers into floats: restores them everywhere in a value.
+static func _whole(v: Variant) -> Variant:
+	if v is float and v == floor(v):
+		return int(v)
+	if v is Dictionary:
+		var out := {}
+		for k in v:
+			out[k] = _whole(v[k])
+		return out
+	if v is Array:
+		return v.map(func(x): return _whole(x))
+	return v
 
 
 static func _ints(d: Dictionary) -> Dictionary:

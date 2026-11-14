@@ -71,7 +71,12 @@ static func item_name(game, id: String) -> String:
 	return game.content.typed_value("item", id, "name", id)
 
 
+## Items named in the plural ("wild berries", pants, boots): the item's own
+## `plural: yes`, or its equipment's.
 static func plural(game, id: String) -> bool:
+	var own: String = game.content.typed_value("item", id, "plural", "")
+	if own != "":
+		return own == "yes"
 	return gear(game, id, "plural", "no") == "yes"
 
 
@@ -434,7 +439,8 @@ static func bonus(game, key: String) -> int:
 ## Damage after armor (Alt Combat.i7x:1058-1083, normal absorbancy).
 ## Returns {"taken", "prevented"}. Without armored gear no dice are rolled,
 ## as the rolls could not change the result.
-static func absorb(game, damage: int, natural: int = 100) -> Dictionary:
+## `allow_shield`: false when the player can't use a shield (pinned down).
+static func absorb(game, damage: int, natural: int = 100, allow_shield: bool = true) -> Dictionary:
 	var armored: Array = game.state.equipped.filter(func(id): return int(gear(game, id, "armor", "0")) > 0)
 	var out := damage
 	var total := natural
@@ -444,7 +450,7 @@ static func absorb(game, damage: int, natural: int = 100) -> Dictionary:
 			var ac := int(gear(game, id, "armor", "0"))
 			var eff := int(gear(game, id, "effectiveness", "0"))
 			var place := gear(game, id, "placement", "end")
-			if place == "shield" and game.rng.chance(eff, 100):
+			if place == "shield" and allow_shield and game.rng.chance(eff, 100):
 				var shield := maxi(1, damage * ac / 400)
 				out = damage - shield
 			if place == target:
@@ -511,7 +517,7 @@ static func pick_up(game, id: String) -> bool:
 	if here[id] <= 0:
 		here.erase(id)
 	gain(game, id, 1)
-	var it := "them" if is_wearable(game, id) and plural(game, id) else "it"
+	var it := "them" if plural(game, id) else "it"
 	_say(game, "You pick up the %s and tuck %s in your backpack." % [item_name(game, id), it])
 	return true
 
@@ -524,7 +530,7 @@ static func pick_up_all(game) -> bool:
 	for id: String in here.keys():
 		for _i in int(here[id]):
 			gain(game, id, 1)
-			_say(game, "You pick up the %s and tuck it in your backpack." % item_name(game, id))
+			_say(game, "You pick up the %s and tuck %s in your backpack." % [item_name(game, id), "them" if plural(game, id) else "it"])
 	here.clear()
 	return true
 

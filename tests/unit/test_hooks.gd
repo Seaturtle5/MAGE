@@ -147,3 +147,19 @@ func test_a_pack_meter_adds_a_player_value_whose_stage_can_block_rest() -> void:
 	game.pass_turn()
 	assert_eq(int(game.value("player.buzz")), 0)
 	assert_eq(RestSystem.blocking_condition(game), "", "the stage ends when the meter wears off")
+
+
+func test_growing_a_part_follows_the_feats() -> void:
+	game.set_value("player.cocks", 1)
+	game.set_value("player.cock.length", 6)
+	game.apply(Effect.compile("grow cock by 2"))
+	assert_eq(int(game.value("player.cock.length")), 8)
+	game.state.feats.append("modest_organs")
+	game.apply(Effect.compile("grow cock by 1 to 3"))
+	assert_eq(int(game.value("player.cock.length")), 8, "Modest Organs keeps it at 8")
+	game.set_value("player.breasts.size", 2)
+	game.apply(Effect.compile("grow breasts by 1"))
+	assert_eq(int(game.value("player.breasts.size")), 3)
+	game.state.feats.append("flat_chested")
+	game.apply(Effect.compile("grow breasts by 1"))
+	assert_eq(int(game.value("player.breasts.size")), 3, "Flat Chested stops it")

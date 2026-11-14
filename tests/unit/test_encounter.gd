@@ -77,6 +77,49 @@ if wolf.met > 5:
 else:
     restless
 
+== tag canine
+name: Canine
+
+== location field
+name: Field
+description: An open field.
+zone: plains
+
+== creature coyote
+name: Coyote
+hp: 5
+found in: plains
+tags: canine
+form: fox
+victory:
+    The coyote has its way with you.
+
+== creature lark
+name: Lark
+hp: 2
+found in: plains
+
+== scene heat_hunt
+~ pick random creature tagged canine nearby
+if a creature is picked:
+    You find a [picked creature], and [ghe] finds you.
+    play picked creature victory
+    ~ infect picked creature
+else:
+    Nothing canine is around.
+
+== scene rampage
+play rampage_round 3 times
+~ transform skin into fox
+
+== scene rampage_some
+play rampage_round 2 to 4 times
+
+== scene rampage_round
+~ wolf.met + 1 quietly
+~ pick random creature nearby or outside
+Round.
+
 == scene meet_wolf
 fight wolf:
     won:
@@ -215,3 +258,27 @@ func test_an_attack_text_can_change_values_as_it_lands() -> void:
 	assert_eq(int(game.value("player.libido")), before, "showing the text alone changes nothing")
 	game.runner.render_paragraphs(game.content.program("crow#attack"), 0, true)
 	assert_eq(int(game.value("player.libido")), before + 2, "the landed attack runs its effects")
+
+
+func test_a_scene_picks_a_random_creature_of_the_zone_by_tag() -> void:
+	game.runner.start("heat_hunt")
+	assert_string_contains(_text(), "Nothing canine is around.", "the den has no zone and the outside has no canines")
+	game.go_to("field")
+	game.take_output()
+	game.runner.start("heat_hunt")
+	var text := _text()
+	assert_string_contains(text, "You find a coyote, and it finds you.")
+	assert_string_contains(text, "The coyote has its way with you.")
+	assert_eq(game.part_form("player", "torso") != "human" or game.part_form("player", "head") != "human" or game.part_form("player", "skin") != "human", true, "infected with the coyote's form")
+	assert_true(Effect.compile("pick random creature tagged canine in plains favoring coyote").favoring == ["coyote"])
+
+
+func test_a_scene_can_be_played_a_set_number_of_times_and_set_one_part() -> void:
+	game.runner.start("rampage")
+	assert_eq(int(game.value("wolf.met")), 3)
+	assert_eq(_text().count("Round."), 3)
+	assert_eq(game.part_form("player", "skin"), "fox")
+	assert_eq(game.part_form("player", "head"), "human", "only that part changes")
+	game.runner.start("rampage_some")
+	var n := _text().count("Round.")
+	assert_true(n >= 2 and n <= 4, str(n))

@@ -1,0 +1,22 @@
+// Scavenging: the player searches for supplies at a fast-travel place.
+// The engine runs the search (a perception roll against `target`); these are its
+// texts and numbers. `generic` is the event found most of the time; other events
+// "found by: scavenging in <zone>" come up the rest of the time.
+
+== scavenge_rules woodland_scavenging
+generic: forage
+generic chance: 2 in 3
+target: 8
+start: You set out to forage along the edges of the woods.
+found: [one of]Following a deer trail, you come across[or]Poking under the ferns, you find[at random]
+failure: You come back empty-handed.
+only at: You can only forage from places you know well (fast travel points).
+
+// The generic find. It must be found by scavenging; the rule picks it most of the time.
+== event forage
+name: A little forage
+found by: scavenging in forest
+repeat: always
+play:
+    [one of]A bramble heavy with berries.[or]A patch of berries under the ferns.[or]Berries, a little squashed but sweet.[at random]
+    ~ give wild_berries

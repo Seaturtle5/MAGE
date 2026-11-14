@@ -1,0 +1,18 @@
+// The Quiet Woods: an example game that comes with the engine.
+//
+// Every file shows one part of the content format in small, working form, with
+// comments that explain the fields. README.md has a map of which feature lives
+// in which file. template.fsc holds the common definitions, ready to copy.
+//
+// To start your own game: copy this folder, rename it, change the ID below
+// (and in nothing else), then change anything you like.
+
+== pack example-adventure
+name: Example adventure
+version: 0.2.0
+authors: MAGE project
+// The pack that is the game sets the main menu: title, subtitle and footer.
+// It may also name a logo, a background and `menu icons` from its images folder.
+title: The Quiet Woods
+subtitle: An example adventure
+about: A tiny example game that comes with the engine. Copy its pack folder to start your own.

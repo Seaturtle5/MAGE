@@ -18,6 +18,10 @@ var _footer: Label
 var _continue_info: Label
 var _message: Label
 var _menu: VBoxContainer
+var _menu_art: Array = []  ## pictures that pop up beside the hovered entry (pack `menu icons`)
+var _hover_art: TextureRect
+var _art_tween: Tween
+var _last_art := -1
 
 
 func _init() -> void:
@@ -92,11 +96,33 @@ func _init() -> void:
 	col.add_child(fill)
 	_footer = FsTheme.label("", 13, FsTheme.TEXT_FAINT)
 	col.add_child(_footer)
+	# The engine's credit and version, in the lower right corner.
+	var credit := FsTheme.label("Modular Adventure Game Engine by Seaturtle5 · %s" % engine_version(), 13, FsTheme.TEXT_FAINT)
+	credit.autowrap_mode = TextServer.AUTOWRAP_OFF
+	credit.add_theme_color_override("font_color", FsTheme.TEXT_DIM)
+	credit.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	credit.add_theme_constant_override("shadow_offset_x", 1)
+	credit.add_theme_constant_override("shadow_offset_y", 1)
+	credit.add_theme_constant_override("shadow_outline_size", 4)
+	credit.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	credit.set_anchors_and_offsets_preset(PRESET_BOTTOM_RIGHT)
+	credit.grow_horizontal = GROW_DIRECTION_BEGIN
+	credit.grow_vertical = GROW_DIRECTION_BEGIN
+	credit.offset_right = -24
+	credit.offset_bottom = -16
+	add_child(credit)
 
 
-## Title, subtitle, logo and background textures and footer text from the
-## content; empty values keep the defaults.
-func set_branding(title: String, subtitle: String, logo: Texture2D, background: Texture2D, footer: String) -> void:
+## The engine's version (project setting application/config/version).
+static func engine_version() -> String:
+	return str(ProjectSettings.get_setting("application/config/version", ""))
+
+
+## Title, subtitle, logo and background textures, footer text and the hover
+## pictures from the content; empty values keep the defaults.
+func set_branding(title: String, subtitle: String, logo: Texture2D, background: Texture2D, footer: String,
+		menu_art: Array = []) -> void:
+	_menu_art = menu_art
 	if title != "":
 		_title.text = title
 	_subtitle.text = subtitle.to_upper()
@@ -121,13 +147,63 @@ func _button(action: String, text: String) -> Button:
 	# Menu entries are text on the art; hover and focus add a panel and an amber edge.
 	var rest := FsTheme.box(Color.TRANSPARENT, FsTheme.RADIUS, Color.TRANSPARENT, 18)
 	b.add_theme_stylebox_override("normal", rest)
-	b.add_theme_stylebox_override("hover", FsTheme.edged(Color(FsTheme.SURFACE_2, 0.85), FsTheme.ACCENT, 3, 18))
+	b.add_theme_stylebox_override("hover", FsTheme.edged(Color(FsTheme.SURFACE_2, 0.85), FsTheme.ACCENT, 3, 26))
 	b.add_theme_stylebox_override("pressed", FsTheme.edged(Color(FsTheme.ACCENT_DIM, 0.9), FsTheme.ACCENT, 3, 18))
 	b.add_theme_stylebox_override("focus", FsTheme.edged(Color.TRANSPARENT, FsTheme.ACCENT, 3, 18))
 	b.size_flags_horizontal = SIZE_SHRINK_BEGIN
 	b.pressed.connect(func(): chosen.emit(action))
+	b.mouse_entered.connect(_show_art.bind(b))
+	b.focus_entered.connect(_show_art.bind(b))
+	b.mouse_exited.connect(_hide_art.bind(b))
 	_menu.add_child(b)
 	return b
+
+
+## A creature picture pops up beside the hovered (or focused) entry.
+func _show_art(b: Button) -> void:
+	if _menu_art.is_empty() or not is_visible_in_tree():
+		return
+	if _hover_art == null:
+		_hover_art = TextureRect.new()
+		_hover_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_hover_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		_hover_art.mouse_filter = MOUSE_FILTER_IGNORE
+		_hover_art.self_modulate = FsTheme.ACCENT
+		add_child(_hover_art)
+	var pick := randi() % _menu_art.size()
+	if _menu_art.size() > 1 and pick == _last_art:
+		pick = (pick + 1) % _menu_art.size()
+	_last_art = pick
+	_hover_art.texture = _menu_art[pick]
+	var side := 72.0
+	_hover_art.size = Vector2(side, side)
+	_hover_art.pivot_offset = Vector2(side, side) / 2
+	var rect := b.get_global_rect()
+	# Just after the entry's text (the hover style indents it by 26).
+	var text_width := b.get_theme_font("font").get_string_size(b.text, HORIZONTAL_ALIGNMENT_LEFT, -1,
+		b.get_theme_font_size("font_size")).x
+	var target := rect.position - global_position + Vector2(26 + text_width + 18, (rect.size.y - side) / 2)
+	_hover_art.position = target - Vector2(14, 0)
+	_hover_art.modulate.a = 0.0
+	_hover_art.scale = Vector2(0.6, 0.6)
+	_hover_art.rotation = -0.35 if randi() % 2 == 0 else 0.35
+	_hover_art.visible = true
+	if _art_tween != null:
+		_art_tween.kill()
+	_art_tween = create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_art_tween.tween_property(_hover_art, "modulate:a", 0.9, 0.18)
+	_art_tween.tween_property(_hover_art, "position", target, 0.28)
+	_art_tween.tween_property(_hover_art, "scale", Vector2.ONE, 0.32)
+	_art_tween.tween_property(_hover_art, "rotation", 0.0, 0.4).set_trans(Tween.TRANS_ELASTIC)
+
+
+func _hide_art(b: Button) -> void:
+	if _hover_art == null or b.has_focus():
+		return
+	if _art_tween != null:
+		_art_tween.kill()
+	_art_tween = create_tween()
+	_art_tween.tween_property(_hover_art, "modulate:a", 0.0, 0.15)
 
 
 ## Shows or hides Continue with a line about the newest save.

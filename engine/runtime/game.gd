@@ -13,11 +13,15 @@ const PLAYER_DEFAULTS := {
 	"strength": 12, "dexterity": 12, "stamina": 12, "charisma": 12, "intelligence": 12, "perception": 12,
 	"hunger": 0, "thirst": 0, "morale": 0, "libido": 0, "humanity": 100, "lust": 0,
 	"cocks": 0, "cunts": 1, "nipples": 2, "name": "Player",
+	# Body numbers the original's body adjectives read (Characters.i7x:48-75, 198, 239).
+	"weight": 5, "definition": 5, "androgyny": 5, "body_hair": 2, "ass.width": 3, "ass.depth": 9, "ass.tightness": 2,
+	"mouth.length": 5, "mouth.circumference": 3, "clit.size": 3,
 }
 const BOUNDED := {"hunger": [0, 100], "thirst": [0, 100], "humanity": [0, 100], "libido": [0, 100], "balls.size": [0, 7]}
 const ATTRIBUTES := ["strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]
 const TIME_SLOTS := ["pre dawn", "post midnight", "night", "early night", "evening", "afternoon", "morning", "early morning"]
 const FILTER_STATES := ["normal", "warded", "banned"]
+const CREATURE_SEXES := ["male", "female", "herm", "neuter"]
 
 var content: ContentDB
 var state: GameState
@@ -30,6 +34,10 @@ var settings := default_settings()
 var last_fight := ""  ## outcome of the most recent fight ("won", "lost" ...)
 var use_cancelled := false
 var fight_cancelled := false  # set by `~ no fight` in an encounter
+var continue_moving := false  ## '~ continue moving': a leaving event lets the player walk on
+## '~ end captivity' ("end") or '~ escape captivity' ("escape", a turn passes): the
+## captivity ends when the current script is done.
+var captivity_exit := ""
 var warnings: Array = []  ## runtime problems (missing descriptors and so on)
 
 
@@ -73,9 +81,20 @@ func warn(message: String) -> void:
 
 # --- Values -----------------------------------------------------------------
 
+## While a text snippet describes someone else ("[cock_size_desc of francois]"),
+## the snippet's player values and adjectives read that character's.
+var _subject := ""
+
+
 func value(path: String) -> Variant:
+	if _subject != "" and path.begins_with("player."):
+		path = _subject + path.substr(6)
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
+	if path == "people.collected":
+		return collected_people()
+	if path.begins_with("enemy.") or path.begins_with("fight."):
+		return _fight_value(path)
 	if state.values.has(path):
 		return state.values[path]
 	if path.begins_with("level."):
@@ -84,6 +103,17 @@ func value(path: String) -> Variant:
 		return Array(content.levels.get(id, {}).get("options", [])).find(level(id)) + 1
 	if content.values.has(path):
 		return content.values[path].default
+	if path.begins_with("pregnancy."):
+		var key := path.substr(10)
+		if key in PregnancySystem.COMPUTED:
+			return PregnancySystem.computed(self, key)
+		if key in PregnancySystem.STORED:
+			return PregnancySystem.stored_default(key)
+	if path.begins_with("child.") and path.substr(6) in PregnancySystem.CHILD_VALUES:
+		return false if path.substr(6) in ["feral", "pureblood", "albino", "melanism", "show_tail", "show_legs"] else 0 if path == "child.number" else ""
+	if path.begins_with("captivity.") and path.substr(10) in CaptivitySystem.VALUES:
+		# The engine's captivity numbers start at 0 (flags at no) until a captivity sets them.
+		return false if path.substr(10) in ["enduring", "obliging", "recover"] else 0
 	if path.begins_with("player."):
 		var key := path.substr(7)
 		if PLAYER_DEFAULTS.has(key):
@@ -95,6 +125,8 @@ func value(path: String) -> Variant:
 				return ItemSystem.carried_weight(self)
 			"scale":
 				return ItemSystem.scale(self)
+			"heat_turns", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration":
+				return HeatSystem.computed(self, key)
 		if key.begins_with("carried."):
 			return ItemSystem.count(self, key.trim_prefix("carried."))  # how many of an item the player carries
 		if key.begins_with("style.") or key == "gender_look":
@@ -107,10 +139,50 @@ func creature_field(id: String, field: String, fallback: String = "") -> String:
 	var key := "creature.%s.%s" % [id, field]
 	if state.values.has(key):
 		return str(state.values[key])
+	var v: Variant = VariantSystem.field(self, id, field)  # the variant met this time
+	if v != null:
+		return str(v)
 	return content.typed_value("creature", id, field, fallback)
 
 
+## The creature being fought (`enemy.hp`, `enemy.damage` ...) and a fight's own
+## scratch numbers (`fight.<name>`, reset when a fight starts; `fight.damage` is
+## the last blow's damage). Outside a fight they read as 0.
+const ENEMY_STATE := {"hp": "hp", "max_hp": "maxhp", "lust": "libido", "round": "round", "grappled": "grappled"}
+
+
+func _fight_value(path: String) -> Variant:
+	var c: Dictionary = state.combat
+	var key := path.get_slice(".", 1)
+	if path.begins_with("fight."):
+		return c.get("vars", {}).get(key, 0) if not c.is_empty() else 0
+	if c.is_empty():
+		return false if key == "grappled" else 0
+	if ENEMY_STATE.has(key):
+		return c[ENEMY_STATE[key]]
+	if key in CombatSystem.ATTRIBUTES:
+		return CombatSystem.stat(self, c.creature, key)
+	return CombatSystem.number(self, c.creature, key.replace("_", " "), 0)
+
+
+func _set_fight_value(path: String, v: Variant) -> void:
+	var c: Dictionary = state.combat
+	if c.is_empty():
+		warn("%s can only change during a fight." % path)
+		return
+	var key := path.get_slice(".", 1)
+	if path.begins_with("fight."):
+		c.vars[key] = v
+	elif ENEMY_STATE.has(key):
+		c[ENEMY_STATE[key]] = Condition._truthy(v) if key == "grappled" else int(v)
+	else:
+		c.overrides[key] = int(v)
+
+
 func set_value(path: String, v: Variant) -> void:
+	if path.begins_with("enemy.") or path.begins_with("fight."):
+		_set_fight_value(path, v)
+		return
 	if path.begins_with("player."):
 		var key := path.substr(7)
 		if BOUNDED.has(key):
@@ -141,7 +213,8 @@ func change_value(path: String, delta: int) -> void:
 				set_value("player.maxhp", int(value("player.maxhp")) - hp_delta)
 				set_value("player.hp", value("player.hp"))
 	else:
-		set_value(path, int(value(path)) + delta)
+		var before = value(path)
+		set_value(path, (int(before) if before != null else 0) + delta)  # an unset number counts as 0
 
 
 func state_index(path: String, v: Variant) -> int:
@@ -246,6 +319,8 @@ func ask(node: Dictionary) -> bool:
 			return where(node.who) == node.place
 		"knows":
 			return state.known.has(node.place)
+		"visited":
+			return state.visited.has(node.place)
 		"part_is":
 			return part_form(node.who, node.part) == node.form
 		"part_tagged":
@@ -257,6 +332,27 @@ func ask(node: Dictionary) -> bool:
 
 
 func adjective(who: String, adj: String) -> bool:
+	if _subject != "" and who == "player":
+		who = _subject
+	if who == "player" and adj in ["dead", "imprisoned", "gone"]:
+		# What the endings said happened (EndingSystem): "player is dead".
+		return Condition._truthy(state.values.get("end." + ("left" if adj == "gone" else adj), false))
+	if who == "captivity" and adj == "ending":
+		return captivity_exit != ""  # '~ end captivity' or '~ escape captivity' ran this round
+	if who == "here":
+		# The player's location: "here is flagged fast travel", "here is explorable" (it has a zone).
+		if adj.begins_with("flagged "):
+			return adj.substr(8) in content.list_field(state.location, "flags")
+		if adj == "explorable":
+			return zone_here() != ""
+	if content.has(who, "creature") and (adj in CREATURE_SEXES or adj.begins_with("variant ")):
+		# A creature's sex follows its gender (that of the variant met this time).
+		if adj.begins_with("variant "):
+			return VariantSystem.current(self, who) == adj.substr(8)
+		var g := creature_field(who, "gender", "neuter")
+		var cock := g in ["male", "herm", "shemale", "male herm"]
+		var cunt := g in ["female", "herm", "male herm", "cuntboy"]
+		return {"male": cock, "female": cunt, "herm": cock and cunt, "neuter": not cock and not cunt}[adj]
 	match adj:
 		"male":
 			return body_count(who, "cock") > 0
@@ -278,9 +374,27 @@ func adjective(who: String, adj: String) -> bool:
 		"in an event":
 			# The original's inasituation: an event is running (a fight it started included).
 			return who == "player" and runner.current_event() != ""
+		"pregnant":
+			# Carrying a child now (PregnancySystem; the original's impreg_now).
+			return who == "player" and PregnancySystem.gestation(self) > 0
 		"in heat":
-			# The heat system (characters package) sets <who>.heat; until then nobody is in heat.
+			# Set by the heat system (HeatSystem) for the player.
 			return Condition._truthy(value("%s.heat" % who))
+		"in female heat", "in mpreg heat":
+			return who == "player" and HeatSystem.in_heat(self) and str(value("player.heat_kind")) == adj.get_slice(" ", 1)
+		"captive":
+			# Held in a captivity (the original's boundstate).
+			return who == "player" and runner.frames.any(func(f): return f.kind == "captivity")
+		"arrived by walking", "arrived by travelling":
+			# How the player came to this place, for arrival events (the original's NavArrival).
+			return who == "player" and str(state.values.get("arrival.mode", "")) == ("walk" if adj.ends_with("walking") else "travel")
+		"creature picked":
+			return str(state.values.get("picked.creature", "")) != ""
+		"vulnerable to heat":
+			# The body can go into heat now (sex, strain and heat_rules' female/mpreg when).
+			return who == "player" and HeatSystem.kind_now(self) != ""
+		"heat paused":
+			return who == "player" and Condition._truthy(value("player.heat_paused"))
 		"fighting":
 			# The original's inafight: true while a fight is going on.
 			return who == "player" and not state.combat.is_empty() and str(state.combat.get("result", "")) == ""
@@ -357,6 +471,14 @@ func describe(name: String) -> String:
 			return ""
 		var article := "an" if rest.left(1).to_lower() in ["a", "e", "i", "o", "u"] else "a"
 		return "%s %s" % [article.capitalize() if n.begins_with("A") else article, rest]
+	# "[worn feet]", "[worn waist, legs, crotch]": the item worn on the first of the
+	# slots that has one (the original's feetDesc, crotchDesc, chestDesc), else "".
+	if n.begins_with("worn "):
+		for slot in n.substr(5).split(","):
+			for id: String in state.equipped:
+				if ItemSystem.gear(self, id, "slot", "none") == slot.strip_edges():
+					return content.typed_value("item", id, "name", id)
+		return ""
 	# "[player.nipples in words]": a number written out.
 	if n.ends_with(" in words"):
 		var counted = value(n.trim_suffix(" in words"))
@@ -416,7 +538,11 @@ func describe(name: String) -> String:
 			var form := part_form(who, "torso")
 			if form == "human":
 				return "human"
-			return content.typed_value("form", form, "body type", content.typed_value("form", form, "name", form).to_lower())
+			var body_type := content.typed_value("form", form, "body type", content.typed_value("form", form, "name", form).to_lower())
+			if "[" in body_type:  # "[one of]bunny[or]rabbit[at random]"
+				var t := TextTemplate.compile(body_type)
+				return body_type if t.has("error") else TextTemplate.plain(render(t))
+			return body_type
 		"skin":
 			var skin = value("%s.body_description.skin" % who)
 			return str(skin) if skin != null and str(skin) != "" else "smooth"
@@ -429,6 +555,13 @@ func describe(name: String) -> String:
 			if words.is_empty():
 				words = ["average", "normal", "unchanged"]
 			return str(words[variation("body descriptor", words.size(), "at random")])
+		"bracket":
+			return "["  # a literal bracket, which markup would otherwise read as a substitution
+		"close bracket":
+			return "]"
+		"picked creature":
+			var picked := str(state.values.get("picked.creature", ""))
+			return content.typed_value("creature", picked, "name", picked).to_lower()
 		"random encountered creature":
 			if state.encountered.is_empty():
 				return "monster"
@@ -440,6 +573,15 @@ func describe(name: String) -> String:
 			return "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[size - 1] if size >= 1 and size <= 26 else ""
 		"cock size":
 			return _size_word(int(value("player.cock.length")) if value("player.cock.length") != null else 6)
+	# A text snippet about someone else: "[cock_size_desc of francois]".
+	if parts.size() > 1 and who != "player" and content.has(what, "text"):
+		var described := content.program(what)
+		if described != null:
+			var before := _subject
+			_subject = who
+			var text := runner.render_inline(described)
+			_subject = before
+			return text
 	# A text snippet.
 	if content.has(n, "text"):
 		var prog := content.program(n)
@@ -503,13 +645,22 @@ func self_description() -> PackedStringArray:
 	return out
 
 
+## The creature being fought, else one a scene picked, else the one met last.
+func current_creature() -> String:
+	var id: String = str(state.combat.get("creature", "")) if not state.combat.is_empty() else ""
+	if id == "" and runner != null:
+		id = runner.meeting()  # its encounter scene plays before the fight
+	if id == "":
+		id = str(state.values.get("picked.creature", ""))  # a creature a scene picked
+	if id == "" and not state.encountered.is_empty():
+		id = state.encountered[-1]
+	return id
+
+
 ## The original's pronouns for the creature being fought or last met
 ## (Gender Pronouns.i7x Section 4, set by setmongender).
 func monster_word(word: String) -> String:
-	var id: String = str(state.combat.get("creature", "")) if not state.combat.is_empty() else ""
-	if id == "" and not state.encountered.is_empty():
-		id = state.encountered[-1]
-	var g: String = creature_field(id, "gender", "neuter")
+	var g: String = creature_field(current_creature(), "gender", "neuter")
 	var set := "male" if g in ["male", "male neuter", "male herm", "cuntboy"] else "female" if g in ["female", "female neuter", "herm", "shemale"] else "neuter"
 	var words: Dictionary = {
 		"male": {"ghis": "his", "ghe": "he", "ghim": "him", "ghishers": "his", "gdragon": "dragon", "gmasculine": "masculine"},
@@ -689,8 +840,47 @@ func apply(e: Dictionary) -> void:
 				_event(ev).resolved = true
 		"activate", "deactivate":
 			_event(e.event).active = e.op == "activate"
+		"form_sex":
+			state.values["form.%s.sex" % e.form] = e.sex
+		"grow":
+			BodySystem.grow(self, e.part, Effect.resolve_amount(e.amount, self))
 		"creature_change":
 			state.values["creature.%s.%s" % [e.creature, e.field]] = e.value
+		"creature_number":
+			# A lasting change to a creature's numbers ("increase wdam entry by 2").
+			var cur := CombatSystem.stat(self, e.creature, e.field) if e.field in CombatSystem.ATTRIBUTES \
+				else int(creature_field(e.creature, e.field, "0"))
+			var amount: int = Effect.resolve_amount(e.amount, self, cur)
+			var nv: int = amount if e.how == "=" else cur + (amount if e.how == "+" else -amount)
+			state.values["creature.%s.%s" % [e.creature, e.field]] = nv
+		"enemy_attack", "enemy_strike", "fight_result":
+			if state.combat.is_empty():
+				warn("'%s' only works during a fight." % e.op.replace("_", " "))
+				return
+			var id: String = state.combat.creature
+			match e.op:
+				"enemy_attack":
+					if CombatSystem.hit_roll(self, creature_field(id, "strike with", "dexterity")):
+						for spans in runner.render_paragraphs(content.program(id + "#attack", "creature"), 0, true):
+							emit({"type": "paragraph", "spans": spans})
+						CombatSystem.strike(self, CombatSystem.roll_damage(self, id, e.percent))
+					else:
+						notice("The enemy misses.", quiet)
+				"enemy_strike":
+					var damage: int = Effect.resolve_amount(e.amount, self) if e.has("amount") else CombatSystem.roll_damage(self, id, e.percent)
+					CombatSystem.strike(self, damage, e.armor, not quiet)
+				"fight_result":
+					state.combat.result = e.result
+		"put":
+			var place: String = state.location if e.place == "here" else e.place
+			var ground := ItemSystem.ground(self, place)
+			ground[e.item] = int(ground.get(e.item, 0)) + e.count
+		"remove_from":
+			var place: String = state.location if e.place == "here" else e.place
+			ItemSystem.ground(self, place).erase(e.item)
+		"item_strain":
+			# "now Strain of skunk goo is ..." (the original's strain of an infectious item).
+			state.values["item.%s.infectious" % e.item] = "" if e.form == "nothing" else e.form
 		"move":
 			if e.who == "player":
 				go_to(e.place)
@@ -699,6 +889,11 @@ func apply(e: Dictionary) -> void:
 		"lives_at":
 			state.residence[e.who] = e.place
 			state.char_location.erase(e.who)
+		"forget":
+			# The original's "now X is unknown": no longer a fast travel point the player knows.
+			state.known.erase(e.place)
+		"use_item":
+			runner.use_item_now(e.item)
 		"discover":
 			if not state.known.has(e.place):
 				state.known[e.place] = true
@@ -709,33 +904,68 @@ func apply(e: Dictionary) -> void:
 			for _t in e.turns:
 				pass_turn()
 		"sex":
-			for who in [e.taker, e.giver]:
-				if who != "player":
-					set_value("%s.had_sex" % who, true)
-					set_value("%s.met" % who, true)
-			var virgin_key: String = {"anal": "anal_virgin", "anal_toy": "anal_virgin", "vaginal": "virgin", "oral_cock": "oral_virgin"}.get(e.act, "")
-			if virgin_key != "":
-				set_value("%s.%s" % [e.taker, virgin_key], false)
-			state.stamps["%s.last_sex" % e.giver] = state.turn
-			state.stamps["%s.last_sex" % e.taker] = state.turn
+			SexSystem.record(self, e.taker, e.act, e.giver)
+			if e.giver == "player":
+				PregnancySystem.after_sex(self, e.taker, e.act)  # a creature may carry the player's young
 		"condition":
 			start_condition(e.condition, e.turns, quiet)
 		"infects_as":
 			# Only during a fight's scenes: the loss infection uses this creature.
 			if not state.combat.is_empty():
 				state.combat["infects_as"] = e.creature
+		"pick":
+			runner.pick_creature(e.tag, e.zone, e.favoring, e.get("with_outside", false))
 		"infect":
 			var form: String = e.form if e.get("part", "") == "" else part_form("player", e.part)
+			if form == "@picked":
+				# The creature picked with "~ pick random creature": its form.
+				var picked := str(value("picked.creature"))
+				form = content.typed_value("creature", picked, "form", picked) if picked != "" else ""
+				if form == "":
+					return
 			for _i in Effect.resolve_amount(e.times, self):
 				BodySystem.infect(self, form, false, e.get("keep_sex", false))
 		"transform":
-			BodySystem.infect(self, e.form, true)
+			if e.get("part", "") != "":
+				BodySystem.set_part(self, e.form, e.part)
+			else:
+				BodySystem.infect(self, e.form, true)
 		"reset_human":
 			BodySystem.reset(self)
 		"cancel_use":
 			use_cancelled = true
 		"no_fight":
 			fight_cancelled = true
+		"impregnate":
+			PregnancySystem.attempt(self, e.kind, e.father, e.eggs, e.sure)
+		"accept_pregnancy":
+			PregnancySystem.accept(self)
+		"pregnancy_faster":
+			# The original's "decrease gestation of child by N": never past the last turn.
+			if PregnancySystem.gestation(self) > 0:
+				state.values["pregnancy.gestation"] = maxi(1, PregnancySystem.gestation(self) - int(e.by))
+		"give_birth":
+			if PregnancySystem.gestation(self) > 0:
+				PregnancySystem.birth(self)
+		"record_child":
+			PregnancySystem.record_child(self)
+		"end_pregnancy":
+			PregnancySystem.end(self)
+		"continue_moving":
+			continue_moving = true
+		"end_captivity":
+			captivity_exit = "escape" if e.get("escape", false) else "end"
+		"end_heat":
+			HeatSystem.end_now(self)
+		"extend_heat":
+			HeatSystem.extend(self, int(e.turns))
+		"drive_heat":
+			HeatSystem.drive(self, e.get("now", false))
+		"reset_heat":
+			HeatSystem.reset(self)
+		"set_level":
+			# A scene can change a content level the player chose (a doctor adjusting your heat).
+			set_level(e.level, e.option)
 		"wear":
 			ItemSystem.wear(self, e.item, quiet)
 		"remove":
@@ -753,8 +983,20 @@ func apply(e: Dictionary) -> void:
 			state.values[path] = maxi(0, cur + e.sign * Effect.resolve_amount(e.amount, self))
 			MeterSystem.update(self, e.meter)
 		"ending":
-			state.ending = e.ending
-			emit({"type": "ending", "ending": e.ending})
+			# The game ends here; the epilogue plays (EndingSystem).
+			if content.has(e.ending, "ending"):
+				EndingSystem.trigger(self, e.ending)
+			end_game(e.ending, e.ending)
+		"trigger_ending":
+			EndingSystem.trigger(self, e.ending)
+		"end_state":
+			EndingSystem.set_state(self, e.state)
+		"ending_reason":
+			state.values["end.reason"] = e.reason
+		"ending_flag":
+			EndingSystem.flag(self, e.flag)
+		"exclude_endings":
+			EndingSystem.exclude(self, e.type)
 		_:
 			warn("Effect '%s' is not supported yet." % e.op)
 			emit({"type": "notice", "text": "[effect '%s' not implemented yet]" % e.op})
@@ -909,6 +1151,7 @@ func go_to(place: String) -> void:
 		warn("No location '%s'." % place)
 		return
 	state.location = place
+	state.visited[place] = true
 	if not state.known.has(place):
 		set_value("player.score", int(value("player.score")) + 1)
 	state.known[place] = true
@@ -918,11 +1161,48 @@ func go_to(place: String) -> void:
 		runner.play_now(arrival.id)
 
 
+## The zone exploring, hunting and resting use at a place: its own zone, or the
+## zone of a dangerous door out of it (the original's marea), or "".
+func zone_here(loc: String = "") -> String:
+	if loc == "":
+		loc = state.location
+	var zone := content.typed_value("location", loc, "zone")
+	if zone not in ["", "none"]:
+		return zone
+	for door in runner.exit_doors(loc):
+		var z := content.typed_value("door", door, "leads to zone")
+		if z != "":
+			return z
+	return ""
+
+
+## People staying at collected places (the original's "number of collected people").
+func collected_people() -> int:
+	var n := 0
+	for c in content.all_of("character"):
+		var at := where(c)
+		if at != "" and "collected" in content.list_field(at, "flags"):
+			n += 1
+	return n
+
+
 func feat_bonus(field: String) -> int:
 	var bonus := 0
 	for id in state.feats:
 		bonus += int(content.typed_value("feat", id, field, "0"))
 	return bonus
+
+
+## Ends the game: `cause` is what ended it (an ending's ID, "humanity", "rescue",
+## "hunger" ...), `ending` what `state.ending` records. The scene runner then
+## plays the epilogue (EndingSystem).
+func end_game(cause: String, ending: String) -> void:
+	if state.ending != "":
+		return
+	state.ending = ending
+	state.values["end.cause"] = cause
+	emit({"type": "ending", "ending": ending})
+	runner.begin_epilogue()
 
 
 func pass_turn() -> void:
@@ -933,6 +1213,8 @@ func pass_turn() -> void:
 	RestSystem.tick(self)
 	ItemSystem.tick(self)
 	MeterSystem.tick(self)
+	HeatSystem.tick(self)
+	PregnancySystem.tick(self)
 	for c in state.conditions.keys():
 		state.conditions[c].remaining -= 1
 		if state.conditions[c].remaining > 0:
@@ -945,7 +1227,7 @@ func pass_turn() -> void:
 
 
 ## The moments hooks can run at (`on:` of a hook).
-const HOOK_MOMENTS := ["each turn"]
+const HOOK_MOMENTS := ["each turn", "captivity starts", "captivity round", "after sex"]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`
@@ -984,6 +1266,35 @@ func status_snapshot() -> Dictionary:
 		"day": day(), "time": time_slot(), "stats": stats, "conditions": state.conditions.keys(),
 		"sleep": RestSystem.status(self),
 		"companions": state.companions.map(func(c): return content.field_value(c, "name", c))}
+
+
+## The top bar's meters and money: the game's `== status_bar` (its `meters` are
+## player values, `currency` one more), else health alone. Each meter has a
+## label (a meter definition's name, "Health" for hp) and a maximum (maxhp for
+## hp, a meter's limit, else 100).
+func status_bar() -> Dictionary:
+	var keys: Array = ["hp"]
+	var currency := ""
+	var defs: Dictionary = content.all_of("status_bar")
+	if not defs.is_empty():
+		var id: String = defs.keys()[0]
+		keys = content._list(content.get_def("status_bar", id), "meters")
+		currency = content.typed_value("status_bar", id, "currency")
+	var out: Array = []
+	for k: String in keys:
+		var label := "Health" if k == "hp" else k.capitalize()
+		var top := 100
+		var meter := MeterSystem.owner_of(self, "player." + k)
+		if meter != "":
+			label = content.typed_value("meter", meter, "name", label)
+			var limit := int(content.typed_value("meter", meter, "limit", "0"))
+			top = limit if limit > 0 else top
+		if k == "hp":
+			top = int(value("player.maxhp"))
+		var v = value("player." + k)
+		out.append({"key": k, "label": label, "value": int(v) if v != null else 0, "max": top})
+	var money = value("player." + currency) if currency != "" else null
+	return {"meters": out, "currency": currency, "money": int(money) if money != null else 0}
 
 
 ## Carried items for the inventory. "section" follows the original's
@@ -1092,7 +1403,9 @@ func map_data(region: String = "") -> Dictionary:
 		if f != null:
 			for l in f.children:
 				if not l.is_blank() and ":" in l.text:
-					exits.append(l.text.split(":", true, 1)[1].split(",")[0].strip_edges())
+					var to := SceneRunner.exit_target(l.text.split(":", true, 1)[1])
+					if to != "":
+						exits.append(to)
 		places.append({"id": id, "name": content.field_value(id, "name", id), "x": int(pos[0]), "y": int(pos[1]),
 			"known": state.known.has(id), "current": id == state.location, "exits": exits,
 			"fast_travel": "fast travel" in content.list_field(id, "flags")})

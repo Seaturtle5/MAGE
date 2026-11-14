@@ -1,0 +1,80 @@
+// Events found by exploring (the Explore button in a zone). `repeat` says when
+// an event can come back: once, until resolved ("~ resolve"), or always.
+
+// A one-off find that moves the quest along (characters/wren.fsc).
+== event glint_in_the_moss
+name: Something glinting
+found by: exploring in forest
+repeat: until resolved
+// Only while Wren is looking for her knife.
+requires: quest lost_knife is asked
+play:
+    Something glints in the moss beside the path.
+    * Pick it up
+        It is a small carving knife, its handle worn smooth. This must be Wren's.
+        ~ give carving_knife
+        ~ resolve
+    * Leave it
+        You leave it where it lies. Someone might be missing it, though.
+
+// Picking a random creature: the scene names one that lives here, without a fight.
+== event rustling_bushes
+name: Rustling bushes
+found by: exploring in forest, riverbank
+repeat: always
+play:
+    ~ pick random creature tagged woodland nearby
+    if a creature is picked:
+        The bushes rustle and part. [A picked creature] peers out at you, then thinks better of it and vanishes.
+    else:
+        The bushes rustle, but nothing comes out.
+
+// A fight with a branch for each outcome; `outcomes` names the results an event
+// can record ("~ outcome made_friends"), which other content can test
+// ("river_crossing outcome is made_friends").
+== event river_crossing
+name: The stepping stones
+found by: exploring in riverbank
+repeat: until resolved
+outcomes: made_friends, chased_off
+play:
+    A line of stepping stones crosses the river. An otter sits on the middle one, guarding it.
+    * Shoo it away
+        fight river_otter:
+            won:
+                The otter gives up the stone with a sulky chirp. You cross without getting your feet wet.
+                ~ outcome chased_off
+                ~ resolve
+            lost:
+                You slip off a stone and land in the shallows with a splash.
+                ~ hurt 2
+            fled:
+                You back off the stones. The otter looks smug.
+    * Offer it a berry [if player has wild_berries]
+        ~ take wild_berries
+        The otter takes the berry with both paws, considers you, and moves aside.
+        ~ outcome made_friends
+        ~ give lucky_acorn
+        ~ resolve
+    * Leave
+        You leave the otter to its stone.
+
+// An event that starts a captivity (events/brambles.fsc defines it).
+== event bramble_patch
+name: A bramble patch
+found by: exploring in riverbank
+repeat: always
+play:
+    You push through a thicket by the water, and the brambles close around your legs.
+    play bramble_snare
+    You pick the last thorns out of your trousers.
+
+// Found by scavenging (rules/scavenging.fsc), not by exploring.
+== event forgotten_basket
+name: A forgotten basket
+found by: scavenging in forest
+repeat: once
+play:
+    Half-hidden under a fern is an old wicker basket. Inside: a clean bandage and a slingshot.
+    ~ give bandage
+    ~ give slingshot

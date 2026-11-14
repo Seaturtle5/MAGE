@@ -1,0 +1,73 @@
+// A creature with two variants (a vixen and a tod, picked for each meeting with
+// the player's filter settings), a loot drop, and a form: losing to the fox
+// slowly changes the player's body, one part at a time.
+
+== creature forest_fox
+name: Forest Fox
+found in: forest
+active: always
+level: 1
+hp: 14
+damage: 3
+stats: strength 8, dexterity 14, stamina 10, perception 14, intelligence 10, charisma 12
+libido: 20
+form: forest_fox
+gender: female
+// The item and the chance it drops after a win.
+loot: wild_berries 40%
+tags: woodland
+// Variants: each meeting picks one the player's filters allow. Scenes test
+// "forest_fox is variant male" or "forest_fox is female"; the pronouns [ghe],
+// [ghis] and [gche] (capitalized) follow the variant met now.
+variants:
+    female:
+        gender: female
+    male:
+        gender: male
+        hp: 16
+// The encounter plays before every fight with the fox; it can change values.
+encounter:
+    ~ woods.fox_meetings + 1 quietly
+    A russet [if forest_fox is variant male]tod[else]vixen[end if] steps onto the path, tail swishing. [gche] grins at you with far too many teeth.[if woods.fox_meetings > 1] [gche] looks familiar.[end if]
+// Attack lines are picked each round; they may include small effects.
+attack:
+    [one of]The fox nips at your ankle![or]The fox darts in and scratches you![or]The fox kicks dirt in your face![at random]
+defeated:
+    The fox yips and bounds off into the undergrowth.
+victory:
+    The fox circles you once, licks your cheek and trots away. Something itches at the base of your spine.
+
+// The form: what each body part becomes. Losing a fight infects with one part.
+== form forest_fox
+name: Forest Fox
+scale: 3
+body type: [one of]vulpine[or]fox-like[at random]
+descriptor: lithe, quick
+head:
+    description: that of a fox, with tall pointed ears
+    change: your face stretches into a narrow muzzle and your ears rise into points
+skin:
+    description: russet fur
+    change: soft russet fur spreads across your skin
+tail:
+    description: A bushy red fox tail sways behind you.
+    change: the itch at the base of your spine grows into a bushy red tail
+
+// A second creature: found at the river, and not infectious.
+== creature river_otter
+name: River Otter
+found in: riverbank
+level: 1
+hp: 10
+damage: 2
+gender: male
+infectious: no
+tags: woodland
+encounter:
+    A sleek otter pops out of the water, chattering at you like you owe him money.
+attack:
+    [one of]The otter slaps you with a wet tail![or]The otter splashes river water in your eyes![at random]
+defeated:
+    The otter slides back into the river in a huff.
+victory:
+    The otter steals a berry from your pocket and swims off, very pleased with himself.

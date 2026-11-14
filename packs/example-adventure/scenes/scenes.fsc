@@ -1,0 +1,23 @@
+// Values that belong to the whole pack rather than a character. Written as
+// <owner>.<name>: woods.fox_meetings.
+== values woods
+values:
+    fox_meetings: number
+    last_rest: time
+
+// Text snippets: reusable text, inserted with [weather]. They can use
+// conditions and variations.
+== text weather
+[if time is night]The night is cold and clear.[else][one of]A light breeze stirs the pines.[or]The air smells of resin and rain.[or]It's a warm, still day.[at random][end if]
+
+// A plain scene other content can play ("play woods.night_sounds") or go to
+// ("-> woods.night_sounds"). "---" is a page break: the player clicks to go on.
+// "play <scene> 2 to 3 times" repeats a scene.
+== scene woods.night_sounds
+You lie awake listening to the woods.
+---
+play woods.owl 2 to 3 times
+Eventually, sleep comes.
+
+== scene woods.owl
+[one of]An owl calls.[or]Another owl answers.[or]Something small scurries over the roof.[at random]

@@ -1,0 +1,231 @@
+// TEMPLATE: copy a block into a file of your pack, remove the "// " in front of
+// each line, give it a new ID and fill in the fields. Everything here is
+// commented out, so this file adds nothing to the game.
+//
+// IDs use lowercase letters, digits and underscores, and never change once
+// released (saves refer to them). Indent with four spaces.
+//
+// ---------------------------------------------------------------- location
+// == location my_place
+// name: My Place
+// region: my_region
+// zone: my_zone                (or "none": nothing to find by exploring)
+// map: 3, 4                    (column, row on the region's map grid)
+// flags: fast travel           (also: safe rest, known at start)
+// items: some_item             (items lying here)
+// exits:
+//     north: other_place
+// description:
+//     What the player sees. [if time is night]At night.[else]By day.[end if]
+//
+// ---------------------------------------------------------------- character
+// == character my_person
+// name: Sam
+// pronouns: they
+// lives at: my_place
+// values:
+//     trust: wary, friendly, close
+//     met: flag
+// talk:
+//     Sam waves. 'Hello there.'
+//     -> my_person.talk
+//
+// == menu my_person.talk
+// title: What do you want to talk about?
+// leave: Goodbye
+// * A topic -- A short description [if not my_person.met]
+//     'Nice to meet you,' Sam says.
+//     ~ my_person.met = yes
+//
+// ---------------------------------------------------------------- quest
+// == quest my_quest
+// name: A small favour
+// stages:
+//     not_started
+//     asked: Sam asked you for help.
+//     done: You helped Sam.
+// done at: done
+//
+// ---------------------------------------------------------------- item
+// == item my_item
+// name: shiny pebble
+// description: A smooth, shiny pebble.
+// weight: 1
+// category: other              (food, drink, medical, clothing, weapon, collectible, other)
+// use:
+//     You turn the pebble over in your hand.
+//
+// ---------------------------------------------------------------- event
+// == event my_event
+// name: Something odd
+// found by: exploring in my_zone
+// repeat: until resolved
+// play:
+//     Something odd happens.
+//     * Look closer
+//         ~ give my_item
+//         ~ resolve
+//     * Walk away
+//         You walk away.
+//
+// ---------------------------------------------------------------- scene
+// == scene my_scene
+// Plain lines are text. Lines starting with ~ are effects:
+// ~ player.hunger - 10
+// "-> other_scene" goes to another scene, "play other_scene" plays it and comes back.
+//
+// ---------------------------------------------------------------- creature and form
+// == creature my_creature
+// name: Wild Thing
+// found in: my_zone
+// level: 1
+// hp: 12
+// damage: 3
+// form: my_creature
+// gender: male
+// encounter:
+//     A wild thing appears!
+// attack:
+//     [one of]It swipes at you![or]It lunges![at random]
+// defeated:
+//     It runs away.
+// victory:
+//     It wins, and you feel strange.
+//
+// == form my_creature
+// name: Wild Thing
+// tail:
+//     description: A short, wild tail.
+//     change: a short tail sprouts behind you
+//
+// ---------------------------------------------------------------- door
+// == door my_door
+// name: Garden gate
+// locked: not player has gate_key   (yes, no, or a condition)
+// locked text: The gate is locked.
+// shown in room: A garden gate leads north.
+// (use it in both places' exits:  north: other_place, door my_door)
+//
+// ---------------------------------------------------------------- arrival / leaving event
+// == event my_arrival
+// name: A welcome
+// found by: arriving at my_place      (or: walking into, travelling to, leaving my_place north)
+// repeat: once
+// chance: 50%
+// cooldown: 4                          (turns before it can come up again)
+// requires: time is night
+// play:
+//     A cat greets you at the door.
+//     ~ continue moving                (leaving events only: the player walks on)
+//
+// ---------------------------------------------------------------- values for the whole pack
+// == values my_pack
+// values:
+//     coins_found: number
+//     visited_tower: flag
+//     mood: calm, nervous, scared       (states, in order)
+//     last_visit: time                  (for "since my_pack.last_visit > 2 turns")
+//
+// ---------------------------------------------------------------- text snippet
+// == text my_snippet
+// [one of]It is quiet.[or]Wind moves the leaves.[at random]
+// (use it in any text as [my_snippet])
+//
+// ---------------------------------------------------------------- condition (timed state)
+// == condition my_condition
+// name: Energized
+// shows: Str +1.
+// while active:
+//     player.strength + 1
+// ends:
+//     The energy wears off.
+// (start it with:  ~ condition my_condition for 6 hours)
+//
+// ---------------------------------------------------------------- meter
+// == meter my_meter
+// name: Tiredness
+// value: player.tiredness
+// decay: 1
+// limit: 10
+// stages:
+//     5: my_condition
+// at limit:
+//     You collapse.
+// (change it with:  ~ meter my_meter + 2)
+//
+// ---------------------------------------------------------------- hook
+// == hook my_hook
+// on: each turn
+// when: time is night and chance 1 in 4
+// do:
+//     An owl hoots somewhere.
+//
+// ---------------------------------------------------------------- captivity
+// == captivity my_trap
+// name: Stuck in the mud
+// escape at: 3
+// status: Pulls: [captivity.struggle] of 3
+// struggle label: Pull
+// start:
+//     Your boots sink into the mud.
+// situation:
+//     The mud holds you fast.
+// struggle:
+//     You pull hard.
+// escape:
+//     With a sucking sound, you come free.
+// (start it from a scene with:  play my_trap)
+//
+// ---------------------------------------------------------------- creature variants
+// == creature my_creature
+// ...
+// variants:
+//     female:
+//         gender: female
+//     male:
+//         gender: male
+//         hp: 16
+// (scenes test "my_creature is variant male"; fights can name one: "fight my_creature (male):")
+//
+// ---------------------------------------------------------------- filter, tag, level, feat
+// == filter my_filter
+// name: Spiders
+// description: Spider creatures.
+//
+// == tag my_tag
+// name: Insects
+//
+// == level my_level
+// name: Scenery
+// default: standard
+// options:
+//     less: Short.
+//     standard: Normal.
+//     more: Long.
+// (test it with:  level my_level is more)
+//
+// == feat my_feat
+// name: Lucky
+// description: You find more while exploring.
+// exploration bonus: 2
+//
+// ---------------------------------------------------------------- scenario
+// == scenario my_start
+// name: A new beginning
+// start: my_place
+// description: Shown on the New game screen.
+// setup:
+//     ~ give my_item quietly
+// intro:
+//     The opening text.
+//
+// ---------------------------------------------------------------- scavenging rules
+// == scavenge_rules my_scavenging
+// generic: my_generic_find            (an event found by scavenging)
+// generic chance: 2 in 3
+// target: 8
+// start: You search around.
+// found: You come across
+// failure: You find nothing.
+// only at: You can only scavenge at fast travel points.
+

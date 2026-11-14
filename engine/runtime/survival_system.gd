@@ -74,7 +74,7 @@ static func tick(game) -> void:
 				if value > 30:
 					game.set_value("player.morale", int(game.value("player.morale")) - (value - 30) / 5)
 				if value > 99:
-					_end(game, text(game, key + " death", "You have died of %s." % key))
+					_end(game, key, text(game, key + " death", "You have died of %s." % key))
 					return
 			var hint_at := int(text(game, "starving hint at", "50"))
 			if hunger > hint_at or thirst > hint_at:
@@ -96,9 +96,9 @@ static func tick(game) -> void:
 		if int(game.value("player.humanity")) < int(text(game, "journal hint below", "50")):
 			say(game, text(game, "journal hint"))
 	if int(game.value("player.humanity")) <= 0:
-		_end(game, text(game, "humanity ending", "Your mind is lost to the infection."))
+		_end(game, "humanity", text(game, "humanity ending", "Your mind is lost to the infection."))
 	elif game.state.turn >= RESCUE_TURNS:
-		_end(game, text(game, "rescue ending", "You survived until the rescue came."))
+		_end(game, "rescue", text(game, "rescue ending", "You survived until the rescue came."))
 	elif RESCUE_TURNS - game.state.turn < int(text(game, "anticipation within", "20")) and game.rng.chance(1, 3):
 		say(game, text(game, "rescue anticipation"))
 
@@ -126,6 +126,5 @@ static func species(game, who: String) -> String:
 	return "corrupted"
 
 
-static func _end(game, ending: String) -> void:
-	game.state.ending = ending
-	game.emit({"type": "ending", "ending": ending})
+static func _end(game, cause: String, ending: String) -> void:
+	game.end_game(cause, ending)

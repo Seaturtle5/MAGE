@@ -18,7 +18,15 @@ static var _rules: Array = [
 	["no_fight", RegEx.create_from_string("^no fight$")],
 	["resolve", RegEx.create_from_string("^resolve(?: (\\w+))?$")],
 	["end_pregnancy", RegEx.create_from_string("^end pregnancy$")],
+	# Pregnancy (PregnancySystem): "~ impregnation chance", "~ impregnate female by wolf with eggs".
+	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
+	["pregnancy_step", RegEx.create_from_string("^(accept pregnancy|give birth|record child)$")],
 	["end_heat", RegEx.create_from_string("^end heat$")],
+	["reset_heat", RegEx.create_from_string("^reset heat$")],
+	["continue_moving", RegEx.create_from_string("^continue moving$")],
+	["end_captivity", RegEx.create_from_string("^(end|escape) captivity$")],
+	["drive_heat", RegEx.create_from_string("^drive heat( now)?$")],
+	["set_level", RegEx.create_from_string("^level (\\w+) = (\\w+)$")],
 	["reset_human", RegEx.create_from_string("^reset to human$")],
 	["outcome_of", RegEx.create_from_string("^outcome (\\w+) of (\\w+)$")],
 	["outcome", RegEx.create_from_string("^outcome (\\w+)$")],
@@ -36,22 +44,44 @@ static var _rules: Array = [
 	["unwield", RegEx.create_from_string("^unwield$")],
 	["resize", RegEx.create_from_string("^resize to ([1-5])$")],
 	["meter", RegEx.create_from_string("^meter (\\w+) ([+-]) (.+)$")],
+	# Fights (CombatSystem): the creature's blows and the end of a fight, from its scripts.
+	["enemy_attack", RegEx.create_from_string("^enemy attack(?: (\\d+)%)?$")],
+	["enemy_strike", RegEx.create_from_string("^enemy strike(?: (\\d+)%| for (.+?))?(?: (ignoring armor|through half armor|without shield))?$")],
+	["fight_result", RegEx.create_from_string("^(lose|win) fight(?: by (lust|injury|submitting|seduction|fighting))?$")],
+	# Items lying in a place, and an item's infection, changed during play.
+	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
+	["remove_from", RegEx.create_from_string("^remove (\\w+) from (\\w+)$")],
+	["item_strain", RegEx.create_from_string("^item (\\w+) infects as (\\w+)$")],
+	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
 	["take", RegEx.create_from_string("^take (\\w+)(?: (.+))?$")],
 	["move", RegEx.create_from_string("^move (\\w+) to (\\w+)$")],
 	# A creature's zones or infection change in play: "creature centaur found in plains",
 	# "creature centaur found in nowhere", "creature centaur infectious yes", "creature rabbit gender female".
-	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender) ([a-z0-9_, ]+)$")],
+	["grow", RegEx.create_from_string("^grow (cock|balls|breasts) by (.+)$")],
+	["form_sex", RegEx.create_from_string("^form (\\w+) sex (male|female|herm|neuter|unchanged)$")],
+	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with) ([a-z0-9_,% ]+)$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) lives at (\\w+)$")],
 	["discover", RegEx.create_from_string("^discover (\\w+)$")],
+	["forget", RegEx.create_from_string("^forget (\\w+)$")],
+	["use_item", RegEx.create_from_string("^use (\\w+)$")],
 	["go", RegEx.create_from_string("^go to (\\w+)$")],
 	["infect_part", RegEx.create_from_string("^infect with player (head|torso|body|skin|tail|cock|cunt|face)$")],
+	["infect_picked", RegEx.create_from_string("^infect picked creature( keeping sex)?$")],
+	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
 	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
+	["transform_part", RegEx.create_from_string("^transform (head|face|torso|body|back|arms|legs|ass|tail|cock|cunt|skin) into (\\w+)$")],
 	["sex", RegEx.create_from_string("^sex (\\w+) receives (\\w+) from (\\w+)$")],
 	["infects_as", RegEx.create_from_string("^this fight infects as (\\w+)$")],
 	["no_infection", RegEx.create_from_string("^this fight does not infect$")],
 	["ending", RegEx.create_from_string("^ending (\\w+)$")],
+	# Endings (EndingSystem): mark one, what happened to the player, details for later endings.
+	["trigger_ending", RegEx.create_from_string("^trigger ending (\\w+)$")],
+	["end_state", RegEx.create_from_string("^player (dies|is imprisoned|leaves)$")],
+	["ending_reason", RegEx.create_from_string("^ending reason (.+)$")],
+	["ending_flag", RegEx.create_from_string("^ending flag (\\w+)$")],
+	["exclude_endings", RegEx.create_from_string("^exclude (\\w+) endings$")],
 	["pregnancy_faster", RegEx.create_from_string("^pregnancy faster by (\\d+)$")],
 	["extend_heat", RegEx.create_from_string("^extend heat by (\\d+) turns?$")],
 	["survival", RegEx.create_from_string("^(drink|eat|heal|hurt) (.+)$")],
@@ -89,8 +119,13 @@ static func _match(s: String) -> Dictionary:
 			"resolve":
 				# "resolve" ends this event; "resolve other_event" ends another one.
 				return {"op": "resolve", "event": m.get_string(1)}
-			"cancel_use", "no_fight", "end_pregnancy", "end_heat", "reset_human":
+			"cancel_use", "no_fight", "end_pregnancy", "end_heat", "reset_heat", "reset_human", "continue_moving":
 				return {"op": rule[0]}
+			"impregnate":
+				return {"op": "impregnate", "sure": m.get_string(1) == "impregnate", "kind": m.get_string(2),
+					"father": m.get_string(3).replace("random creature", "random"), "eggs": m.get_string(4) != ""}
+			"pregnancy_step":
+				return {"op": m.get_string(1).replace(" ", "_")}
 			"outcome":
 				return {"op": "outcome", "outcome": m.get_string(1)}
 			"outcome_of":
@@ -146,17 +181,60 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "meter", "meter": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
 			"move":
 				return {"op": "move", "who": m.get_string(1), "place": m.get_string(2)}
+			"enemy_attack":
+				return {"op": "enemy_attack", "percent": int(m.get_string(1)) if m.get_string(1) != "" else 100}
+			"enemy_strike":
+				var out := {"op": "enemy_strike", "percent": int(m.get_string(1)) if m.get_string(1) != "" else 100,
+					"armor": {"ignoring armor": "no armor", "through half armor": "area", "without shield": "no shield"}.get(m.get_string(3), "normal")}
+				if m.get_string(2) != "":
+					var amt := amount(m.get_string(2))
+					if amt.has("error"):
+						return {"error": amt.error}
+					out["amount"] = amt
+				return out
+			"fight_result":
+				var how := m.get_string(2)
+				var result := "lost" if m.get_string(1) == "lose" else "won"
+				if how != "":
+					if (result == "lost") != (how in ["lust", "injury", "submitting"]):
+						return {"error": "A fight is lost by lust, injury or submitting, and won by seduction or fighting."}
+					result += " by " + how
+				return {"op": "fight_result", "result": result}
+			"put":
+				return {"op": "put", "item": m.get_string(1), "count": int(m.get_string(2)) if m.get_string(2) != "" else 1, "place": m.get_string(3)}
+			"remove_from":
+				return {"op": "remove_from", "item": m.get_string(1), "place": m.get_string(2)}
+			"item_strain":
+				return {"op": "item_strain", "item": m.get_string(1), "form": m.get_string(2)}
+			"creature_number":
+				var amt := amount(m.get_string(4))
+				if amt.has("error"):
+					return {"error": amt.error}
+				return {"op": "creature_number", "creature": m.get_string(1), "field": m.get_string(2), "how": m.get_string(3), "amount": amt}
 			"creature_change":
 				return {"op": "creature_change", "creature": m.get_string(1), "field": m.get_string(2), "value": m.get_string(3).strip_edges()}
 			"lives_at":
 				return {"op": "lives_at", "who": m.get_string(1), "place": m.get_string(2)}
 			"discover":
 				return {"op": "discover", "place": m.get_string(1)}
+			"forget":
+				return {"op": "forget", "place": m.get_string(1)}
+			"use_item":
+				return {"op": "use_item", "item": m.get_string(1)}
 			"go":
 				return {"op": "go", "place": m.get_string(1)}
 			"infect_part":
 				# The strain the player's part already has (the original's "infect BodyName of Player").
 				return {"op": "infect", "part": {"body": "torso", "face": "head"}.get(m.get_string(1), m.get_string(1)), "form": "", "times": {"value": {"op": "num", "v": 1}}, "keep_sex": false}
+			"infect_picked":
+				return {"op": "infect", "form": "@picked", "times": {"value": {"op": "num", "v": 1}}, "keep_sex": m.get_string(1) != ""}
+			"pick":
+				var favored: Array = []
+				for c in m.get_string(3).split(",", false):
+					favored.append(c.strip_edges())
+				var where := m.get_string(2)
+				return {"op": "pick", "tag": m.get_string(1), "zone": "" if where.begins_with("nearby") else where.trim_prefix("in "),
+					"with_outside": where == "nearby or outside", "favoring": favored}
 			"infect":
 				var times := amount(m.get_string(2)) if m.get_string(2) != "" else {"value": {"op": "num", "v": 1}}
 				if times.has("error"):
@@ -164,6 +242,9 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "infect", "form": m.get_string(1), "times": times, "keep_sex": m.get_string(3) != ""}
 			"transform":
 				return {"op": "transform", "form": m.get_string(1)}
+			"transform_part":
+				# One part takes the form, quietly (the original's "now SkinName of Player is X").
+				return {"op": "transform", "form": m.get_string(2), "part": BodySystem.ALIASES.get(m.get_string(1), m.get_string(1))}
 			"sex":
 				return {"op": "sex", "taker": m.get_string(1), "act": m.get_string(2), "giver": m.get_string(3)}
 			"infects_as":
@@ -172,8 +253,31 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "infects_as", "creature": ""}
 			"ending":
 				return {"op": "ending", "ending": m.get_string(1)}
+			"trigger_ending":
+				return {"op": "trigger_ending", "ending": m.get_string(1)}
+			"end_state":
+				return {"op": "end_state", "state": {"dies": "dead", "is imprisoned": "imprisoned", "leaves": "left"}[m.get_string(1)]}
+			"ending_reason":
+				return {"op": "ending_reason", "reason": m.get_string(1)}
+			"ending_flag":
+				return {"op": "ending_flag", "flag": m.get_string(1)}
+			"exclude_endings":
+				return {"op": "exclude_endings", "type": m.get_string(1)}
 			"pregnancy_faster":
 				return {"op": "pregnancy_faster", "by": int(m.get_string(1))}
+			"set_level":
+				return {"op": "set_level", "level": m.get_string(1), "option": m.get_string(2)}
+			"end_captivity":
+				return {"op": "end_captivity", "escape": m.get_string(1) == "escape"}
+			"grow":
+				var by := amount(m.get_string(2))
+				if by.has("error"):
+					return {"error": by.error}
+				return {"op": "grow", "part": m.get_string(1), "amount": by}
+			"form_sex":
+				return {"op": "form_sex", "form": m.get_string(1), "sex": "" if m.get_string(2) == "unchanged" else m.get_string(2)}
+			"drive_heat":
+				return {"op": "drive_heat", "now": m.get_string(1) != ""}
 			"extend_heat":
 				return {"op": "extend_heat", "turns": int(m.get_string(1))}
 			"survival":

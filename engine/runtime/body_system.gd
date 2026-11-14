@@ -70,6 +70,49 @@ static func _roll(game, form: String, keep_sex: bool = false) -> void:
 			_change_part(game, form, part)
 
 
+## "~ grow cock by 1 to 3" (and balls, breasts): items and scenes that enlarge a part,
+## after the original's grow cock / grow balls / grow breasts (Core Mechanics/Infections.i7x:226-394),
+## with its feats: Female Preferred, Modest Organs, Flat Chested.
+static func grow(game, part: String, amount: int) -> void:
+	if amount <= 0:
+		return
+	match part:
+		"cock":
+			if _prefers(game, "female"):
+				return
+			var before := _num(game, "cock.length")
+			var length := before + amount
+			if _has(game, "modest_organs"):
+				length = mini(length, maxi(before, 8))
+			if length > before:
+				_setn(game, "cock.length", length)
+				_snippet(game, "infection_cock_grows")
+		"balls":
+			if _prefers(game, "female") or not game.adjective("player", "male") or _num(game, "balls.size") > 6:
+				return
+			var before := _num(game, "balls.size")
+			var size := mini(before + amount, 7)
+			if _has(game, "modest_organs"):
+				size = mini(size, maxi(before, 3))
+			if size > before:
+				_setn(game, "balls.size", size)
+				_snippet(game, "infection_balls_grow")
+		"breasts":
+			if _has(game, "flat_chested") or _num(game, "breasts.size") > 25:
+				return
+			var before_text := TextTemplate.plain(game.render(TextTemplate.compile("[breast_size_desc]", "grow.breasts")))
+			_setn(game, "breasts.size", mini(_num(game, "breasts.size") + amount, 26))
+			_say(game, "You [one of]groan and grab at your chest[or]give a loud moan, shuddering[or]almost tip forward in surprise[or]look down fearfully as sensation builds[at random], [skin] skin glistening as your %s breasts become [breast_size_desc] [one of]orbs[or]breasts[or]jugs[or]tits[at random]!" % before_text)
+
+
+## One part takes a form at once, without a message ("~ transform skin into X").
+static func set_part(game, form: String, part: String) -> void:
+	if not fields(game, form, part).is_empty():
+		_change_part(game, form, part, false)
+		if part == "torso":
+			_attributes(game, form)  # the body decides size and what gear fits (attributeinfect)
+
+
 ## The part's new form and description, with "Your face tingles as ..."
 static func _change_part(game, form: String, part: String, message: bool = true) -> void:
 	var data := fields(game, form, part)
@@ -111,7 +154,15 @@ static func target_sex(game, form: String) -> String:
 		for p in ["male", "herm", "female"]:
 			if _prefers(game, p):
 				return p
-	return game.content.typed_value("form", form, "sex", "")
+	# The variant of the creature met now can move the infection elsewhere
+	# (the original's PrepCombat setting the sex entry by the gender it rolled).
+	var met: String = game.current_creature()
+	if met != "" and game.creature_field(met, "form", met) == form:
+		var by_variant: Variant = VariantSystem.field(game, met, "infection sex")
+		if by_variant != null:
+			return str(by_variant)
+	# "~ form X sex male" changes it during play (the original's "now sex entry is ...").
+	return str(game.state.values.get("form.%s.sex" % form, game.content.typed_value("form", form, "sex", "")))
 
 
 static func _prefers(game, sex: String) -> bool:

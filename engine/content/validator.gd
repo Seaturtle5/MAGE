@@ -11,7 +11,7 @@ extends RefCounted
 
 const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
 	"cock", "cock size", "cup size", "strip crotch", "strip chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
-	"ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
+	"picked creature", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
@@ -19,8 +19,13 @@ const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He"
 const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "freecred", "strength", "dexterity", "stamina",
 	"charisma", "intelligence", "perception", "hunger", "thirst", "morale", "libido", "humanity", "lust",
 	"cocks", "cunts", "nipples", "name", "heat", "pregnancy", "balls", "cock", "cunt", "sterile", "fatigue",
-	"capacity", "carried_weight", "scale", "gender_look", "style", "breasts", "pronouns"]
+	"capacity", "carried_weight", "scale", "gender_look", "style", "breasts", "pronouns",
+	"heat_turns", "heat_paused", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration",
+	"sex", "last_partner", "last_sex", "experienced", "virgin", "oral_virgin", "anal_virgin", "penile_virgin",
+	"first_anal_partner", "first_vaginal_partner", "first_oral_partner", "first_penile_partner",
+	"weight", "definition", "androgyny", "body_hair", "ass", "mouth", "clit"]
 const SPECIAL_TARGETS := ["back", "end"]
+const LOCATION_FLAGS := ["fast travel", "private", "safe rest", "known at start", "collected"]
 const CREATURE_GENDERS := ["neuter", "male neuter", "female neuter", "male", "female", "herm", "shemale", "male herm", "cuntboy", "variable"]
 ## The kinds of sex the original records (CreatureSexAftermath / NPCSexAftermath).
 const SEX_ACTS := ["anal", "anal_toy", "vaginal", "vaginal_toy", "oral_cock", "oral_pussy", "oral_toy", "stroking",
@@ -40,6 +45,11 @@ static func run(content: ContentDB) -> void:
 	v._check_items()
 	v._check_rest_rules()
 	v._check_survival_rules()
+	v._check_heat()
+	v._check_pregnancy()
+	v._check_captivity()
+	v._check_endings()
+	v._check_status_bar()
 	v._check_scavenge_rules()
 	v._check_world()
 	v._check_filters()
@@ -101,6 +111,12 @@ func _check_slice_types() -> void:
 		for field in ["exploration bonus", "encounter bonus", "scavenge bonus"]:
 			if d.fields.has(field) and not d.fields[field].value.is_valid_int():
 				_err(d.fields[field].line, "%s must be a whole number." % field.capitalize())
+	for id in db.all_of("filter"):
+		var d := db.get_def("filter", id)
+		_path = d.path
+		for g in db._list(d, "genders"):
+			if g not in CREATURE_GENDERS:
+				_err(d.fields.genders.line, "Unknown gender '%s'. Genders: %s." % [g, ", ".join(CREATURE_GENDERS)])
 	for id in db.all_of("scenario"):
 		var d := db.get_def("scenario", id)
 		_path = d.path
@@ -121,6 +137,7 @@ func _check_slice_types() -> void:
 				_err(d.fields[flag].line, "%s must be yes or no." % flag.capitalize())
 		if d.fields.has("gender") and d.fields.gender.value not in CREATURE_GENDERS:
 			_err(d.fields.gender.line, "Unknown gender '%s'." % d.fields.gender.value)
+		_check_variants(id, d)
 		if d.fields.has("cross infection"):
 			_need(d.fields["cross infection"].value, "form", d.fields["cross infection"].line)
 		if d.fields.has("loot"):
@@ -134,11 +151,11 @@ func _check_slice_types() -> void:
 		if d.fields.has("active") and d.fields.active.value not in ["always", "day", "night"]:
 			_err(d.fields.active.line, "Active must be always, day or night.")
 		if d.fields.has("special"):
-			var parts: PackedStringArray = d.fields.special.value.split(" ", false)
-			if parts.size() != 2 or parts[0] != "grapple" or not parts[1].ends_with("%") or not parts[1].trim_suffix("%").is_valid_int():
-				_err(d.fields.special.line, "Unsupported combat behavior; the implemented behavior is 'grapple N%'.")
-			elif int(parts[1].trim_suffix("%")) < 0 or int(parts[1].trim_suffix("%")) > 100:
-				_err(d.fields.special.line, "Combat behavior chance must be between 0% and 100%.")
+			var problem := _special_problem(d.fields.special.value)
+			if problem != "":
+				_err(d.fields.special.line, problem)
+		if d.fields.has("strike with") and d.fields["strike with"].value not in CombatSystem.ATTRIBUTES:
+			_err(d.fields["strike with"].line, "Strike with names an attribute: %s." % ", ".join(CombatSystem.ATTRIBUTES))
 		_check_stats(d)
 	for id in db.all_of("form"):
 		var d := db.get_def("form", id)
@@ -205,7 +222,7 @@ func _check_items() -> void:
 			_need(d.fields.infectious.value, "form", d.fields.infectious.line)
 		if d.fields.has("purified"):
 			_need(d.fields.purified.value, "item", d.fields.purified.line)
-		for flag in ["consumed", "keep", "in combat"]:
+		for flag in ["consumed", "keep", "in combat", "plural"]:
 			if d.fields.has(flag) and d.fields[flag].value not in ["yes", "no"]:
 				_err(d.fields[flag].line, "%s must be yes or no." % flag.capitalize())
 		for nested in [["equipment", ItemSystem.EQUIPMENT_KEYS], ["weapon", ItemSystem.WEAPON_KEYS]]:
@@ -288,14 +305,24 @@ func _check_world() -> void:
 			if parts.size() < 2:
 				_err(l.number, "An exit is written as 'direction: location', for example 'north: plaza'.")
 				continue
+			_path = db.line_paths.get(l, d.path)  # exits another pack added with extend
 			var opts := parts[1].split(",")
 			var target := opts[0].strip_edges()
-			for option in opts.slice(1):
+			var door := ""
+			for option in opts.slice(0 if target.begins_with("door ") else 1):
 				var value: String = option.strip_edges()
 				if value.begins_with("door "):
-					_need(value.substr(5).strip_edges(), "door", l.number)
+					door = value.substr(5).strip_edges()
+					_need(door, "door", l.number)
 				elif value != "one way":
 					_err(l.number, "Unknown exit option '%s'; use 'door ID' or 'one way'." % value)
+			if target.begins_with("door "):
+				# A door alone: a dangerous door that explores a zone.
+				if db.has(door, "door") and db.typed_value("door", door, "leads to zone") == "":
+					_err(l.number, "An exit with a door and no place needs a dangerous door (one with 'leads to zone:').")
+				continue
+			if door != "" and db.typed_value("door", door, "leads to zone") != "":
+				continue  # going through a dangerous door explores; the place is only where it would lead
 			if not db.has(target, "location"):
 				_err(l.number, "Exit %s leads to '%s', which is not a location.%s" % [parts[0].strip_edges(), target, _suggest(target, locations.keys())])
 				continue
@@ -307,6 +334,8 @@ func _check_world() -> void:
 	for id in db.all_of("door"):
 		var d := db.get_def("door", id)
 		_path = d.path
+		if d.fields.has("leads to zone"):
+			_need(d.fields["leads to zone"].value, "zone", d.fields["leads to zone"].line)
 		if d.fields.has("locked") and d.fields.locked.value not in ["yes", "no"]:
 			_check_condition_text(d.fields.locked.value, d.fields.locked.line, id)
 	for id in db.all_of("character"):
@@ -316,6 +345,7 @@ func _check_world() -> void:
 			var home: String = d.fields["lives at"].value
 			if not db.has(home, "location"):
 				_err(d.fields["lives at"].line, "Home '%s' is not a location.%s" % [home, _suggest(home, locations.keys())])
+		_check_character_fields(d)
 	for id in db.quests:
 		var d: FscParser.Definition = db.get_def("quest", id)
 		_path = d.path
@@ -335,12 +365,34 @@ func _check_world() -> void:
 				for zone in found.zones:
 					if not db.has(zone, "zone"):
 						_err(found_line, "Zone '%s' does not exist.%s" % [zone, _suggest(zone, _ids("zone"))])
+			"arrival":
+				for place in found.walking + found.travelling:
+					_need(place, "location", found_line)
+				for place in found.travelling:
+					if "fast travel" not in db.list_field(place, "flags"):
+						_warn(found_line, "'%s' is not a fast-travel point, so nobody travels to it; use 'walking into'." % place)
+				if d.fields.has("chance") and not RegEx.create_from_string("^\\d+%?$").search(d.fields.chance.value):
+					_err(d.fields.chance.line, "An arrival event's chance is a percentage, such as 40%.")
+				for f in ["priority", "cooldown"]:
+					if d.fields.has(f) and not d.fields[f].value.is_valid_int():
+						_err(d.fields[f].line, "%s must be a whole number." % f.capitalize())
+			"leaving":
+				for pair in found.leaving:
+					_need(pair[0], "location", found_line)
+					if pair[1] not in ["north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest", "up", "down", "inside", "outside"]:
+						_err(found_line, "'%s' is not a direction." % pair[1])
 			"pending":
 				_warn(found_line, "'found by: %s' is part of the format but not run by the engine yet; the event is only started by other content." % db.typed_value("event", id, "found by"))
 			"unknown":
-				_err(found_line, "Unknown 'found by'. Use 'exploring in <zones>', 'scavenging in <zones>', 'exploring or scavenging in <zones>' or 'nowhere'.")
+				_err(found_line, "Unknown 'found by'. Use 'exploring in <zones>', 'scavenging in <zones>', 'exploring or scavenging in <zones>', 'walking into <places>', 'travelling to <places>', 'arriving at <places>', 'leaving <place> <direction>' or 'nowhere', separated by ';'.")
 		if d.fields.has("requires"):
 			_check_condition_text(d.fields["requires"].value, d.fields["requires"].line, id)
+		if d.fields.has("replaces trip"):
+			if d.fields["replaces trip"].value not in ["yes", "no"]:
+				_err(d.fields["replaces trip"].line, "Replaces trip must be yes or no.")
+			elif d.fields["replaces trip"].value == "yes" and found.travelling.is_empty():
+				_err(d.fields["replaces trip"].line, "'replaces trip: yes' needs 'found by: travelling to <places>'.")
+	_check_shops()
 	for id in db.all_of("hook"):
 		var d: FscParser.Definition = db.get_def("hook", id)
 		_path = d.path
@@ -354,6 +406,51 @@ func _check_world() -> void:
 			_err(d.fields["while incapacitated"].line, "'while incapacitated' is 'skip' or 'run'.")
 		if not d.fields.has("do"):
 			_err(d.line, "A hook needs a 'do:' script.")
+
+
+## Shops (ShopSystem): places, keeper, currency, stock and trade settings.
+func _check_shops() -> void:
+	for id in db.all_of("shop"):
+		var d: FscParser.Definition = db.get_def("shop", id)
+		_path = d.path
+		if not d.fields.has("at"):
+			_err(d.line, "A shop needs 'at:' with the places it is in.")
+		for place in db.list_field(id, "at"):
+			_need(place, "location", d.fields["at"].line)
+		if d.fields.has("run by"):
+			_need(d.fields["run by"].value, "character", d.fields["run by"].line)
+		for f in ["open when", "trade bonus when"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, id)
+		if d.fields.has("trade bonus chance") and not RegEx.create_from_string("^\\d+ in \\d+$").search(d.fields["trade bonus chance"].value):
+			_err(d.fields["trade bonus chance"].line, "Trade bonus chance is written 'N in M', such as 1 in 3.")
+		if d.fields.has("trades") and d.fields.trades.value not in ["yes", "no"]:
+			_err(d.fields.trades.line, "Trades must be yes or no.")
+		var cur := db.typed_value("shop", id, "currency")
+		if cur == "":
+			var bars: Array = db.all_of("status_bar").keys()
+			if bars.is_empty() or db.typed_value("status_bar", bars[0], "currency") == "":
+				_err(d.line, "A shop needs 'currency:' (a player value such as freecred, or 'item <id>') when the game's status bar has none.")
+		elif cur.begins_with("item "):
+			_need(cur.substr(5).strip_edges(), "item", d.fields.currency.line)
+		else:
+			_check_path("player." + cur, d.fields.currency.line)
+		if not d.fields.has("stock") and not d.fields.has("buys") and db.typed_value("shop", id, "trades", "no") != "yes":
+			_warn(d.line, "Shop %s sells nothing, buys nothing and does not trade." % id)
+		for name in ["stock", "buys"]:
+			if not d.fields.has(name):
+				continue
+			var re := RegEx.create_from_string("^(\\w+)\\s*:\\s*(\\d+)(?:\\s*\\[if (.+)\\])?$")
+			for l: FscParser.Line in d.fields[name].children:
+				if l.is_blank():
+					continue
+				var m := re.search(l.text.strip_edges())
+				if m == null:
+					_err(l.number, "A %s line is 'item_id: price', optionally followed by [if condition]." % name)
+					continue
+				_need(m.get_string(1), "item", l.number)
+				if m.get_string(3) != "":
+					_check_condition_text(m.get_string(3), l.number, id)
 
 
 ## Filters, levels and the tags content carries.
@@ -441,6 +538,22 @@ func _check_scavenge_rules() -> void:
 				_check_text_field(d.fields[field].value, d.fields[field].line, id)
 
 
+## The top bar (`== status_bar`): its meters and currency are player values.
+func _check_status_bar() -> void:
+	var defs: Dictionary = db.all_of("status_bar")
+	if defs.size() > 1:
+		var later: FscParser.Definition = db.get_def("status_bar", defs.keys()[1])
+		_path = later.path
+		_warn(later.line, "Only one status bar is shown: %s's." % defs.keys()[0])
+	for id in defs:
+		var d: FscParser.Definition = db.get_def("status_bar", id)
+		_path = d.path
+		for k in db._list(d, "meters"):
+			_check_path("player." + str(k), d.fields.meters.line)
+		if d.fields.has("currency"):
+			_check_path("player." + d.fields.currency.value, d.fields.currency.line)
+
+
 func _check_survival_rules() -> void:
 	var definitions := db.all_of("survival_rules")
 	for id in definitions:
@@ -466,6 +579,142 @@ func _check_survival_rules() -> void:
 					_err(line.number, "Use a whole-number threshold followed by text, for example '30: You're famished.'")
 				else:
 					_check_text_field(pair[1].strip_edges(), line.number, id)
+
+
+## Captivities: numbers, conditions and texts of their fields.
+func _check_captivity() -> void:
+	for id in db.all_of("captivity"):
+		var d := db.get_def("captivity", id)
+		_path = d.path
+		if d.fields.has("escape at"):
+			var e := Expr.parse(d.fields["escape at"].value)
+			if e.has("error"):
+				_err(d.fields["escape at"].line, "Escape at: %s" % e.error)
+			else:
+				for p in Expr.paths(e):
+					_check_path(p, d.fields["escape at"].line)
+		if d.fields.has("climax at") and not d.fields["climax at"].value.is_valid_int():
+			_err(d.fields["climax at"].line, "Climax at must be a whole number.")
+		if d.fields.has("obliging when"):
+			_check_condition_text(d.fields["obliging when"].value, d.fields["obliging when"].line, id)
+		if d.fields.has("pause after each") and d.fields["pause after each"].value not in ["yes", "no"]:
+			_err(d.fields["pause after each"].line, "Pause after each must be yes or no.")
+		for field in ["status", "struggle label", "oblige label", "abide label", "endure label", "recover label"]:
+			if d.fields.has(field):
+				_check_text_field(d.fields[field].value, d.fields[field].line, id)
+		if not d.fields.has("struggle"):
+			_err(d.line, "A captivity needs at least 'struggle:'.")
+		if d.fields.has("escape at") and not d.fields.has("escape"):
+			_err(d.fields["escape at"].line, "With 'escape at', write 'escape:' for when the player breaks free.")
+		if db.has(id, "scene"):
+			_err(d.line, "A scene is also called '%s'; give the captivity its own ID so 'play %s' is not ambiguous." % [id, id])
+
+
+## Heat definitions, the one heat policy, and forms' `heat:` fields.
+func _check_heat() -> void:
+	for id in db.all_of("heat"):
+		var d := db.get_def("heat", id)
+		_path = d.path
+		for field in ["cycle", "duration"]:
+			if d.fields.has(field) and (not d.fields[field].value.is_valid_int() or int(d.fields[field].value) < 1):
+				_err(d.fields[field].line, "%s is a positive whole number of days." % field.capitalize())
+		if int(db.typed_value("heat", id, "duration", "1")) > int(db.typed_value("heat", id, "cycle", "7")):
+			_err(d.line, "A heat cannot last longer than its cycle (the same number means always in heat).")
+		for field in ["female", "mpreg"]:
+			if d.fields.has(field) and d.fields[field].value not in ["yes", "no"]:
+				_err(d.fields[field].line, "%s must be yes or no." % field.capitalize())
+	var policies := db.all_of("heat_rules")
+	for id in policies:
+		var d := db.get_def("heat_rules", id)
+		_path = d.path
+		if policies.size() > 1:
+			_err(d.line, "Only one heat_rules definition may be active across loaded packs.")
+		if d.fields.has("default"):
+			_need(d.fields.default.value, "heat", d.fields.default.line)
+		for field in ["female when", "mpreg when", "off when", "intense when"]:
+			if d.fields.has(field):
+				_check_condition_text(d.fields[field].value, d.fields[field].line, id)
+		for field in ["intense lengthens", "intense quickens"]:
+			if d.fields.has(field) and RegEx.create_from_string("^\\d+ in [1-9]\\d*$").search(d.fields[field].value) == null:
+				_err(d.fields[field].line, "%s is a chance written 'N in M'." % field.capitalize())
+	for id in db.all_of("form"):
+		var d := db.get_def("form", id)
+		if d.fields.has("heat") and d.fields.heat.value != "none":
+			_path = d.path
+			_need(d.fields.heat.value, "heat", d.fields.heat.line)
+
+
+const _CHANCE := "^\\d+ in [1-9]\\d*$"
+
+
+## Pregnancy (PregnancySystem): one policy, its conditions, odds and lists.
+func _check_pregnancy() -> void:
+	var policies := db.all_of("pregnancy_rules")
+	for id in policies:
+		var d := db.get_def("pregnancy_rules", id)
+		_path = d.path
+		if policies.size() > 1:
+			_err(d.line, "Only one pregnancy_rules definition may be active across loaded packs.")
+		for field in ["female when", "male when", "blocked when", "ask when", "single child when", "child like father when",
+				"child like mother when", "child like mother at birth when", "feral when", "sire when"]:
+			if d.fields.has(field):
+				_check_condition_text(d.fields[field].value, d.fields[field].line, id)
+		for field in ["odds", "self odds", "sire odds", "albino", "melanism"]:
+			if d.fields.has(field) and RegEx.create_from_string(_CHANCE).search(d.fields[field].value) == null:
+				_err(d.fields[field].line, "%s is a chance written 'N in M'." % field.capitalize())
+		for field in ["gestation", "sire turns"]:
+			if d.fields.has(field) and RegEx.create_from_string("^[1-9]\\d*(?: to [1-9]\\d*)?$").search(d.fields[field].value) == null:
+				_err(d.fields[field].line, "%s is a number of turns, or a range such as '24 to 48'." % field.capitalize())
+		if d.fields.has("extra children"):
+			for c in d.fields["extra children"].value.split(",", false):
+				if not c.strip_edges().is_valid_int() or int(c) < 0 or int(c) > 100:
+					_err(d.fields["extra children"].line, "Extra children lists percent chances (0 to 100), one per extra child: '1, 3, 5'.")
+					break
+		if d.fields.has("most children") and (not d.fields["most children"].value.is_valid_int() or int(d.fields["most children"].value) < 1):
+			_err(d.fields["most children"].line, "Most children is a positive whole number.")
+		if d.fields.has("sire anal tag"):
+			_need(d.fields["sire anal tag"].value, "tag", d.fields["sire anal tag"].line)
+		for field in ["odds modifiers", "extra child bonus", "sire odds modifiers", "quickens", "fathers", "child genders"]:
+			if not d.fields.has(field):
+				continue
+			for line: FscParser.Line in d.fields[field].children:
+				var t := line.text.strip_edges()
+				if t == "":
+					continue
+				var k := t.rfind(":")
+				if k < 0:
+					_err(line.number, "%s: write 'condition: value' on each line." % field.capitalize())
+					continue
+				var left := t.substr(0, k).strip_edges()
+				var right := t.substr(k + 1).strip_edges()
+				match field:
+					"quickens":
+						_check_condition_text(left, line.number, id)
+						if RegEx.create_from_string(_CHANCE).search(right) == null:
+							_err(line.number, "Quickens: the chance after ':' is written 'N in M'.")
+					"fathers":
+						if not db.has(left, "form") and not db.has(left, "creature"):
+							_err(line.number, "Fathers: '%s' is neither a form nor a creature." % left)
+						_check_condition_text(right, line.number, id)
+					"child genders":
+						if left not in CREATURE_GENDERS and left not in ["trans male", "trans female"]:
+							_err(line.number, "Child genders: unknown gender '%s'." % left)
+						var m := RegEx.create_from_string("^(\\d+)(?: if (.+))?$").search(right)
+						if m == null:
+							_err(line.number, "Child genders: write 'gender: weight' or 'gender: weight if condition'.")
+						elif m.get_string(2) != "":
+							_check_condition_text(m.get_string(2), line.number, id)
+					_:
+						_check_condition_text(left, line.number, id)
+						if not right.trim_prefix("+").is_valid_int():
+							_err(line.number, "%s: the number after ':' is a whole number such as -3 or +1." % field.capitalize())
+	for id in db.all_of("form"):
+		var d := db.get_def("form", id)
+		if d.fields.has("offspring gender"):
+			_path = d.path
+			var m := RegEx.create_from_string("^(\\w+(?: \\w+)?) (\\d+) in ([1-9]\\d*)$").search(d.fields["offspring gender"].value)
+			if m == null or (m.get_string(1) not in CREATURE_GENDERS and m.get_string(1) not in ["trans male", "trans female"]):
+				_err(d.fields["offspring gender"].line, "Offspring gender is a gender and a chance, such as 'male 9 in 10'.")
 
 
 func _check_text_field(text: String, line: int, owner: String) -> void:
@@ -613,9 +862,12 @@ func _check_programs() -> void:
 			_check_instruction(ins, owner)
 			var type: String = pid.get_slice(":", 0) if ":" in pid else db.type_of(owner)
 			var field := str(pid).get_slice("#", 1)
-			if (type == "location" and field in ["description", "presence", "scent"]) or (type == "creature" and field in ["attack", "grapple", "escape", "struggle"]) or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
-				# A creature's attack and grapple text may also change values as it lands (a roll, lust).
-				var effects_ok: bool = type == "creature" and field in ["attack", "grapple"]
+			# A creature's combat scripts, and the options of its `attacks:` menu.
+			var combat_script: bool = (type == "creature" and field in COMBAT_SCRIPTS) or \
+				(str(pid).contains(".attacks@") and db.has(str(pid).get_slice(".attacks@", 0), "creature"))
+			if (type == "location" and field in ["description", "presence", "scent"]) or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
+				# A creature's combat scripts may also change values as they land (a roll, lust, a blow).
+				var effects_ok: bool = combat_script and field not in ["escape", "struggle"]
 				if ins.op == "goto":
 					# A text field may hand over to a scene made of text and conditions only.
 					var target := db.program(ins.target)
@@ -624,13 +876,27 @@ func _check_programs() -> void:
 							if t_ins.op not in ["text", "return", "jump", "unless"] and not (effects_ok and _simple_effect(t_ins)):
 								_err(ins.line, "This description hands over to '%s', which must contain text and conditions only (line %d does more)." % [ins.target, t_ins.line])
 								break
-				elif effects_ok and _simple_effect(ins):
+				elif effects_ok and (_simple_effect(ins) or _combat_effect(ins)):
 					pass
 				elif ins.op not in ["text", "return", "jump", "unless"]:
 					_err(ins.line, "This description can contain text and conditions only; move actions and choices into a scene.")
+			# A text snippet is said inside other text: text, conditions and simple effects only.
+			if type == "text" and ins.op not in ["text", "return", "jump", "unless"] and not _simple_effect(ins):
+				_err(ins.line, "A text snippet can contain text, conditions and value changes only; make it a scene to do more.")
 			# A creature's encounter plays as a scene before its fight: anything but another fight.
 			if type == "creature" and field == "encounter" and ins.op == "fight":
 				_err(ins.line, "An encounter plays just before its fight; it cannot start another fight.")
+
+
+## A creature's scripts that run during its turn in a fight.
+const COMBAT_SCRIPTS := ["attack", "grapple", "escape", "struggle", "each round", "before attack", "after attack", "miss",
+	"hump", "pounce", "breath warning", "breath direct", "breath partial", "breath miss"]
+
+
+## Effects only a fight's scripts can run: the creature's blows and the result.
+func _combat_effect(ins: Dictionary) -> bool:
+	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
+		"enemy_attack", "enemy_strike", "fight_result", "creature_number", "creature_change", "sex"]
 
 
 ## Effects a text can run while it is shown (an attack landing): values, survival
@@ -645,10 +911,10 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 		"goto", "play":
 			_check_target(ins.target, ins.line)
 		"fight":
-			if ins.variant != "":
-				_err(ins.line, "Creature variants are not implemented yet; this fight cannot be played faithfully.")
 			if ins.creature != "random" and not db.has(ins.creature, "creature"):
 				_err(ins.line, "Creature '%s' does not exist.%s" % [ins.creature, _suggest(ins.creature, _ids("creature"))])
+			elif ins.variant != "" and ins.variant not in VariantSystem.variants(db, ins.creature):
+				_err(ins.line, "%s has no variant '%s'.%s" % [ins.creature, ins.variant, _variant_list(ins.creature)])
 		"show":
 			if not _images.has(ins.image):
 				_warn(ins.line, "Image '%s' was not found in any pack's images folder." % ins.image)
@@ -670,6 +936,8 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 
 
 func _check_target(target: String, line: int) -> void:
+	if target.begins_with("@picked#") or db.has(target, "captivity"):
+		return
 	if target in SPECIAL_TARGETS or db.menus.has(target) or db.has(target, "scene") or db.has(target, "text"):
 		return
 	if "#" in target and db.program(target) != null:
@@ -680,16 +948,68 @@ func _check_target(target: String, line: int) -> void:
 
 func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 	if e.op not in ["set", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
-			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "go", "spend", "sex",
+			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
-			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight"]:
+			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
+			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
+			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
+			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "put", "remove_from", "item_strain",
+			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
+		"trigger_ending":
+			_need(e.ending, "ending", line)
+		"impregnate":
+			if e.father not in ["", "random"] and not db.has(e.father, "creature") and not db.has(e.father, "form"):
+				_err(line, "'%s' is neither a creature nor a form to father a child." % e.father)
+			if e.kind == "self" and e.father != "":
+				_err(line, "A self-impregnation has no father: leave out 'by %s'." % e.father)
+		"form_sex":
+			_need(e.form, "form", line)
+		"pick":
+			if e.tag != "":
+				_need(e.tag, "tag", line)
+			if e.zone != "":
+				_need(e.zone, "zone", line)
+			for c in e.favoring:
+				_need(c, "creature", line)
+		"set_level":
+			if not db.levels.has(e.level):
+				_err(line, "Level '%s' does not exist.%s" % [e.level, _suggest(e.level, db.levels.keys())])
+			elif e.option not in db.levels[e.level].options:
+				_err(line, "'%s' is not an option of level %s. Options: %s." % [e.option, e.level, ", ".join(db.levels[e.level].options)])
+		"creature_number":
+			_need(e.creature, "creature", line)
+		"put", "remove_from":
+			_need(e.item, "item", line)
+			if e.place != "here":
+				_need(e.place, "location", line)
+		"item_strain":
+			_need(e.item, "item", line)
+			if e.form != "nothing":
+				_need(e.form, "form", line)
+		"enemy_attack", "enemy_strike", "fight_result":
+			if not db.has(owner, "creature") and not (owner.ends_with(".attacks") and db.has(owner.trim_suffix(".attacks"), "creature")):
+				_warn(line, "'%s' only works during a fight (a creature's combat scripts or attacks)." % e.op.replace("_", " "))
 		"creature_change":
 			_need(e.creature, "creature", line)
-			if e.field == "infectious" and e.value not in ["yes", "no"]:
+			if e.field == "loot" and e.value != "none":
+				var loot: PackedStringArray = e.value.split(" ", false)
+				if loot.size() != 2 or not loot[1].ends_with("%") or not loot[1].trim_suffix("%").is_valid_int():
+					_err(line, "Loot is written 'item_id N%' or 'none'.")
+				else:
+					_need(loot[0], "item", line)
+			elif e.field == "special":
+				var problem := _special_problem(e.value)
+				if problem != "":
+					_err(line, problem)
+			elif e.field == "strike with" and e.value not in CombatSystem.ATTRIBUTES:
+				_err(line, "Strike with names an attribute: %s." % ", ".join(CombatSystem.ATTRIBUTES))
+			elif e.field == "infectious" and e.value not in ["yes", "no"]:
 				_err(line, "A creature is infectious yes or no.")
+			elif e.field == "variant" and e.value not in VariantSystem.variants(db, e.creature):
+				_err(line, "%s has no variant '%s'.%s" % [e.creature, e.value, _variant_list(e.creature)])
 			elif e.field == "gender" and e.value not in CREATURE_GENDERS:
 				_err(line, "A creature's gender is one of: %s." % ", ".join(CREATURE_GENDERS))
 			elif e.field == "found in" and e.value != "nowhere":
@@ -754,10 +1074,12 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			if not (e.op == "move" and e.who != "player" and e.place == "nowhere"):
 				_need(e.place, "location", line)
 		"infect", "transform":
-			if e.get("part", "") == "":
+			if e.get("part", "") == "" and e.form != "@picked":
 				_need(e.form, "form", line)
-		"discover", "go":
+		"discover", "go", "forget":
 			_need(e.place, "location", line)
+		"use_item":
+			_need(e.item, "item", line)
 		"companion":
 			_need(e.who, "character", line)
 		"condition":
@@ -795,6 +1117,25 @@ func _check_path(path: String, line: int) -> void:
 		if db.typed_value("meter", m, "value") == path:
 			return
 	var parts := path.split(".")
+	if parts[0] == "captivity" and parts.size() == 2 and parts[1] in CaptivitySystem.VALUES:
+		return
+	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
+		return  # a fight's own scratch numbers
+	if parts[0] == "enemy" and parts.size() == 2:
+		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS):
+			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS)])
+		return
+	if parts[0] == "sex" and parts.size() == 2 and parts[1] in ["taker", "giver", "act", "with"]:
+		return  # the last sex record (SexSystem), for `after sex` hooks
+	if db.has(parts[0], "character") and parts.size() == 2 and parts[1] in ["last_partner", "last_sex", "first_anal_partner",
+			"first_vaginal_partner", "first_oral_partner", "first_penile_partner"]:
+		return
+	if parts[0] == "pregnancy" and parts.size() == 2 and (parts[1] in PregnancySystem.STORED or parts[1] in PregnancySystem.COMPUTED):
+		return
+	if parts[0] == "child" and parts.size() == 2 and parts[1] in PregnancySystem.CHILD_VALUES:
+		return
+	if path in ["people.collected", "shop.item", "shop.price"]:
+		return
 	if parts[0] == "level" and parts.size() == 2:
 		if not db.levels.has(parts[1]):
 			_err(line, "Unknown content level '%s'." % parts[1])
@@ -822,6 +1163,8 @@ func _check_path(path: String, line: int) -> void:
 
 
 func _check_set_value(path: String, value: Dictionary, line: int) -> void:
+	if path.begins_with("pregnancy.") and path.substr(10) in PregnancySystem.COMPUTED:
+		_err(line, "%s is worked out by the pregnancy rules and cannot be set." % path)
 	var decl: Dictionary = db.values.get(path, {})
 	if decl.get("kind", "") == "states" and value.get("op", "") == "word" and value.v not in decl.states:
 		_err(line, "'%s' is not a state of %s. States: %s." % [value.v, path, ", ".join(decl.states)])
@@ -872,6 +1215,9 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			_need(c.item, "item", line)
 		"has_condition":
 			_need(c.id, "condition", line)
+		"ending":
+			if c.kind == "ending_triggered":
+				_need(c.id, "ending", line)
 		"wields":
 			if c.item != "anything":
 				_need(c.item, "item", line)
@@ -883,14 +1229,26 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			elif c.option not in db.levels[c.category].options:
 				_err(line, "'%s' is not an option of level %s. Options: %s." % [c.option, c.category, ", ".join(db.levels[c.category].options)])
 		"is":
+			if c.who == "captivity":
+				if c.adjective != "ending":
+					_err(line, "Use 'captivity is ending' (after ~ end captivity or ~ escape captivity).")
+				return
+			if db.has(c.who, "creature") and (c.adjective in Game.CREATURE_SEXES or c.adjective.begins_with("variant ")):
+				if c.adjective.begins_with("variant ") and c.adjective.substr(8) not in VariantSystem.variants(db, c.who):
+					_err(line, "%s has no variant '%s'.%s" % [c.who, c.adjective.substr(8), _variant_list(c.who)])
+				return
+			if c.who == "here":
+				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in LOCATION_FLAGS):
+					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(LOCATION_FLAGS))
+				return
 			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "companion", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
-					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "in heat", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
+					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
 				_check_path("%s.%s" % [c.who, c.adjective.replace(" ", "_")], line)
 		"lives_at", "is_at":
 			if c.who != "player":
 				_need(c.who, "character", line)
 			_need(c.place, "location", line)
-		"knows":
+		"knows", "visited":
 			_need(c.place, "location", line)
 		"part_tagged":
 			_need(c.tag, "tag", line)
@@ -907,6 +1265,129 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_check_path(p, line)
 
 
+## A creature's `special:` list: built-in behaviours, each with a chance where
+## it takes one ("grapple 20%, firebreath").
+func _special_problem(text: String) -> String:
+	for part in text.split(","):
+		var words: PackedStringArray = part.strip_edges().split(" ", false)
+		if words.is_empty() or words[0] not in CombatSystem.SPECIALS:
+			return "Unknown combat behaviour '%s'. Built in: grapple N%%, hump N%%, pounce N%%, firebreath; anything else goes in the creature's attacks." % part.strip_edges()
+		var needs_chance: bool = words[0] != "firebreath"
+		if words.size() != (2 if needs_chance else 1):
+			return "Write '%s'." % ("%s N%%" % words[0] if needs_chance else words[0])
+		if needs_chance and (not words[1].ends_with("%") or not words[1].trim_suffix("%").is_valid_int() \
+				or int(words[1].trim_suffix("%")) < 0 or int(words[1].trim_suffix("%")) > 100):
+			return "Combat behaviour chance must be between 0% and 100%."
+	return ""
+
+
+## Endings (EndingSystem): a whole-number priority, a type word, a readable condition.
+func _check_endings() -> void:
+	for id in db.all_of("ending"):
+		var d: FscParser.Definition = db.get_def("ending", id)
+		_path = d.path
+		if d.fields.has("priority") and not d.fields.priority.value.is_valid_int():
+			_err(d.fields.priority.line, "Priority must be a whole number (lower plays first).")
+		if d.fields.has("type") and not d.fields.type.value.is_valid_identifier():
+			_err(d.fields.type.line, "An ending type is one word, such as infection or bad_end.")
+		if d.fields.has("when"):
+			_check_condition_text(d.fields.when.value, d.fields.when.line, "ending:" + id)
+		if not d.fields.has("play"):
+			_warn(d.line, "Ending %s has nothing to play." % id)
+
+
+## A character's body:, stats: and relationship: keys and their values (CharacterSystem).
+func _check_character_fields(d: FscParser.Definition) -> void:
+	for p in CharacterSystem.pairs(d, "body"):
+		if not CharacterSystem.BODY.has(p.key):
+			_err(p.line, "Unknown body key '%s'. Known: %s." % [p.key, ", ".join(CharacterSystem.BODY.keys())])
+			continue
+		match CharacterSystem.BODY[p.key][1]:
+			"number":
+				if not p.value.is_valid_int() or int(p.value) < 0:
+					_err(p.line, "Body %s must be a whole number of 0 or more." % p.key)
+			"flag":
+				if p.value not in ["yes", "no"]:
+					_err(p.line, "Body %s must be yes or no." % p.key)
+			"text":
+				_need(p.value, "form", p.line)
+	for p in CharacterSystem.pairs(d, "stats"):
+		if not CharacterSystem.STATS.has(p.key):
+			var hint := " A character's story stage is a value of its own; fighting health is 'max hp'." if p.key == "hp" else ""
+			_err(p.line, "Unknown stat '%s'. Known: %s.%s" % [p.key, ", ".join(CharacterSystem.STATS.keys()), hint])
+		elif not p.value.is_valid_int():
+			_err(p.line, "Stat %s must be a whole number." % p.key)
+	for p in CharacterSystem.pairs(d, "relationship"):
+		if not CharacterSystem.RELATIONSHIP.has(p.key):
+			_err(p.line, "Unknown relationship key '%s'. Known: %s." % [p.key, ", ".join(CharacterSystem.RELATIONSHIP.keys())])
+		elif p.value not in ["yes", "no"]:
+			_err(p.line, "Relationship %s must be yes or no." % p.key)
+
+
+func _variant_list(creature: String) -> String:
+	var names: Array = VariantSystem.variants(db, creature).keys()
+	return " It has no variants." if names.is_empty() else " Variants: %s." % ", ".join(names)
+
+
+## Creature variants (VariantSystem): each one's fields, filters and condition.
+func _check_variants(id: String, d: FscParser.Definition) -> void:
+	if d.fields.has("pick variant") and d.fields["pick variant"].value not in ["random", "in order"]:
+		_err(d.fields["pick variant"].line, "Pick variant is random or in order.")
+	if not d.fields.has("variants"):
+		return
+	var all := VariantSystem.variants(db, id)
+	if all.is_empty():
+		_err(d.fields.variants.line, "Variants need at least one named variant, such as 'female:' with its fields indented below it.")
+	for v: String in all:
+		var fields: Dictionary = all[v]
+		var line: int = fields._line
+		if not v.is_valid_identifier():
+			_err(line, "A variant name is one word of letters, digits and underscores: '%s'." % v)
+		for name: String in fields:
+			if name == "_line":
+				continue
+			var value := str(fields[name])
+			if name not in VariantSystem.FIELDS:
+				_err(line, "Variant %s: unknown field '%s'. Allowed: %s." % [v, name, ", ".join(VariantSystem.FIELDS)])
+				continue
+			match name:
+				"gender":
+					if value not in CREATURE_GENDERS:
+						_err(line, "Variant %s: unknown gender '%s'." % [v, value])
+				"filters":
+					for f in value.split(",", false):
+						_need(f.strip_edges(), "filter", line)
+				"when":
+					_check_condition_text(value, line, "creature:" + id)
+				"chance", "level", "damage", "libido", "hit bonus", "dodge bonus":
+					if not value.is_valid_int() or (int(value) < 0 and name not in ["hit bonus", "dodge bonus"]):
+						_err(line, "Variant %s: %s must be a whole number." % [v, name])
+				"hp":
+					if not value.is_valid_int() or int(value) < 1:
+						_err(line, "Variant %s: hp must be a positive whole number." % v)
+				"infection sex":
+					if value not in ["male", "female", "herm", "neuter"]:
+						_err(line, "Variant %s: infection sex is male, female, herm or neuter." % v)
+				"seduction immune":
+					if value not in ["yes", "no"]:
+						_err(line, "Variant %s: seduction immune must be yes or no." % v)
+				"loot":
+					var loot: PackedStringArray = value.split(" ", false)
+					if loot.size() != 2 or not loot[1].ends_with("%") or not loot[1].trim_suffix("%").is_valid_int():
+						_err(line, "Variant %s: loot is written 'item_id N%%'." % v)
+					else:
+						_need(loot[0], "item", line)
+				"special":
+					var problem := _special_problem(value)
+					if problem != "":
+						_err(line, "Variant %s: %s" % [v, problem])
+				"image":
+					if not _images.has(value):
+						_warn(line, "Image '%s' was not found in any pack's images folder." % value)
+		if not fields.has("gender") and not fields.has("filters"):
+			_warn(line, "Variant %s has neither a gender nor filters, so bans and wards never keep it out." % v)
+
+
 func _check_template(t: Dictionary, line: int, owner: String) -> void:
 	for s in TextTemplate.substitutions(t.parts):
 		var n := str(s).strip_edges()
@@ -918,8 +1399,20 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 		if "." in n and not " " in n:
 			_check_path(n, line)
 			continue
-		var what := n.split(" of ", true, 1)[0]
+		if n.begins_with("worn "):
+			for slot in n.substr(5).split(","):
+				if slot.strip_edges() not in ItemSystem.SLOTS:
+					_err(line, "[%s]: '%s' is not a slot. Slots: %s." % [n, slot.strip_edges(), ", ".join(ItemSystem.SLOTS)])
+			continue
+		var halves := n.split(" of ", true, 1)
+		var what := halves[0]
 		if what in DESCRIPTORS or db.has(n, "text"):
+			continue
+		if halves.size() == 2 and db.has(what, "text"):
+			# "[cock_size_desc of francois]": a snippet about a character or creature.
+			var who := halves[1].strip_edges()
+			if who != "player" and not db.has(who, "character") and not db.has(who, "creature"):
+				_err(line, "[%s]: '%s' is not a character." % [n, who])
 			continue
 		_err(line, "Unknown text substitution [%s].%s" % [n, _suggest(n, DESCRIPTORS + _ids("text"))])
 	_walk_template_conditions(t.parts, line, owner)

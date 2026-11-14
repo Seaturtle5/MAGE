@@ -1,0 +1,44 @@
+// Arrival and leaving events play when the player walks into, travels to or
+// walks out of a place. `chance`, `priority` and `cooldown` (in turns) control
+// how often; a scene can check "player arrived by walking".
+
+// The first visit to the clearing: Wren greets the player.
+== event first_clearing_visit
+name: Meeting Wren
+found by: arriving at clearing
+repeat: once
+requires: quest lost_knife is not_started
+play:
+    A small woman by the lean-to looks up from her whittling. 'You must be the one in the cabin,' she says. 'I'm Wren.'
+
+// Leaving the cabin at night: a moment at the door, then the player walks on.
+// Without "~ continue moving" the player would stay where they are.
+== event night_doorway
+name: Into the dark
+found by: leaving cabin east
+repeat: always
+requires: time is night
+cooldown: 4
+play:
+    You pause in the doorway. The woods are very dark. [if player wears wool_coat]At least the coat is warm.[else]It's cold out there.[end if]
+    * Go on
+        ~ continue moving
+    * Stay in
+        You close the door again.
+
+// An ending the player chooses. "~ ending <id>" ends the game; the id is shown
+// as its title ("Left the woods"). This event comes up half the time
+// (`chance`) and not again for 6 turns after (`cooldown`).
+== event mist_beckons
+name: The mist
+found by: walking into old_bridge
+repeat: always
+chance: 50%
+cooldown: 6
+play:
+    The mist on the far side of the bridge shifts, and for a moment you see a road beyond it, leading out of the woods.
+    * Walk into the mist
+        You cross the bridge without looking back. The woods grow quiet behind you, and then they are gone.
+        ~ ending left_the_woods
+    * Not today
+        You stay where you are. The mist closes again.

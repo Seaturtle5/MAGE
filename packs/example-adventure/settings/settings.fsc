@@ -1,0 +1,51 @@
+// Content settings: what the player can switch off or tune before a game.
+//
+// A `filter` can be banned (never shown) or warded (only when the player goes
+// looking for it). Creatures and exploration events carry filters in `tags:`.
+// `genders:` ties a filter to creature genders, so a creature with variants
+// (see creatures/forest_fox.fsc) is met as the genders the player allows.
+
+== filter male
+name: Males
+group: Creatures
+description: Male creatures.
+genders: male
+
+== filter female
+name: Females
+group: Creatures
+description: Female creatures.
+genders: female
+
+// A `tag` only describes content (a family, a trait); it can't be banned.
+// Scenes use tags to pick creatures: "~ pick random creature tagged woodland".
+
+== tag woodland
+name: Woodland
+group: Families
+description: Animals of the Quiet Woods.
+
+// A `level` is a setting with options in order. Scenes check it with
+// conditions such as "level detail is more" or "level detail is at least standard".
+
+== level detail
+name: Scenery
+description: How much scenery the descriptions add.
+default: standard
+options:
+    less: Short descriptions.
+    standard: Normal descriptions.
+    more: Extra scenery in some descriptions.
+
+// Feats: lasting abilities. These two use the built-in bonuses; a scenario
+// gives one at the start (scenarios/start.fsc), a scene can add one with "~ feat + id".
+
+== feat forager
+name: Forager
+description: You know where the good berries grow. Scavenging finds more.
+scavenge bonus: 3
+
+== feat keen_eyes
+name: Keen eyes
+description: Little escapes your notice. Exploring finds more.
+exploration bonus: 2

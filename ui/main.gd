@@ -47,6 +47,8 @@ const ACTION_INFO := {
 	"observe": ["Observe", "Stay out of sight and watch what happens.", ""],
 	"scavenge": ["Scavenge", "Look for food and water.", "1 turn"],
 	"hunt": ["Hunt", "Look for a particular creature.", "1 turn"],
+	"actions": ["Actions", "Things you can do here.", ""],
+	"shop": ["Shop", "Buy, sell and trade.", ""],
 }
 
 var game: Game
@@ -80,6 +82,9 @@ var status_place: Label
 var status_time: Label
 var status_sleep: Label
 var meters: Dictionary = {}
+var meters_row: HBoxContainer
+var meters_keys: Array = []  ## the status bar's meters as last built
+var money_box: Control
 var level_label: Label
 var money_label: Label
 var mini_map: Control
@@ -231,15 +236,18 @@ func _status_bar() -> Control:
 	line.add_child(status_sleep)
 	place.add_child(line)
 	row.add_child(place)
-	for key in ["hp", "hunger", "thirst", "humanity", "libido"]:
-		row.add_child(_meter(key))
+	# The meters come from the game's status bar (Game.status_bar), built on the first refresh.
+	meters_row = HBoxContainer.new()
+	meters_row.add_theme_constant_override("separation", 26)
+	row.add_child(meters_row)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
 	row.add_child(spacer)
 	level_label = _plain_label("", 15, FsTheme.TEXT_DIM)
 	money_label = _plain_label("", 15, FsTheme.ACCENT)
 	row.add_child(_with_icon("xp", level_label, FsTheme.METER.xp))
-	row.add_child(_with_icon("freecred", money_label, FsTheme.ACCENT))
+	money_box = _with_icon("freecred", money_label, FsTheme.ACCENT)
+	row.add_child(money_box)
 	return band
 
 
@@ -249,15 +257,17 @@ func _plain_label(text: String, size: int, color: Color) -> Label:
 	return l
 
 
-func _meter(key: String) -> Control:
+func _meter(key: String, label: String = "") -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 5)
 	box.custom_minimum_size = Vector2(124, 0)
 	box.size_flags_vertical = SIZE_SHRINK_CENTER
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 6)
-	top.add_child(_icon_view("health" if key == "hp" else key, 14, FsTheme.METER[key]))
-	var name := FsTheme.heading({"hp": "Health"}.get(key, key.capitalize()), 12, FsTheme.TEXT_DIM)
+	var colour: Color = FsTheme.METER.get(key, FsTheme.ACCENT)
+	var icon_name := "health" if key == "hp" else key
+	top.add_child(_icon_view(icon_name if _icon(icon_name) != null else "other", 14, colour))
+	var name := FsTheme.heading(label if label != "" else {"hp": "Health"}.get(key, key.capitalize()), 12, FsTheme.TEXT_DIM)
 	name.size_flags_horizontal = SIZE_EXPAND_FILL
 	var num := _plain_label("", 14, FsTheme.TEXT)
 	num.add_theme_font_override("font", FsTheme.strong_font())
@@ -267,7 +277,7 @@ func _meter(key: String) -> Control:
 	var bar := ProgressBar.new()
 	bar.show_percentage = false
 	bar.custom_minimum_size = Vector2(0, 4)
-	bar.add_theme_stylebox_override("fill", FsTheme.box(FsTheme.METER[key], 2, Color.TRANSPARENT, 0))
+	bar.add_theme_stylebox_override("fill", FsTheme.box(colour, 2, Color.TRANSPARENT, 0))
 	box.add_child(bar)
 	meters[key] = {"bar": bar, "num": num}
 	return box
@@ -442,10 +452,15 @@ func _drain() -> void:
 			"scene_end":
 				pass
 			"ending":
+				# A sentence saying why the game ended ("You survived until the rescue came.");
+				# an ending's ID says nothing itself: its epilogue follows.
 				var ending: String = str(e.ending)
-				if not " " in ending:  # an ending id such as alcohol_poisoning
-					ending = ending.replace("_", " ").capitalize()
-				_page_text("[b]The end: %s[/b]" % _esc(ending), "The end: " + ending)
+				if " " in ending:
+					_page_text(_esc(ending), ending)
+			"game_over":
+				_page_text("[b]Game over[/b]", "Game over")
+				_page_continue(func(): _show_title())
+				waiting = true
 	if game.runner.status == "idle":
 		if mode in ["scene", "moment"] and not page_new and not waiting:
 			# Text produced outside a scene (exploring, travelling, resting):
@@ -596,12 +611,17 @@ func _person_card(p: Dictionary) -> Control:
 	v.add_theme_constant_override("separation", 6)
 	v.add_child(FsTheme.title(p.name, 18))
 	var buttons := HBoxContainer.new()
-	if p.talk:
+	var id: String = p.id
+	# Talk, then the character's other doings: its actions menu, sex, scent and look.
+	for spec in [["talk", "Talk", "talk"], ["actions", "Actions", "use"], ["sex", "Sex", "libido"],
+			["smell", "Smell", "observe"], ["look", "Look", "character"]]:
+		if not p.get(spec[0], false):
+			continue
 		var b := Button.new()
-		b.text = "Talk"
-		_button_icon(b, "talk")
-		var id: String = p.id
-		b.pressed.connect(func(): _act("talk", id))
+		b.text = spec[1]
+		_button_icon(b, spec[2])
+		var act: String = spec[0]
+		b.pressed.connect(func(): _act(act, id))
 		buttons.add_child(b)
 	v.add_child(buttons)
 	row.add_child(v)
@@ -625,11 +645,21 @@ func _item_card(it: Dictionary) -> Control:
 	return card
 
 
-## An item's picture, or its category's line icon when it has none.
+## An item's picture, or a line icon when it has none: clothing by the slot it is
+## worn on, weapons by type, anything else by category.
 func _item_icon(id: String, size: int) -> Control:
 	var tex := _pack_image(game.content.typed_value("item", id, "image"))
 	if tex == null:
-		return _icon_view(game.content.typed_value("item", id, "category", "other").to_lower(), size, FsTheme.TEXT_DIM)
+		var category := game.content.typed_value("item", id, "category", "other").to_lower()
+		var name := category
+		var chosen := game.content.typed_value("item", id, "icon")
+		if chosen != "" and _icon(chosen) != null:
+			name = chosen  # the item names one of the interface's icons ("icon: milk")
+		elif category == "clothing" and _icon("clothing_" + ItemSystem.gear(game, id, "slot")) != null:
+			name = "clothing_" + ItemSystem.gear(game, id, "slot")
+		elif category == "weapon":
+			name = "weapon_" + ItemSystem.arm(game, id, "type", "melee")
+		return _icon_view(name if _icon(name) != null else "other", size, FsTheme.TEXT_DIM)
 	var view := TextureRect.new()
 	view.texture = tex
 	view.custom_minimum_size = Vector2(size, size)
@@ -895,7 +925,7 @@ func _refresh_panels() -> void:
 		t.tooltip_text = "Travel to a place you have found (%d)." % travel.size()
 	_link_button(nav_links, "Map", "map", "M", _open_map, false)
 	for a in e.get("actions", []):
-		_action_tile(a.id, busy)
+		_action_tile(a.id, busy, str(a.get("label", "")), str(a.get("arg", "")))
 	if e.get("actions", []).is_empty():
 		actions_box.add_child(FsTheme.label("Nothing to do here right now.", 15, FsTheme.TEXT_FAINT))
 	nav_panel.modulate.a = 0.45 if busy else 1.0
@@ -909,7 +939,7 @@ func _exit_row(dir: String, exit: Dictionary, busy: bool) -> Button:
 	var tag := FsTheme.heading(_dir_short(dir), 14, FsTheme.ACCENT)
 	tag.custom_minimum_size = Vector2(44, 0)
 	row.add_child(tag)
-	var name := _plain_label(exit.name, 17, FsTheme.TEXT)
+	var name := _plain_label(("%s (explore)" % exit.name) if exit.get("explore", false) else exit.name, 17, FsTheme.TEXT)
 	name.size_flags_horizontal = SIZE_EXPAND_FILL
 	name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name.clip_text = true
@@ -940,11 +970,14 @@ func _dir_short(dir: String) -> String:
 		"outside": "Out"}.get(dir, dir.capitalize())
 
 
-func _action_tile(id: String, busy: bool) -> Button:
-	var info: Array = ACTION_INFO.get(id, [id.capitalize(), "", ""])
+func _action_tile(id: String, busy: bool, label: String = "", arg: String = "") -> Button:
+	var info: Array = ACTION_INFO.get(id, [id.capitalize(), "", ""]).duplicate()
+	if id in ["actions", "shop"] and label != "":
+		info[0] = label  # the menu's own title
+	var icon_name := id if _icon(id) != null else "use"
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
-	var icon := _icon_view(id, 22, FsTheme.ACCENT)
+	var icon := _icon_view(icon_name, 22, FsTheme.ACCENT)
 	icon.size_flags_vertical = SIZE_SHRINK_BEGIN
 	row.add_child(icon)
 	var text := VBoxContainer.new()
@@ -958,7 +991,7 @@ func _action_tile(id: String, busy: bool) -> Button:
 		var cost := FsTheme.heading(info[2], 12, FsTheme.TEXT_FAINT)
 		cost.size_flags_vertical = SIZE_SHRINK_BEGIN
 		row.add_child(cost)
-	return _face_button(actions_box, row, _open_hunt if id == "hunt" else func(): _act(id, ""), busy, 14, 11)
+	return _face_button(actions_box, row, _open_hunt if id == "hunt" else func(): _act(id, arg), busy, 14, 11)
 
 
 func _time_text() -> String:
@@ -973,13 +1006,20 @@ func _refresh_status() -> void:
 	status_sleep.text = s.sleep
 	status_sleep.visible = s.sleep != ""
 	var st: Dictionary = s.stats
-	_set_meter("hp", int(st.hp), int(st.maxhp))
-	_set_meter("hunger", int(st.hunger), 100)
-	_set_meter("thirst", int(st.thirst), 100)
-	_set_meter("humanity", int(st.humanity), 100)
-	_set_meter("libido", int(st.libido), 100)
+	var bar := game.status_bar()
+	var keys: Array = bar.meters.map(func(m): return m.key)
+	if keys != meters_keys:
+		for c in meters_row.get_children():
+			c.queue_free()
+		meters.clear()
+		for m in bar.meters:
+			meters_row.add_child(_meter(m.key, m.label))
+		meters_keys = keys
+	for m in bar.meters:
+		_set_meter(m.key, int(m.value), int(m.max))
 	level_label.text = "Level %d  ·  XP %d" % [int(st.level), int(st.xp)]
-	money_label.text = "%d freecred" % int(st.freecred)
+	money_box.visible = bar.currency != ""
+	money_label.text = "%d %s" % [int(bar.money), bar.currency]
 	var tracked := ""
 	for q in game.quest_list():
 		if not q.done:
@@ -2168,7 +2208,8 @@ func _show_title() -> void:
 		add_child(title)
 		var b := db.branding()
 		title.set_branding(str(b.get("title", "")), str(b.get("subtitle", "")), _pack_image(str(b.get("logo", ""))),
-			_pack_image(str(b.get("background", ""))), str(b.get("about", "")))
+			_pack_image(str(b.get("background", ""))), str(b.get("about", "")),
+			Array(b.get("menu icons", [])).map(func(id): return _pack_image(str(id))).filter(func(t): return t != null))
 	move_child(title, get_child_count() - 1)
 	title.visible = true
 	title.show_message("")

@@ -100,15 +100,16 @@ func test_shared_id_lookup_prefers_main_type() -> void:
 func test_unsupported_behavior_and_invalid_combat_numbers_fail_on_load() -> void:
 	var db := _load({"c.fsc": "== creature c\nname: C\nhp: twelve\nspecial: unknown_move 50%\n\n== feat f\nexploration bonus: many\n\n== form f\nlibido: lots\n"})
 	assert_true(_has(_messages(db), "3 Hp must be a positive whole number"))
-	assert_true(_has(_messages(db), "4 Unsupported combat behavior"))
+	assert_true(_has(_messages(db), "4 Unknown combat behaviour 'unknown_move 50%'"))
 	assert_true(_has(_messages(db), "7 Exploration Bonus must be a whole number"))
 	assert_true(_has(_messages(db), "10 Libido must be a whole number"))
 
 
 func test_description_actions_and_pending_effects_are_not_silently_ignored() -> void:
-	var db := _load({"w.fsc": "== location a\nname: A\ndescription:\n    ~ player.hunger + 1\n\n== scene s\n~ end pregnancy\n"})
+	var db := _load({"w.fsc": "== location a\nname: A\ndescription:\n    ~ player.hunger + 1\n\n== scene s\n~ end pregnancy\n~ pregnancy faster by 2\n"})
 	assert_true(_has(_messages(db), "4 This description can contain text and conditions only"))
-	assert_true(_has(_messages(db), "7 Effect 'end_pregnancy'"))
+	assert_false(_has(_messages(db), "Effect 'end_pregnancy'"), "pregnancy effects are implemented now")
+	assert_false(_has(_messages(db), "Effect 'pregnancy_faster'"))
 
 
 func test_body_typos_are_reported_before_play() -> void:

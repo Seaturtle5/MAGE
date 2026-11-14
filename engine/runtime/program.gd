@@ -67,7 +67,23 @@ func _block(nodes: Array) -> void:
 			"goto":
 				_emit({"op": "goto", "line": n.line, "target": n.target})
 			"play":
-				_emit({"op": "play", "line": n.line, "target": n.target})
+				var target: String = n.target
+				var times := {}
+				# "play rampage_round 3 to 10 times": the scene again and again, a set number of times.
+				var tm := RegEx.create_from_string("^(\\S+(?: creature \\w+)?) (.+) times?$").search(target)
+				if tm != null:
+					target = tm.get_string(1)
+					times = Effect.amount(tm.get_string(2))
+					if times.has("error"):
+						_error(n.line, times.error)
+						times = {}
+				var pm := RegEx.create_from_string("^picked creature (victory|defeated|encounter)$").search(target)
+				if pm != null:
+					target = "@picked#" + pm.get_string(1)
+				var ins := {"op": "play", "line": n.line, "target": target}
+				if not times.is_empty():
+					ins["times"] = times
+				_emit(ins)
 			"if":
 				_if(n)
 			"choices":

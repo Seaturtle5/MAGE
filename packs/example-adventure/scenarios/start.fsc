@@ -1,0 +1,26 @@
+// Scenarios are the ways to start a game; the player picks one on New game.
+// `start` is the first location. `setup` runs first and quietly (items, feats,
+// values), then `intro` is shown as the opening scene.
+
+== scenario woodland_start
+name: The cabin
+start: cabin
+description: You wake in a small cabin at the edge of the Quiet Woods.
+setup:
+    ~ give wild_berries quietly
+intro:
+    You wake to birdsong and the smell of cold ashes. Your cabin is quiet, and the woods outside are waiting.
+    ---
+    [weather] Somewhere out there, the hermit who lives in the clearing will want to meet you.
+
+== scenario forager_start
+name: The forager
+start: clearing
+description: You have spent the summer foraging in the woods. You know the berry patches, and you carry your own knife.
+setup:
+    ~ give carving_knife quietly
+    ~ give herbal_tea quietly
+    ~ feat + forager quietly
+    ~ discover cabin quietly
+intro:
+    You stretch beside the mossy stones of the clearing, a basket of berries at your feet. Another day of foraging.

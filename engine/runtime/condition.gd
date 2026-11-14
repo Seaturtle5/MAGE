@@ -34,6 +34,15 @@ static var _rules: Array = [
 	["feat", RegEx.create_from_string("^(\\w+) (has|does not have) feat (\\w+)$")],
 	["trait", RegEx.create_from_string("^(\\w+) (has|does not have) trait (\\w+)$")],
 	["had_sex", RegEx.create_from_string("^(\\w+) (has had|has not had) sex$")],
+	["picked", RegEx.create_from_string("^(a|no) creature is picked$")],
+	# Endings (EndingSystem): marked endings, flags, excluded types and what ended the game.
+	["ending_triggered", RegEx.create_from_string("^ending (\\w+) is (not )?triggered$")],
+	["ending_flag", RegEx.create_from_string("^ending flag (\\w+) is (not )?set$")],
+	["endings_excluded", RegEx.create_from_string("^(\\w+) endings are (not )?excluded$")],
+	["ended_by", RegEx.create_from_string("^the game (ended|did not end) by (\\w+)$")],
+	# The creature's to-hit roll in a fight, shown like other rolls ("enemy hits using intelligence").
+	["enemy_hits", RegEx.create_from_string("^(?:the )?enemy (hits|misses)(?: using (strength|dexterity|stamina|perception|intelligence|charisma))?$")],
+	["arrived", RegEx.create_from_string("^player (did not arrive|arrived) by (walking|travelling)$")],
 	["has_part", RegEx.create_from_string("^(\\w+) (has|does not have) (head|torso|back|arms|legs|ass|tail|cock|cunt|balls|breasts)$")],
 	["wears", RegEx.create_from_string("^(\\w+) (wears|does not wear|wields|does not wield) (\\w+)$")],
 	["has_item", RegEx.create_from_string("^(\\w+) (has|does not have) (\\w+)(?: (\\d+))?$")],
@@ -42,6 +51,7 @@ static var _rules: Array = [
 	["in_heat", RegEx.create_from_string("^(\\w+) is (not )?in heat$")],
 	["in", RegEx.create_from_string("^player is (not )?in (\\w+)$")],
 	["knows", RegEx.create_from_string("^player (knows|does not know) (\\w+)$")],
+	["visited", RegEx.create_from_string("^player (has visited|has not visited) (\\w+)$")],
 	["part_tagged", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?tagged (\\w+)$")],
 	["part_is", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?(\\w+)$")],
 	["parity", RegEx.create_from_string("^([a-z0-9_.]+) is (not )?(odd|even)$")],
@@ -178,6 +188,9 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "chance_expr", "n": n, "d": d}
 			"check":
 				return {"op": "check", "stat": m.get_string(1), "target": int(m.get_string(2))}
+			"enemy_hits":
+				var node := {"op": "enemy_hits", "stat": m.get_string(2) if m.get_string(2) != "" else "dexterity"}
+				return {"op": "not", "a": node} if m.get_string(1) == "misses" else node
 			"check_expr":
 				# "check <bonus> vs <target>": a d20 roll plus a computed bonus.
 				var bonus := Expr.parse(m.get_string(1))
@@ -212,6 +225,14 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": rule[0], "who": m.get_string(1), "id": m.get_string(3), "neg": m.get_string(2) != "has"}
 			"had_sex":
 				return {"op": "had_sex", "who": m.get_string(1), "neg": m.get_string(2) != "has had"}
+			"arrived":
+				return {"op": "is", "who": "player", "adjective": "arrived by " + m.get_string(2), "neg": m.get_string(1) != "arrived"}
+			"picked":
+				return {"op": "is", "who": "player", "adjective": "creature picked", "neg": m.get_string(1) == "no"}
+			"ending_triggered", "ending_flag", "endings_excluded":
+				return {"op": "ending", "kind": rule[0], "id": m.get_string(1), "neg": m.get_string(2) != ""}
+			"ended_by":
+				return {"op": "ending", "kind": "ended_by", "id": m.get_string(2), "neg": m.get_string(1) != "ended"}
 			"has_part":
 				return {"op": "has_part", "who": m.get_string(1), "part": m.get_string(3), "neg": m.get_string(2) != "has"}
 			"has_item":
@@ -231,6 +252,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "is_at", "who": "player", "place": m.get_string(2), "neg": m.get_string(1) != ""}
 			"knows":
 				return {"op": "knows", "place": m.get_string(2), "neg": m.get_string(1) != "knows"}
+			"visited":
+				return {"op": "visited", "place": m.get_string(2), "neg": m.get_string(1) != "has visited"}
 			"part_tagged":
 				return {"op": "part_tagged", "who": m.get_string(1), "part": m.get_string(2), "tag": m.get_string(4), "neg": m.get_string(3) != ""}
 			"part_is":
@@ -263,8 +286,22 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 			return not evaluate(node.a, ctx)
 		"cmp":
 			return compare(Expr.evaluate(node.left, ctx), node.cmp, Expr.evaluate(node.right, ctx), node.left, ctx)
+		"ending":
+			var yes := false
+			match node.kind:
+				"ending_triggered":
+					yes = EndingSystem.triggered(ctx, node.id)
+				"ending_flag":
+					yes = EndingSystem.has_flag(ctx, node.id)
+				"endings_excluded":
+					yes = EndingSystem.excluded(ctx, node.id)
+				"ended_by":
+					yes = str(ctx.state.values.get("end.cause", "")) == node.id
+			return yes != node.neg
 		"truthy":
 			return _truthy(ctx.value(node.path))
+		"enemy_hits":
+			return not ctx.state.combat.is_empty() and CombatSystem.hit_roll(ctx, node.stat)
 		"order":
 			var idx: int = ctx.state_index(node.path, ctx.value(node.path))
 			var target: int = ctx.state_index(node.path, node.state)

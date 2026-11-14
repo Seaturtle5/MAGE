@@ -1,0 +1,110 @@
+// The world: a region (one map), zones (where exploring finds things) and
+// locations with exits. The validator checks that exits go both ways and that
+// map positions don't overlap.
+
+== region woods
+name: The Quiet Woods
+travel order: 1
+map grid: 6 x 6
+
+// A zone groups places for exploring. `ambient` lines show now and then while
+// exploring; events and creatures name the zones they are found in.
+== zone forest
+name: The forest
+ambient:
+    Birds go quiet as you pass, then start up again behind you.
+
+    Somewhere a branch cracks. Probably nothing.
+
+    Sunlight flickers through the needles overhead.
+
+== zone riverbank
+name: The riverbank
+ambient:
+    The river chatters over stones.
+
+    A heron lifts off from the shallows, slow and grey.
+
+// `flags`: "known at start" (on the map from the start), "fast travel" (the
+// player can travel here from any other fast travel point, and scavenge here),
+// "safe rest". `rest:` is the bedding quality here.
+== location cabin
+name: Your Cabin
+region: woods
+zone: none
+map: 2, 3
+rest: bed
+flags: safe rest, known at start, fast travel
+items: wool_coat, bandage
+exits:
+    east: forest_path
+    north: tool_shed, door shed_door
+// Text can change with conditions: [if ...]...[else]...[end if], and with the
+// player's content settings ("level detail is more").
+description:
+    A one-room cabin with a woodstove, a narrow bed and a window that sticks. [if time is night]The stove glows orange in the dark.[else]Sunlight falls in dusty stripes across the floor.[end if][if level detail is more] A row of jars on the shelf holds dried mint, nettles and something you can't name.[end if]
+observe:
+    * The window -- Look out of the window
+        [weather]
+    * The night -- Listen to the woods [if time is night]
+        -> woods.night_sounds
+
+// A door between two places, named in both places' exits ("door shed_door").
+// `locked` can be yes, no or a condition.
+== door shed_door
+name: Shed door
+locked: not player has shed_key
+locked text: The shed door is padlocked. The key must be somewhere.
+shown in room: A narrow door leads north to the tool shed.
+description: A narrow plank door with a rusty padlock.
+
+== location tool_shed
+name: Tool Shed
+region: woods
+zone: none
+map: 2, 2
+items: boots
+exits:
+    south: cabin, door shed_door
+description:
+    Shelves of rusty tools and coils of rope. It smells of oil and old wood.
+
+== location forest_path
+name: Forest Path
+region: woods
+zone: forest
+map: 3, 3
+items: wild_berries
+exits:
+    west: cabin
+    east: clearing
+    south: old_bridge
+description:
+    A narrow path between tall pines. Needles soften every step. A fork leads south toward the sound of water.
+
+== location clearing
+name: Old Clearing
+region: woods
+zone: forest
+map: 4, 3
+flags: fast travel
+exits:
+    west: forest_path
+description:
+    A ring of mossy stones around a patch of open sky. Someone has built a lean-to at the edge.
+// An observe menu: things the player can watch here (the Observe button).
+observe:
+    * The birds -- Watch the birds in the treetops
+        A pair of jays squabble over a pinecone. [one of]The bigger one wins.[or]The smaller one wins, this time.[at random]
+    * The sky -- Look up at the sky [if time is night]
+        Stars, more than you've ever seen in town.
+
+== location old_bridge
+name: Old Bridge
+region: woods
+zone: riverbank
+map: 3, 4
+exits:
+    north: forest_path
+description:
+    A mossy stone bridge over a quick, clear river. The far side is lost in mist.

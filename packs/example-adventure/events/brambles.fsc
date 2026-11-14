@@ -1,0 +1,36 @@
+// A captivity: the player is held and chooses each round. Struggle counts
+// toward `escape at`; the other choices are relabelled for a gentle scene.
+// `status:` replaces the default status line.
+
+== captivity bramble_snare
+name: Caught in the brambles
+escape at: 3
+pause after each: no
+status: Vines snapped: [captivity.struggle] of 3
+struggle label: Pull free
+oblige label: Hold still
+abide label: Hold still
+endure label: Catch your breath
+recover label: Think it through
+start:
+    Thorny vines wind around your ankles and hold on.
+situation:
+    The brambles hold your legs[if captivity.struggle > 0], though some have snapped[end if].
+struggle:
+    You twist and tug at the vines.
+escape:
+    The last vine snaps and you stumble free.
+oblige:
+    You hold still. The vines loosen a little, then tighten again.
+abide:
+    You hold still. The vines loosen a little, then tighten again.
+endure:
+    You take a slow breath and look for the thinnest vines.
+recover:
+    You spot the vine holding everything together.
+    ~ captivity.struggle + 1 quietly
+// `lost` plays if the player's humanity falls to 0 while held; nothing in this
+// pack lowers it, so it is here to show the field.
+lost:
+    You never do get free of that thicket.
+    ~ ending lost_in_the_brambles
