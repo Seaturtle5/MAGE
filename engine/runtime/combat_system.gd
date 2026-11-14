@@ -123,6 +123,11 @@ static func act(game, action: String) -> bool:
 						verb, weapon_text, name, damage], false)
 					if int(c.hp) <= 0:
 						c.result = "won"
+					else:
+						# Hooks `on: player hits` (the original's helping children, Alt Combat.i7x:488-500).
+						hooks(game, "player hits")
+						if int(c.hp) <= 0 and c.result == "":
+							c.result = "won"
 			"seduce":
 				var immune: bool = game.creature_field(id, "seduction immune", "no") == "yes"
 				var defense := 20 - int(c.libido) / 3 + enemy_level * 2
@@ -150,6 +155,8 @@ static func act(game, action: String) -> bool:
 				pass
 			_:
 				return false
+		if action in ["attack", "seduce"] and c.result == "":
+			CompanionSystem.act_in_fight(game, id)
 		if c.result == "":
 			_retaliate(game)
 	c.round = int(c.round) + 1
@@ -365,8 +372,22 @@ static func _play(game, prog: Program, depth: int = 0) -> void:
 			"goto":
 				_play(game, game.content.program(ins.target), depth + 1)
 				return
+			"play":
+				for _i in (Effect.resolve_amount(ins.times, game) if ins.has("times") else 1):
+					_play(game, game.content.program(ins.target), depth + 1)
 			"return":
 				return
+
+
+## Runs the hooks for a moment that happens inside a fight, in order.
+static func hooks(game, moment: String) -> void:
+	for hid: String in game.content.all_of("hook"):
+		if game.content.typed_value("hook", hid, "on") != moment:
+			continue
+		var when: String = game.content.typed_value("hook", hid, "when")
+		if when != "" and not Condition.evaluate(Condition.compile(when), game):
+			continue
+		_play(game, game.content.program("%s#do" % hid, "hook"))
 
 
 ## A creature's text for a special, or the original's general line.
@@ -458,6 +479,7 @@ static func aftermath(game, id: String, result: String) -> void:
 		var creature_libido := int(game.creature_field(id, "libido", "0"))
 		var rise := 4 if infectious and int(game.value("player.libido")) < creature_libido else 1
 		game.set_value("player.libido", int(game.value("player.libido")) + rise)
+	CompanionSystem.after_fight(game, id, result.begins_with("won"))
 
 
 ## Alt Combat.i7x:1544-1549: the creature's `loot` drops by its chance plus the

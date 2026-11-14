@@ -743,7 +743,9 @@ func show_location() -> void:
 			var fields: Dictionary = db.get_def("character", c).fields
 			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
 				"image": db.typed_value("character", c, "image"), "talk": fields.has("talk"), "sex": fields.has("sex"),
-				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c)})
+				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
+				"companion": c in game.state.companions,
+				"tamed": CompanionSystem.is_companion(game, c) and Condition._truthy(game.value("%s.tamed" % c))})
 			# A character's presence line ("Wren is whittling by the lean-to.") joins the description.
 			var presence: Program = db.program("%s#presence" % c, "character")
 			if presence != null:
@@ -819,7 +821,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
 		return false
 	game.state.action_pending = true
@@ -946,6 +948,14 @@ func _act(action: String, arg: String) -> bool:
 			if ok and status == "idle" and frames.is_empty():
 				show_location()
 			return ok
+		"summon", "dismiss":
+			# A tamed companion joins the party, or one following is sent away.
+			if not db.has(arg, "character") or not CompanionSystem.is_companion(game, arg):
+				return false
+			var joined := CompanionSystem.summon(game, arg) if action == "summon" else CompanionSystem.dismiss(game, arg)
+			if status == "idle" and frames.is_empty():
+				show_location()
+			return joined
 		"observe":
 			if not db.menus.has("%s.observe" % loc):
 				return false

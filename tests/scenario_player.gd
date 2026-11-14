@@ -70,7 +70,7 @@ static func _step(game: Game, line: String) -> bool:
 			return game.runner.choose(int(arg) - 1)
 		"continue":
 			return game.runner.proceed()
-		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look":
+		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss":
 			return game.runner.act(cmd, arg)
 		"save":
 			var f := FileAccess.open(arg, FileAccess.WRITE)

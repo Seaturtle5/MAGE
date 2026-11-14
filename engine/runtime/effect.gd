@@ -35,6 +35,13 @@ static var _rules: Array = [
 	["feat", RegEx.create_from_string("^feat ([+-]) (\\w+)$")],
 	["trait", RegEx.create_from_string("^(\\w+) trait ([+-]) (\\w+)$")],
 	["companion", RegEx.create_from_string("^companion ([+-]) (\\w+)$")],
+	# Companions (CompanionSystem): "~ tame korvin", "~ summon korvin", "~ dismiss korvin",
+	# "~ cancel summon" in a summon text, "~ level up korvin", "~ send children from with_you to bunker".
+	["tame", RegEx.create_from_string("^(tame|untame) (\\w+)$")],
+	["summon", RegEx.create_from_string("^(summon|dismiss) (\\w+)$")],
+	["cancel_companion", RegEx.create_from_string("^cancel (summon|dismiss)$")],
+	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
+	["send_children", RegEx.create_from_string("^send children from (\\w+) to (\\w+)$")],
 	["condition", RegEx.create_from_string("^condition (\\w+) for (\\d+) (hours?|turns?)$")],
 	["spend", RegEx.create_from_string("^spend (\\d+) turns?$")],
 	["schedule", RegEx.create_from_string("^schedule ([a-z0-9_.]+) after (\\d+) actions?$")],
@@ -141,6 +148,16 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "trait", "who": m.get_string(1), "add": m.get_string(2) == "+", "trait": m.get_string(3)}
 			"companion":
 				return {"op": "companion", "add": m.get_string(1) == "+", "who": m.get_string(2)}
+			"tame":
+				return {"op": "tame", "yes": m.get_string(1) == "tame", "who": m.get_string(2)}
+			"summon":
+				return {"op": m.get_string(1), "who": m.get_string(2)}
+			"cancel_companion":
+				return {"op": "cancel_companion", "what": m.get_string(1)}
+			"companion_level":
+				return {"op": "companion_level", "who": m.get_string(1)}
+			"send_children":
+				return {"op": "send_children", "from": m.get_string(1), "to": m.get_string(2)}
 			"condition":
 				var n := int(m.get_string(2))
 				var turns := n if m.get_string(3).begins_with("turn") else int(ceil(n / 3.0))

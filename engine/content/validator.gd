@@ -11,7 +11,7 @@ extends RefCounted
 
 const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
 	"cock", "cock size", "cup size", "strip crotch", "strip chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
-	"picked creature", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
+	"picked creature", "enemy name", "the enemy", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
@@ -50,6 +50,7 @@ static func run(content: ContentDB) -> void:
 	v._check_captivity()
 	v._check_endings()
 	v._check_status_bar()
+	v._check_companions()
 	v._check_scavenge_rules()
 	v._check_world()
 	v._check_filters()
@@ -611,6 +612,66 @@ func _check_captivity() -> void:
 
 
 ## Heat definitions, the one heat policy, and forms' `heat:` fields.
+## Companions (CompanionSystem): each character's companion: block and the rules.
+func _check_companions() -> void:
+	for id in db.all_of("character"):
+		var d := db.get_def("character", id)
+		if not d.fields.has("companion"):
+			for f in ["summon", "dismiss", "companion attack"]:
+				if d.fields.has(f):
+					_path = d.path
+					_err(d.fields[f].line, "%s: '%s' needs a companion: block." % [id, f])
+			continue
+		_path = d.path
+		for p in CharacterSystem.pairs(d, "companion"):
+			match p.key:
+				"attacks with":
+					if p.value not in ["fighting", "seduction"]:
+						_err(p.line, "Attacks with is fighting or seduction.")
+				"hit bonus":
+					if not p.value.is_valid_int():
+						_err(p.line, "Hit bonus must be a whole number.")
+				"tamed":
+					if p.value not in ["yes", "no"]:
+						_err(p.line, "Tamed must be yes or no.")
+				"stays when":
+					_check_condition_text(p.value, p.line, "character:" + id)
+				_:
+					_err(p.line, "Unknown companion field '%s'. Allowed: attacks with, hit bonus, stays when, tamed." % p.key)
+	var rules: Dictionary = db.all_of("companion_rules")
+	if rules.size() > 1:
+		for id in rules.keys().slice(1):
+			var d := db.get_def("companion_rules", id)
+			_path = d.path
+			_warn(d.line, "Only one companion_rules is used (%s); this one is ignored." % rules.keys()[0])
+	for id in rules:
+		var d := db.get_def("companion_rules", id)
+		_path = d.path
+		for f in ["party size", "companion xp", "player xp cost", "level up at", "damage every", "dexterity every", "hit bonus"]:
+			if d.fields.has(f):
+				var e := Expr.parse(d.fields[f].value)
+				if e.has("error"):
+					_err(d.fields[f].line, "%s: %s." % [f.left(1).to_upper() + f.substr(1), e.error])
+				else:
+					for p in Expr.paths(e):
+						_check_path(p, d.fields[f].line)
+			if d.fields.has(f + " modifiers"):
+				for l: FscParser.Line in d.fields[f + " modifiers"].children:
+					if l.is_blank():
+						continue
+					if not ":" in l.text:
+						_err(l.number, "A modifier is written 'condition: amount'.")
+						continue
+					var parts := l.text.rsplit(":", true, 1)
+					_check_condition_text(parts[0].strip_edges(), l.number, "companion_rules:" + id)
+					var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
+					if amount.has("error"):
+						_err(l.number, "Modifier amount: %s." % amount.error)
+		for f in ["player xp cost when", "levels while"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, "companion_rules:" + id)
+
+
 func _check_heat() -> void:
 	for id in db.all_of("heat"):
 		var d := db.get_def("heat", id)
@@ -863,7 +924,7 @@ func _check_programs() -> void:
 			var type: String = pid.get_slice(":", 0) if ":" in pid else db.type_of(owner)
 			var field := str(pid).get_slice("#", 1)
 			# A creature's combat scripts, and the options of its `attacks:` menu.
-			var combat_script: bool = (type == "creature" and field in COMBAT_SCRIPTS) or \
+			var combat_script: bool = (type == "creature" and field in COMBAT_SCRIPTS) or (type == "character" and field == "companion attack") or \
 				(str(pid).contains(".attacks@") and db.has(str(pid).get_slice(".attacks@", 0), "creature"))
 			if (type == "location" and field in ["description", "presence", "scent"]) or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
 				# A creature's combat scripts may also change values as they land (a roll, lust, a blow).
@@ -954,10 +1015,15 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "put", "remove_from", "item_strain",
-			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings"]:
+			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
+			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
+		"tame", "summon", "dismiss", "companion_level":
+			_need(e.who, "character", line)
+			if db.has(e.who, "character") and not db.get_def("character", e.who).fields.has("companion"):
+				_err(line, "%s has no companion: block, so it cannot follow the player." % e.who)
 		"trigger_ending":
 			_need(e.ending, "ending", line)
 		"impregnate":
@@ -1134,7 +1200,14 @@ func _check_path(path: String, line: int) -> void:
 		return
 	if parts[0] == "child" and parts.size() == 2 and parts[1] in PregnancySystem.CHILD_VALUES:
 		return
-	if path in ["people.collected", "shop.item", "shop.price"]:
+	if path in ["people.collected", "shop.item", "shop.price", "party.size", "party.limit", "party.tamed",
+			"offspring.with_you", "offspring.bunker", "offspring.roaming", "offspring.total"]:
+		return
+	if parts[0] == "companion" and parts.size() == 2 and (parts[1] in ["id", "name"] or CompanionSystem.DEFAULTS.has(parts[1])):
+		return  # the companion a companion rule or text is about
+	if parts[0] == "feat" and parts.size() == 2:
+		if not db.has(parts[1], "feat"):
+			_err(line, "Unknown feat '%s'.%s" % [parts[1], _suggest(parts[1], _ids("feat"))])
 		return
 	if parts[0] == "level" and parts.size() == 2:
 		if not db.levels.has(parts[1]):
@@ -1241,7 +1314,7 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in LOCATION_FLAGS):
 					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(LOCATION_FLAGS))
 				return
-			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "companion", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
+			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
 					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
 				_check_path("%s.%s" % [c.who, c.adjective.replace(" ", "_")], line)
 		"lives_at", "is_at":

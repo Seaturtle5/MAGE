@@ -92,4 +92,17 @@ static func declarations(d: FscParser.Definition) -> Dictionary:
 	for p in pairs(d, "stats"):
 		if STATS.has(p.key):
 			out[STATS[p.key]] = {"kind": "number", "default": int(p.value), "path": d.path, "line": p.line}
+	if d.fields.has("companion"):
+		# A possible companion (CompanionSystem): its fighting numbers, whether it is
+		# tamed (can be summoned) and when it last fought.
+		for key in CompanionSystem.DEFAULTS:
+			var name: String = STATS.get(key, key)
+			if not out.has(name):
+				out[name] = {"kind": "number", "default": CompanionSystem.DEFAULTS[key], "path": d.path, "line": d.fields.companion.line}
+		var tamed := false
+		for p in pairs(d, "companion"):
+			if p.key == "tamed":
+				tamed = p.value == "yes"
+		out["tamed"] = {"kind": "flag", "default": tamed, "path": d.path, "line": d.fields.companion.line}
+		out["last_fight"] = {"kind": "number", "default": -1, "path": d.path, "line": d.fields.companion.line}
 	return out

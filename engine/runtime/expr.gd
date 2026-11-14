@@ -6,14 +6,15 @@ extends RefCounted
 ## `player.libido` or `adam.talk_progress`, or a bare word (a state name or an
 ## ID). Arithmetic with + - * / and parentheses is supported for amounts,
 ## for example `(player.thirst - 15) / 3`. Division is integer division, as
-## in the original game.
+## in the original game. `min(a, b)`, `max(a, b)` and `sqrt(a)` (whole number
+## square root) help with capped formulas.
 ##
 ## Compiled form (Dictionaries):
 ##   {"op": "num", "v": 3}            {"op": "text", "v": "Wyvern"}
 ##   {"op": "bool", "v": true}        {"op": "path", "v": "player.libido"}
 ##   {"op": "word", "v": "camp"}      {"op": "+", "a": ..., "b": ...}
 
-static var _token_re := RegEx.create_from_string("\\s*(\"[^\"]*\"|-?\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_.]*|[-+*/%()])")
+static var _token_re := RegEx.create_from_string("\\s*(\"[^\"]*\"|-?\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_.]*|[-+*/%(),])")
 
 
 static func tokenize(text: String) -> PackedStringArray:
@@ -94,6 +95,23 @@ class _P:
 			i += 1
 			var high := product()
 			return {"op": "random", "a": low, "b": high}
+		if tok in ["min", "max", "sqrt"] and i < t.size() and t[i] == "(":
+			# min(a, b), max(a, b), sqrt(a)
+			i += 1
+			var args: Array = [sum()]
+			while err == "" and i < t.size() and t[i] == ",":
+				i += 1
+				args.append(sum())
+			if err != "":
+				return {}
+			if i >= t.size() or t[i] != ")":
+				err = "missing ')' after %s(" % tok
+				return {}
+			i += 1
+			if args.size() != (1 if tok == "sqrt" else 2):
+				err = "%s takes %s" % [tok, "one value" if tok == "sqrt" else "two values: %s(a, b)" % tok]
+				return {}
+			return {"op": tok, "a": args[0], "b": args[1] if args.size() > 1 else {"op": "num", "v": 0}}
 		if tok.begins_with("\""):
 			return {"op": "text", "v": tok.substr(1, tok.length() - 2)}
 		if tok.is_valid_int():
@@ -104,7 +122,7 @@ class _P:
 			return {"op": "bool", "v": true}
 		if tok == "no" or tok == "false":
 			return {"op": "bool", "v": false}
-		if tok in ["+", "-", "*", "/", "%", ")"]:
+		if tok in ["+", "-", "*", "/", "%", ")", ","]:
 			err = "unexpected '%s'" % tok
 			return {}
 		if "." in tok:
@@ -132,6 +150,12 @@ static func evaluate(node: Dictionary, ctx) -> Variant:
 			var lo := _num(evaluate(node.a, ctx))
 			var hi := _num(evaluate(node.b, ctx))
 			return ctx.rng.range_int(mini(lo, hi), maxi(lo, hi))
+		"min":
+			return mini(_num(evaluate(node.a, ctx)), _num(evaluate(node.b, ctx)))
+		"max":
+			return maxi(_num(evaluate(node.a, ctx)), _num(evaluate(node.b, ctx)))
+		"sqrt":
+			return int(sqrt(maxf(0.0, float(_num(evaluate(node.a, ctx))))))
 		"%":
 			# The original's "the remainder after dividing a by b".
 			var m := _num(evaluate(node.b, ctx))
@@ -154,7 +178,7 @@ static func paths(node: Dictionary, out: Array = []) -> Array:
 	match node.get("op", ""):
 		"path":
 			out.append(node.v)
-		"+", "-", "*", "/", "%", "random":
+		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt":
 			paths(node.a, out)
 			paths(node.b, out)
 	return out

@@ -623,6 +623,15 @@ func _person_card(p: Dictionary) -> Control:
 		var act: String = spec[0]
 		b.pressed.connect(func(): _act(act, id))
 		buttons.add_child(b)
+	if p.get("companion", false) or p.get("tamed", false):
+		# A companion following the player can be sent away; a tamed one asked along.
+		var following: bool = p.get("companion", false)
+		var b := Button.new()
+		b.text = "Dismiss" if following else "Summon"
+		_button_icon(b, "travel" if following else "character")
+		var action := "dismiss" if following else "summon"
+		b.pressed.connect(func(): _act(action, id))
+		buttons.add_child(b)
 	v.add_child(buttons)
 	row.add_child(v)
 	return card
@@ -1695,7 +1704,9 @@ func _sheet_stats(s: Dictionary) -> Control:
 		feats.add_child(_chip(game.content.typed_value("feat", id, "name", id.capitalize()),
 			game.content.typed_value("feat", id, "description"), FsTheme.TEXT))
 	if game.state.feats.is_empty():
-		feats.add_child(FsTheme.label("None yet.", 15, FsTheme.TEXT_FAINT))
+		var none := FsTheme.label("None yet.", 15, FsTheme.TEXT_FAINT)
+		none.autowrap_mode = TextServer.AUTOWRAP_OFF  # in a flow container a wrapping label shrinks to one letter
+		feats.add_child(none)
 	col.add_child(feats)
 	if not s.conditions.is_empty():
 		col.add_child(FsTheme.section("Conditions"))
@@ -1778,6 +1789,35 @@ func _sheet_appearance() -> Control:
 	return col
 
 
+## A tamed companion on the character sheet: its numbers, and Summon or Dismiss
+## while no scene is open.
+func _ally_row(id: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var following := id in game.state.companions
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 0)
+	info.size_flags_horizontal = SIZE_EXPAND_FILL
+	var name := FsTheme.label(game.content.field_value(id, "name", id) + ("  ·  with you" if following else ""), 16,
+		FsTheme.TEXT if following else FsTheme.TEXT_DIM)
+	name.autowrap_mode = TextServer.AUTOWRAP_OFF
+	info.add_child(name)
+	var numbers := FsTheme.label("Level %d  ·  damage %d  ·  dexterity %d" % [CompanionSystem.num(game, id, "level"),
+		CompanionSystem.num(game, id, "damage"), CompanionSystem.num(game, id, "dexterity")], 13, FsTheme.TEXT_FAINT)
+	numbers.autowrap_mode = TextServer.AUTOWRAP_OFF
+	info.add_child(numbers)
+	row.add_child(info)
+	if game.runner.status == "idle":
+		var b := Button.new()
+		b.text = "Dismiss" if following else "Summon"
+		var action := "dismiss" if following else "summon"
+		b.pressed.connect(func():
+			_close_overlay()
+			_act(action, id))
+		row.add_child(b)
+	return row
+
+
 func _sheet_body() -> Control:
 	var col := VBoxContainer.new()
 	col.custom_minimum_size = Vector2(300, 0)
@@ -1809,6 +1849,12 @@ func _sheet_body() -> Control:
 	var worn: Array = gear.worn.map(func(w): return str(w.name).capitalize())
 	col.add_child(_gear_line("Wearing", ", ".join(worn) if not worn.is_empty() else "Nothing special"))
 	col.add_child(_gear_line("Load", "%d / %d lbs%s" % [gear.weight, gear.capacity, "  ·  overburdened" if gear.overburdened else ""]))
+	var allies := CompanionSystem.tamed(game)
+	if not allies.is_empty():
+		col.add_child(_gap(10))
+		col.add_child(FsTheme.section("Allies  ·  %d of %d with you" % [game.state.companions.size(), CompanionSystem.limit(game)]))
+		for ally: String in allies:
+			col.add_child(_ally_row(ally))
 	var fill := Control.new()
 	fill.size_flags_vertical = SIZE_EXPAND_FILL
 	col.add_child(fill)

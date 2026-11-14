@@ -38,6 +38,7 @@ var continue_moving := false  ## '~ continue moving': a leaving event lets the p
 ## '~ end captivity' ("end") or '~ escape captivity' ("escape", a turn passes): the
 ## captivity ends when the current script is done.
 var captivity_exit := ""
+var cancel_companion := false  ## '~ cancel summon' / '~ cancel dismiss' in a companion's text
 var warnings: Array = []  ## runtime problems (missing descriptors and so on)
 
 
@@ -93,6 +94,18 @@ func value(path: String) -> Variant:
 		return state.turn  # turns passed since the start, for timing in content
 	if path == "people.collected":
 		return collected_people()
+	if path.begins_with("party."):
+		match path:
+			"party.size":
+				return state.companions.size()
+			"party.limit":
+				return CompanionSystem.limit(self)
+			"party.tamed":
+				return CompanionSystem.tamed(self).size()
+	if path.begins_with("offspring.") and path.substr(10) in ["with_you", "bunker", "roaming", "total"]:
+		return CompanionSystem.offspring(self, path.substr(10))
+	if path.begins_with("feat."):
+		return 1 if path.substr(5) in state.feats else 0  # for formulas: feat.good_teacher * 50
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		return _fight_value(path)
 	if state.values.has(path):
@@ -402,6 +415,9 @@ func adjective(who: String, adj: String) -> bool:
 			return bool(state.events.get(who, {}).get(adj, adj == "active"))
 		"companion":
 			return who in state.companions
+		"lonely":
+			# The original's "the player is lonely": no companion follows.
+			return who == "player" and state.companions.is_empty()
 		"here":
 			return where(who) == state.location
 		"collected":
@@ -427,8 +443,8 @@ func adjective(who: String, adj: String) -> bool:
 
 
 func where(who: String) -> String:
-	if who == "player":
-		return state.location
+	if who == "player" or who in state.companions:
+		return state.location  # companions follow the player
 	if state.char_location.has(who):
 		return state.char_location[who]
 	return state.residence.get(who, content.field_value(who, "lives at"))
@@ -559,6 +575,14 @@ func describe(name: String) -> String:
 			return "["  # a literal bracket, which markup would otherwise read as a substitution
 		"close bracket":
 			return "]"
+		"enemy name", "the enemy":
+			# The original's EnemyNameOrTitle: the creature fought (or met last), "the wolf",
+			# or a unique creature's own title.
+			var foe := current_creature()
+			var title := creature_field(foe, "title")
+			var unique := creature_field(foe, "unique", "no") == "yes"
+			var word := title if title != "" else creature_field(foe, "name", foe if foe != "" else "creature").to_lower()
+			return word if unique or n == "enemy name" else "the " + word
 		"picked creature":
 			var picked := str(state.values.get("picked.creature", ""))
 			return content.typed_value("creature", picked, "name", picked).to_lower()
@@ -817,10 +841,24 @@ func apply(e: Dictionary) -> void:
 			state.traits[e.who] = list
 		"companion":
 			if e.add and e.who not in state.companions:
-				state.companions.append(e.who)
+				CompanionSystem.join(self, e.who)
 				notice("%s joins you." % content.field_value(e.who, "name", e.who), quiet)
 			elif not e.add:
-				state.companions.erase(e.who)
+				CompanionSystem.leave(self, e.who)
+		"tame":
+			CompanionSystem.tame(self, e.who, e.yes)
+			if e.yes:
+				notice("%s can now join you." % content.field_value(e.who, "name", e.who), quiet)
+		"summon":
+			CompanionSystem.summon(self, e.who)
+		"dismiss":
+			CompanionSystem.dismiss(self, e.who)
+		"cancel_companion":
+			cancel_companion = true
+		"companion_level":
+			CompanionSystem.level_up(self, e.who)
+		"send_children":
+			CompanionSystem.move_children(self, e.from, e.to)
 		"quest":
 			var path := "quest.%s" % e.quest
 			set_value(path, e.stage)
@@ -1215,6 +1253,7 @@ func pass_turn() -> void:
 	MeterSystem.tick(self)
 	HeatSystem.tick(self)
 	PregnancySystem.tick(self)
+	CompanionSystem.tick(self)
 	for c in state.conditions.keys():
 		state.conditions[c].remaining -= 1
 		if state.conditions[c].remaining > 0:
@@ -1227,7 +1266,7 @@ func pass_turn() -> void:
 
 
 ## The moments hooks can run at (`on:` of a hook).
-const HOOK_MOMENTS := ["each turn", "captivity starts", "captivity round", "after sex"]
+const HOOK_MOMENTS := ["each turn", "captivity starts", "captivity round", "after sex", "player hits"]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`

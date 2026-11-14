@@ -42,7 +42,8 @@ const SCHEMA := {
 		"cunt": "fields", "skin": "fields", "breasts": "fields", "balls": "fields"},
 	"character": {"name": "text", "pronouns": "text", "image": "text", "scent": "script", "description": "script",
 		"lives at": "text", "presence": "script", "body": "fields", "stats": "fields", "relationship": "fields",
-		"values": "values", "talk": "script", "sex": "script", "impregnation": "script", "actions": "menu", "companion": "fields", "tags": "list", "source": "meta"},
+		"values": "values", "talk": "script", "sex": "script", "impregnation": "script", "actions": "menu", "companion": "fields", "summon": "script", "dismiss": "script",
+		"companion attack": "script", "tags": "list", "source": "meta"},
 	"menu": {"title": "text", "leave": "text", "leave text": "script", "pause after each": "text", "sort": "text",
 		"intro": "script", "source": "meta"},
 	"scene": {"source": "meta", "tags": "list"},
@@ -85,6 +86,11 @@ const SCHEMA := {
 		"sire odds modifiers": "fields", "sire anal tag": "text", "sire turns": "text",
 		"ask": "script", "conceived": "script", "each turn": "script", "birth": "script", "child": "script",
 		"after birth": "script", "sired": "script", "sired birth": "script", "source": "meta"},
+	"companion_rules": {"party size": "text", "party size modifiers": "fields", "companion xp": "text",
+		"companion xp modifiers": "fields", "player xp cost": "text", "player xp cost modifiers": "fields",
+		"player xp cost when": "text", "level up at": "text", "level up at modifiers": "fields", "levels while": "text",
+		"damage every": "text", "dexterity every": "text", "hit bonus": "text", "hit bonus modifiers": "fields",
+		"dismissed": "text", "leveled": "script", "party too big": "script", "source": "meta"},
 	"heat_rules": {"default": "text", "female when": "text", "mpreg when": "text", "off when": "text",
 		"intense when": "text", "intense lengthens": "text", "intense quickens": "text",
 		"vulnerable": "script", "not vulnerable": "script", "switches": "script", "ends": "script", "source": "meta"},
@@ -115,7 +121,7 @@ const PENDING_TYPES := ["epilogue"]
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
-	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar"]
+	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
