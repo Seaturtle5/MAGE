@@ -40,6 +40,8 @@ static var _rules: Array = [
 	["tame", RegEx.create_from_string("^(tame|untame) (\\w+)$")],
 	["summon", RegEx.create_from_string("^(summon|dismiss) (\\w+)$")],
 	["cancel_companion", RegEx.create_from_string("^cancel (summon|dismiss)$")],
+	["check_level", RegEx.create_from_string("^check level$")],
+	["choose_feat", RegEx.create_from_string("^choose feat (\\w+)$")],
 	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
 	["send_children", RegEx.create_from_string("^send children from (\\w+) to (\\w+)$")],
 	["condition", RegEx.create_from_string("^condition (\\w+) for (\\d+) (hours?|turns?)$")],
@@ -154,6 +156,10 @@ static func _match(s: String) -> Dictionary:
 				return {"op": m.get_string(1), "who": m.get_string(2)}
 			"cancel_companion":
 				return {"op": "cancel_companion", "what": m.get_string(1)}
+			"check_level":
+				return {"op": "check_level"}
+			"choose_feat":
+				return {"op": "choose_feat", "group": m.get_string(1)}
 			"companion_level":
 				return {"op": "companion_level", "who": m.get_string(1)}
 			"send_children":

@@ -116,11 +116,12 @@ static func act(game, action: String) -> bool:
 						damage *= 2
 					c.hp = int(c.hp) - maxi(0, damage)
 					c.penalty = int(c.penalty) + 20
-					var verb: String = ["strike with", "attack with", "use", "abuse with"][game.variation("combat.attack_verb", 4, "at random")]
 					var weapon_text: String = TextTemplate.plain(game.render(TextTemplate.compile(str(w.text), "weapon:" + str(w.id))))
-					var name: String = game.creature_field(id, "name", id).to_lower()
-					game.notice("%sYou %s %s, hitting the %s for %d damage!" % ["Filled with sudden motivation, your attack scores particularly well! " if motivated else "",
-						verb, weapon_text, name, damage], false)
+					game.set_value("fight.weapon", weapon_text)
+					game.set_value("fight.dealt", damage)
+					game.set_value("fight.motivated", motivated)
+					game.notice(rule_text(game, "player hits",
+						"You hit [the enemy] with [fight.weapon] for [fight.dealt] damage."), false)
 					if int(c.hp) <= 0:
 						c.result = "won"
 					else:
@@ -147,10 +148,9 @@ static func act(game, action: String) -> bool:
 				var bonus := dex + int(game.value("player.intelligence")) + level * 2 + ItemSystem.bonus(game, "flee bonus") - enemy_dex - enemy_level * 2 - 10 - number(game, id, "hit bonus", 0)
 				if _roll(game, "Flee", bonus, false, true):
 					c.result = "fled"
-					var name: String = game.creature_field(id, "name", id).to_lower()
-					game.notice("You manage to evade the %s and slip back into the city." % name, false)
+					game.notice(rule_text(game, "flee", "You get away from [the enemy]."), false)
 				else:
-					game.notice("You fail to get away.", false)
+					game.notice(rule_text(game, "flee fails", "You fail to get away."), false)
 			"pass":
 				pass
 			_:
@@ -445,16 +445,6 @@ static func aftermath(game, id: String, result: String) -> void:
 	if result.begins_with("won"):
 		game.set_value("player.xp", int(game.value("player.xp")) + level * 2)
 		game.set_value("player.morale", int(game.value("player.morale")) + 1)
-		var reward := level * 2
-		if level > 2:
-			reward += 1
-		if level > 4:
-			reward += level / 4
-		if level > 8:
-			reward += level / 3
-		reward = mini(50, reward)
-		game.set_value("player.freecred", int(game.value("player.freecred")) + reward)
-		game.notice("A soft chime informs you that you have received %d freecred, and now have %d creds." % [reward, int(game.value("player.freecred"))], false)
 		if int(game.value("player.libido")) > 25:
 			game.set_value("player.libido", int(game.value("player.libido")) - 4)
 		drop_loot(game, id)
@@ -479,7 +469,33 @@ static func aftermath(game, id: String, result: String) -> void:
 		var creature_libido := int(game.creature_field(id, "libido", "0"))
 		var rise := 4 if infectious and int(game.value("player.libido")) < creature_libido else 1
 		game.set_value("player.libido", int(game.value("player.libido")) + rise)
+	# The game's own words and rewards after a fight (combat_rules `won:` / `lost:`,
+	# such as a money reward).
+	var rules := rules_id(game)
+	if rules != "":
+		var outcome := "won" if result.begins_with("won") else "lost" if result.begins_with("lost") else ""
+		if outcome != "":
+			_play(game, game.content.program("combat_rules:%s#%s" % [rules, outcome]))
 	CompanionSystem.after_fight(game, id, result.begins_with("won"))
+
+
+## The combat rules in use (one `== combat_rules` per game), or "".
+static func rules_id(game) -> String:
+	var defs: Dictionary = game.content.all_of("combat_rules")
+	return "" if defs.is_empty() else str(defs.keys()[0])
+
+
+static func rule(game, field: String, fallback: String) -> String:
+	var id := rules_id(game)
+	return fallback if id == "" else game.content.typed_value("combat_rules", id, field, fallback)
+
+
+## A combat rules line rendered as plain text (the game's words for hits and fleeing).
+static func rule_text(game, field: String, fallback: String) -> String:
+	var t := TextTemplate.compile(rule(game, field, fallback))
+	if t.has("error"):
+		t = TextTemplate.compile(fallback)
+	return TextTemplate.plain(game.render(t))
 
 
 ## Alt Combat.i7x:1544-1549: the creature's `loot` drops by its chance plus the

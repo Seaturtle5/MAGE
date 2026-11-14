@@ -97,7 +97,7 @@ func _shop_step(f: Dictionary) -> bool:
 		return false
 	var opts := ShopSystem.options(game, f.id)
 	var cur := ShopSystem.currency(game, f.id)
-	game.emit({"type": "paragraph", "spans": [{"text": "You have %d %s." % [ShopSystem.money(game, cur), cur.label],
+	game.emit({"type": "paragraph", "spans": [{"text": "You have %s." % ShopSystem.amount(cur, ShopSystem.money(game, cur)),
 		"bold": false, "italic": true, "class": ""}]})
 	pending = opts.map(func(o): return o)
 	game.emit({"type": "choices", "options": opts.map(func(o): return {"text": o.text, "description": "", "enabled": o.enabled})})
@@ -287,9 +287,14 @@ func run() -> void:
 			status = "combat"
 			return
 		if f.kind == "combat_end":
+			# The frame goes first, so scenes the aftermath starts (a level up) play next.
+			frames.pop_back()
 			CombatSystem.aftermath(game, f.creature, f.result)
 			game.state.combat = {}
-			frames.pop_back()
+			continue
+		if f.kind == "feat_choice":
+			if _feat_choice_step(f):
+				return
 			continue
 		if f.kind == "menu":
 			if _menu_step(f):
@@ -617,6 +622,35 @@ func _end_captivity(escaped: bool) -> void:
 		frames.append({"kind": "turn", "turns": 1})
 
 
+## `~ choose feat <group>`: the feats of that group the player can take now.
+func choose_feat(group: String) -> void:
+	frames.append({"kind": "feat_choice", "group": group, "shown": false})
+	if status == "idle":
+		run()
+
+
+func _feat_choice_step(f: Dictionary) -> bool:
+	if f.shown:
+		frames.erase(f)
+		return false
+	f.shown = true
+	var feats := LevelSystem.offered_feats(game, str(f.group))
+	if feats.is_empty():
+		frames.erase(f)
+		return false
+	var shown: Array = []
+	pending = []
+	for id: String in feats:
+		shown.append({"text": game.content.typed_value("feat", id, "name", id),
+			"description": game.content.typed_value("feat", id, "description"), "enabled": true})
+		pending.append({"feat": id, "enabled": true})
+	shown.append({"text": "Skip", "description": "Take no feat this time", "enabled": true, "leave": true})
+	pending.append({"feat": "", "enabled": true})
+	game.emit({"type": "choices", "title": "Choose a feat", "options": shown})
+	status = "choice"
+	return true
+
+
 func _push_field(id: String, field: String) -> void:
 	var pid := "captivity:%s#%s" % [id, field]
 	if game.content.program(pid) != null:
@@ -632,7 +666,12 @@ func choose(index: int) -> bool:
 	var p: Dictionary = pending[index]
 	pending = []
 	var f: Dictionary = frames[-1]
-	if p.has("shop"):
+	if p.has("feat"):
+		frames.erase(f)
+		if str(p.feat) != "":
+			game.apply(Effect.compile("feat + %s" % p.feat))
+			_push_if("feat:%s#gained" % p.feat)
+	elif p.has("shop"):
 		if p.shop == "leave":
 			frames.pop_back()
 		else:

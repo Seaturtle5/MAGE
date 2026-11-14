@@ -51,6 +51,7 @@ static func run(content: ContentDB) -> void:
 	v._check_endings()
 	v._check_status_bar()
 	v._check_companions()
+	v._check_levels()
 	v._check_scavenge_rules()
 	v._check_world()
 	v._check_filters()
@@ -672,6 +673,66 @@ func _check_companions() -> void:
 				_check_condition_text(d.fields[f].value, d.fields[f].line, "companion_rules:" + id)
 
 
+## Level rules, feats offered on levels, interests and combat rules.
+func _check_levels() -> void:
+	for type in ["level_rules", "combat_rules"]:
+		var defs: Dictionary = db.all_of(type)
+		for id in defs.keys().slice(1):
+			var d := db.get_def(type, id)
+			_path = d.path
+			_warn(d.line, "Only one %s is used (%s); this one is ignored." % [type, defs.keys()[0]])
+	for id in db.all_of("level_rules"):
+		var d := db.get_def("level_rules", id)
+		_path = d.path
+		if d.fields.has("xp needed"):
+			var e := Expr.parse(d.fields["xp needed"].value)
+			if e.has("error"):
+				_err(d.fields["xp needed"].line, "Xp needed: %s." % e.error)
+			else:
+				for p in Expr.paths(e):
+					_check_path(p, d.fields["xp needed"].line)
+		if d.fields.has("xp needed modifiers"):
+			for l: FscParser.Line in d.fields["xp needed modifiers"].children:
+				if l.is_blank():
+					continue
+				if not ":" in l.text:
+					_err(l.number, "A modifier is written 'condition: amount'.")
+					continue
+				var parts := l.text.rsplit(":", true, 1)
+				_check_condition_text(parts[0].strip_edges(), l.number, "level_rules:" + id)
+				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
+				if amount.has("error"):
+					_err(l.number, "Modifier amount: %s." % amount.error)
+		if d.fields.has("levels when"):
+			_check_condition_text(d.fields["levels when"].value, d.fields["levels when"].line, "level_rules:" + id)
+	for id in db.all_of("feat"):
+		var d := db.get_def("feat", id)
+		_path = d.path
+		if d.fields.has("available when"):
+			_check_condition_text(d.fields["available when"].value, d.fields["available when"].line, "feat:" + id)
+			if not d.fields.has("group"):
+				_warn(d.fields["available when"].line, "Available when only matters for a feat with a group that levels offer.")
+		if d.fields.has("group") and not d.fields.group.value.is_valid_identifier():
+			_err(d.fields.group.line, "A feat group is one word, such as fun.")
+	for id in db.all_of("interest"):
+		var d := db.get_def("interest", id)
+		_path = d.path
+		if d.fields.has("default") and d.fields.default.value not in ["yes", "no"]:
+			_err(d.fields.default.line, "Default must be yes or no.")
+	for id in db.all_of("combat_rules"):
+		var d := db.get_def("combat_rules", id)
+		_path = d.path
+		if d.fields.has("unarmed damage") and (not d.fields["unarmed damage"].value.is_valid_int() or int(d.fields["unarmed damage"].value) < 0):
+			_err(d.fields["unarmed damage"].line, "Unarmed damage must be a whole number of 0 or more.")
+		for f in ["unarmed attack", "player hits", "flee", "flee fails"]:
+			if d.fields.has(f):
+				var t := TextTemplate.compile(d.fields[f].value)
+				if t.has("error"):
+					_err(d.fields[f].line, "%s: %s" % [f.capitalize(), t.error])
+				else:
+					_check_template(t, d.fields[f].line, "combat_rules:" + id)
+
+
 func _check_heat() -> void:
 	for id in db.all_of("heat"):
 		var d := db.get_def("heat", id)
@@ -1016,10 +1077,15 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
-			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children"]:
+			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
+		"choose_feat":
+			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
+				_err(line, "No feat has group '%s'." % e.group)
+		"companion_level" when e.who == "player":
+			pass
 		"tame", "summon", "dismiss", "companion_level":
 			_need(e.who, "character", line)
 			if db.has(e.who, "character") and not db.get_def("character", e.who).fields.has("companion"):
@@ -1200,7 +1266,7 @@ func _check_path(path: String, line: int) -> void:
 		return
 	if parts[0] == "child" and parts.size() == 2 and parts[1] in PregnancySystem.CHILD_VALUES:
 		return
-	if path in ["people.collected", "shop.item", "shop.price", "party.size", "party.limit", "party.tamed",
+	if path in ["people.collected", "shop.item", "shop.item_name", "shop.price", "party.size", "party.limit", "party.tamed",
 			"offspring.with_you", "offspring.bunker", "offspring.roaming", "offspring.total"]:
 		return
 	if parts[0] == "companion" and parts.size() == 2 and (parts[1] in ["id", "name"] or CompanionSystem.DEFAULTS.has(parts[1])):
@@ -1309,6 +1375,11 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			if db.has(c.who, "creature") and (c.adjective in Game.CREATURE_SEXES or c.adjective.begins_with("variant ")):
 				if c.adjective.begins_with("variant ") and c.adjective.substr(8) not in VariantSystem.variants(db, c.who):
 					_err(line, "%s has no variant '%s'.%s" % [c.who, c.adjective.substr(8), _variant_list(c.who)])
+				return
+			if c.who == "player" and c.adjective.begins_with("interested in "):
+				_need(c.adjective.substr(14).strip_edges(), "interest", line)
+				return
+			if c.who == "player" and c.adjective == "pansexual":
 				return
 			if c.who == "here":
 				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in LOCATION_FLAGS):

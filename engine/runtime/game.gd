@@ -43,7 +43,7 @@ var warnings: Array = []  ## runtime problems (missing descriptors and so on)
 
 
 static func default_settings() -> Dictionary:
-	return {"banned": [], "warded": [], "levels": {}, "mode": [], "scenario": "", "started": false}
+	return {"banned": [], "warded": [], "levels": {}, "interests": {}, "mode": [], "scenario": "", "started": false}
 
 
 func _init(db: ContentDB, seed_value: int = 1) -> void:
@@ -366,6 +366,8 @@ func adjective(who: String, adj: String) -> bool:
 		var cock := g in ["male", "herm", "shemale", "male herm"]
 		var cunt := g in ["female", "herm", "male herm", "cuntboy"]
 		return {"male": cock, "female": cunt, "herm": cock and cunt, "neuter": not cock and not cunt}[adj]
+	if who == "player" and adj.begins_with("interested in "):
+		return interest(adj.substr(14).strip_edges())
 	match adj:
 		"male":
 			return body_count(who, "cock") > 0
@@ -422,6 +424,9 @@ func adjective(who: String, adj: String) -> bool:
 			return where(who) == state.location
 		"collected":
 			return "collected" in content.list_field(where(who), "flags")
+		"pansexual":
+			# The original's pansexual: interested in every interest the game declares.
+			return who == "player" and interested_in_all()
 		"pure":
 			# Characters.i7x:494: head, body, tail, skin and cock all of one strain.
 			# Parts the body's strain does not describe (a form without a tail) are not counted.
@@ -856,7 +861,14 @@ func apply(e: Dictionary) -> void:
 		"cancel_companion":
 			cancel_companion = true
 		"companion_level":
-			CompanionSystem.level_up(self, e.who)
+			if e.who == "player":
+				LevelSystem.level_up(self)
+			else:
+				CompanionSystem.level_up(self, e.who)
+		"check_level":
+			LevelSystem.check(self)
+		"choose_feat":
+			runner.choose_feat(e.group)
 		"send_children":
 			CompanionSystem.move_children(self, e.from, e.to)
 		"quest":
@@ -1089,6 +1101,31 @@ func set_filter(id: String, to: String) -> bool:
 
 
 ## The chosen option of a content level, or its default.
+## Whether the player is interested in `id` (an `== interest`, the original's
+## MaleInterest and friends): the player's choice, else the interest's default.
+func interest(id: String) -> bool:
+	var chosen: Dictionary = settings.get("interests", {})
+	if chosen.has(id):
+		return bool(chosen[id])
+	return content.typed_value("interest", id, "default", "yes") == "yes"
+
+
+## Sets an interest; the player can change interests at any time, as in the original.
+func set_interest(id: String, on: bool) -> bool:
+	if not content.has(id, "interest"):
+		return false
+	if not settings.has("interests"):
+		settings["interests"] = {}
+	settings.interests[id] = on
+	return true
+
+
+## Interested in every declared interest (the original's pansexual).
+func interested_in_all() -> bool:
+	var ids: Array = content.all_of("interest").keys()
+	return not ids.is_empty() and ids.all(func(i): return interest(str(i)))
+
+
 func level(id: String) -> String:
 	if settings.levels.has(id):
 		return str(settings.levels[id])
@@ -1140,7 +1177,12 @@ func content_settings() -> Dictionary:
 			options.append({"id": o, "name": str(o).capitalize(), "description": lv.text.get(o, "")})
 		levels.append({"id": id, "name": content.typed_value("level", id, "name", str(id).capitalize()),
 			"description": content.typed_value("level", id, "description"), "options": options, "value": level(id)})
-	return {"filters": filters, "levels": levels, "started": settings.started}
+	var interests: Array = []
+	for id in content.all_of("interest"):
+		interests.append({"id": id, "name": content.typed_value("interest", id, "name", str(id).capitalize()),
+			"group": content.typed_value("interest", id, "group"), "description": content.typed_value("interest", id, "description"),
+			"value": interest(id)})
+	return {"filters": filters, "levels": levels, "interests": interests, "started": settings.started}
 
 
 # --- World and time ---------------------------------------------------------

@@ -269,6 +269,7 @@ static func _attack_text(game, id: String) -> void:
 ## then any companion with enough experience gains a level.
 static func after_fight(game, creature: String, won: bool) -> void:
 	if party(game).is_empty():
+		LevelSystem.check(game)  # the player's level (Fighting.i7x: after every fight)
 		return
 	if not game.state.combat.is_empty():
 		game.set_value("fight.level", CombatSystem.number(game, creature, "level", 1))
@@ -281,6 +282,7 @@ static func after_fight(game, creature: String, won: bool) -> void:
 		var cost_when := rule(game, "player xp cost when")
 		if cost_when == "" or Condition.evaluate(Condition.compile(cost_when), game):
 			game.set_value("player.xp", int(game.value("player.xp")) - number_rule(game, "player xp cost", 0))
+	LevelSystem.check(game)  # the player first: companions may not outgrow the player
 	for id: String in party(game):
 		check_level(game, id)
 

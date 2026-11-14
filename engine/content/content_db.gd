@@ -22,7 +22,13 @@ const SCHEMA := {
 		"rescue anticipation": "text", "source": "meta"},
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
-		"scavenge bonus": "text", "loot bonus": "text", "body text": "text", "source": "meta"},
+		"scavenge bonus": "text", "loot bonus": "text", "body text": "text", "group": "text", "available when": "text",
+		"gained": "script", "source": "meta"},
+	"level_rules": {"xp needed": "text", "xp needed modifiers": "fields", "levels when": "text", "level up": "script",
+		"source": "meta"},
+	"interest": {"name": "text", "description": "text", "default": "text", "group": "text", "source": "meta"},
+	"combat_rules": {"unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text",
+		"flee fails": "text", "won": "script", "lost": "script", "source": "meta"},
 	"scavenge_rules": {"generic": "text", "generic chance": "text", "target": "text", "start": "text", "found": "text",
 		"failure": "text", "only at": "text", "source": "meta"},
 	"creature": {"name": "text", "species": "text", "image": "text", "found in": "list", "active": "text",
@@ -108,9 +114,9 @@ const SCHEMA := {
 	"level": {"name": "text", "description": "text", "default": "text", "options": "fields", "from": "text", "source": "meta"},
 	"tag": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
 	"ending": {"name": "text", "type": "text", "priority": "text", "when": "text", "play": "script", "source": "meta"},
-	"status_bar": {"meters": "list", "currency": "text", "source": "meta"},
+	"status_bar": {"meters": "list", "currency": "text", "currency names": "list", "source": "meta"},
 	"shop": {"name": "text", "at": "list", "run by": "text", "open when": "text", "closed": "script", "intro": "script",
-		"currency": "text", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
+		"currency": "text", "currency names": "list", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
 		"trade bonus when": "text", "trade bonus chance": "text", "source": "meta"},
 }
 ## Types the format defines but the engine does not run yet. They load with a warning.
@@ -121,7 +127,8 @@ const PENDING_TYPES := ["epilogue"]
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
-	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules"]
+	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules",
+	"interest"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}

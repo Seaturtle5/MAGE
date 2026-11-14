@@ -26,7 +26,7 @@ const WEAPON_KEYS := {"damage": "number", "type": "melee/ranged", "size": "numbe
 const STYLES := ["basic", "stylish", "cool", "grungy", "sporty", "violent", "smart", "sexy", "authoritive",
 	"rebellious", "cute", "slutty", "bimbo", "brah", "mistress", "slave", "adventurous"]
 ## Unarmed fighting (Basic Functions.i7x:1084-1090).
-const UNARMED_TEXT := "[one of]your quick wit[or]your fists[or]a quick kick[or]your body[or]some impromptu wrestling[or]an unarmed strike[at random]"
+const UNARMED_TEXT := "your fists"
 const UNARMED_DAMAGE := 4
 
 
@@ -421,7 +421,9 @@ static func size_remark(game, id: String) -> String:
 static func weapon(game) -> Dictionary:
 	var id: String = game.state.wielded
 	if id == "" or count(game, id) <= 0:
-		return {"id": "", "damage": UNARMED_DAMAGE, "type": "melee", "hit": 0, "penalty": 0, "text": UNARMED_TEXT}
+		# The game's own unarmed attack (combat_rules), else plain fists.
+		return {"id": "", "damage": int(CombatSystem.rule(game, "unarmed damage", str(UNARMED_DAMAGE))), "type": "melee",
+			"hit": 0, "penalty": 0, "text": CombatSystem.rule(game, "unarmed attack", UNARMED_TEXT)}
 	var diff := absi(scale(game) - int(arm(game, id, "size", "3")))
 	return {"id": id, "damage": int(arm(game, id, "damage", "4")), "type": arm(game, id, "type", "melee"),
 		"hit": int(arm(game, id, "hit bonus", "0")), "penalty": {2: 5, 1: 2}.get(diff, 0),

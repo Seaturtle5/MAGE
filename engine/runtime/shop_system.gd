@@ -50,17 +50,31 @@ static func is_open(game, id: String) -> bool:
 	return when == "" or Condition.evaluate(Condition.compile(when), game)
 
 
-## The currency: {"item": id} or {"value": "player.x"}, with a label for prices.
+## The currency: {"item": id} or {"value": "player.x"}, with labels for one
+## and for several (`currency names: coin, coins` on the shop or the status bar).
 static func currency(game, id: String) -> Dictionary:
 	var c := field(game, id, "currency")
-	if c == "":
-		for bar in game.content.all_of("status_bar"):
+	var names: Array = game.content._list(game.content.get_def("shop", id), "currency names")
+	for bar in game.content.all_of("status_bar"):
+		if c == "":
 			c = game.content.typed_value("status_bar", bar, "currency")
-			break
+		if names.is_empty():
+			names = game.content._list(game.content.get_def("status_bar", bar), "currency names")
+		break
+	var out := {}
 	if c.begins_with("item "):
 		var item := c.substr(5).strip_edges()
-		return {"item": item, "label": game.content.typed_value("item", item, "name", item)}
-	return {"value": "player." + c, "label": c}
+		out = {"item": item, "label": game.content.typed_value("item", item, "name", item)}
+	else:
+		out = {"value": "player." + c, "label": c}
+	out["one"] = str(names[0]) if names.size() >= 1 else out.label
+	out["label"] = str(names[1]) if names.size() >= 2 else out.label
+	return out
+
+
+## "1 coin", "3 coins".
+static func amount(cur: Dictionary, n: int) -> String:
+	return "%d %s" % [n, cur.one if n == 1 else cur.label]
 
 
 static func money(game, cur: Dictionary) -> int:
@@ -112,11 +126,11 @@ static func options(game, id: String) -> Array:
 	for l in lines(game, id, "stock"):
 		if not _holds(game, l.cond):
 			continue
-		out.append({"text": "Buy %s - %d %s" % [_name(game, l.item), l.price, cur.label], "enabled": l.price <= have,
+		out.append({"text": "Buy %s - %s" % [_name(game, l.item), amount(cur, l.price)], "enabled": l.price <= have,
 			"shop": "buy", "item": l.item, "price": l.price})
 	for l in lines(game, id, "buys"):
 		if _holds(game, l.cond) and int(game.state.inventory.get(l.item, 0)) > 0 and l.item not in game.state.equipped:
-			out.append({"text": "Sell %s - %d %s" % [_name(game, l.item), l.price, cur.label], "enabled": true,
+			out.append({"text": "Sell %s - %s" % [_name(game, l.item), amount(cur, l.price)], "enabled": true,
 				"shop": "sell", "item": l.item, "price": l.price})
 	if field(game, id, "trades", "no") == "yes":
 		var ids: Array = game.state.inventory.keys()
@@ -138,20 +152,21 @@ static func _name(game, item: String) -> String:
 static func act(game, id: String, o: Dictionary) -> String:
 	var cur := currency(game, id)
 	game.state.values["shop.item"] = o.item
+	game.state.values["shop.item_name"] = _name(game, o.item)  # for text: [shop.item_name]
 	game.state.values["shop.price"] = o.price
 	match o.shop:
 		"buy":
 			if money(game, cur) < int(o.price):
-				game.notice("You can't afford the %s; it costs %d %s." % [_name(game, o.item), o.price, cur.label], false)
+				game.notice("You can't afford the %s; it costs %s." % [_name(game, o.item), amount(cur, o.price)], false)
 				return ""
 			pay(game, cur, int(o.price))
 			game.apply({"op": "give", "item": o.item, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
-			game.notice("You purchase the %s for %d %s." % [_name(game, o.item), o.price, cur.label], false)
+			game.notice("You purchase the %s for %s." % [_name(game, o.item), amount(cur, o.price)], false)
 			return "shop:%s#bought" % id
 		"sell":
 			game.apply({"op": "take", "item": o.item, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
 			earn(game, cur, int(o.price))
-			game.notice("You sell the %s for %d %s." % [_name(game, o.item), o.price, cur.label], false)
+			game.notice("You sell the %s for %s." % [_name(game, o.item), amount(cur, o.price)], false)
 			return "shop:%s#sold" % id
 		"trade":
 			# Inventory.i7x:498-504: the trader hands over the item's `trades for`.
@@ -165,5 +180,6 @@ static func act(game, id: String, o: Dictionary) -> String:
 				game.apply({"op": "give", "item": other, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
 				game.notice("You get a second one free with your negotiating skills!", false)
 			game.state.values["shop.item"] = other
+			game.state.values["shop.item_name"] = _name(game, other)
 			return "shop:%s#bought" % id
 	return ""

@@ -2028,6 +2028,37 @@ func _fill_content_settings(panel: VBoxContainer) -> void:
 		panel.add_child(FsTheme.section("Content levels"))
 	for lv: Dictionary in view.levels:
 		panel.add_child(_level_row(panel, lv))
+	var igroup := "-"
+	for it: Dictionary in view.get("interests", []):
+		if it.group != igroup:
+			igroup = it.group
+			panel.add_child(FsTheme.section(igroup if igroup != "" else "Interested in"))
+		panel.add_child(_interest_row(panel, it))
+
+
+## An interest (Males, Females ...): a yes/no switch the player can change at any time.
+func _interest_row(panel: VBoxContainer, it: Dictionary) -> Control:
+	var card := FsTheme.card(FsTheme.SURFACE_2, 10)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	card.add_child(row)
+	var text := VBoxContainer.new()
+	text.add_theme_constant_override("separation", 2)
+	text.size_flags_horizontal = SIZE_EXPAND_FILL
+	text.add_child(FsTheme.label(it.name, 17))
+	if it.description != "":
+		text.add_child(FsTheme.label(it.description, 14, FsTheme.TEXT_DIM))
+	row.add_child(text)
+	var toggle := CheckButton.new()
+	toggle.button_pressed = it.value
+	toggle.text = "Yes" if it.value else "No"
+	toggle.size_flags_vertical = SIZE_SHRINK_CENTER
+	var id: String = it.id
+	toggle.toggled.connect(func(on: bool):
+		game.set_interest(id, on)
+		_fill_content_settings(panel))
+	row.add_child(toggle)
+	return card
 
 
 func _filter_row(panel: VBoxContainer, f: Dictionary) -> Control:
@@ -2128,6 +2159,9 @@ func _load_content_prefs() -> void:
 	var levels: Dictionary = data.get("levels", {}) if data.get("levels", {}) is Dictionary else {}
 	for id in levels:
 		game.set_level(str(id), str(levels[id]))
+	var interests: Dictionary = data.get("interests", {}) if data.get("interests", {}) is Dictionary else {}
+	for id in interests:
+		game.set_interest(str(id), bool(interests[id]))
 	# Filters last, so they end as saved even where a level bans or allows one.
 	var banned: Array = data.get("banned", []) if data.get("banned", []) is Array else []
 	var warded: Array = data.get("warded", []) if data.get("warded", []) is Array else []
@@ -2139,7 +2173,7 @@ func _save_content_prefs() -> void:
 	var f := FileAccess.open(CONTENT_PREFS, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"banned": game.settings.banned, "warded": game.settings.warded,
-			"levels": game.settings.levels}, "  "))
+			"levels": game.settings.levels, "interests": game.settings.get("interests", {})}, "  "))
 
 
 func _open_hunt() -> void:

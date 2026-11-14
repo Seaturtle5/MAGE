@@ -118,7 +118,7 @@ static func _print(events: Array, out: PackedStringArray) -> void:
 					out.append(TextTemplate.plain(p))
 				var people: Array = e.people.map(func(p): return p.name)
 				var items: Array = e.items.map(func(it): return it.name)
-				var exits: Array = e.exits.map(func(x): return "%s: %s" % [x.direction, x.name])
+				var exits: Array = e.exits.map(func(x): return "%s: %s%s" % [x.direction, x.name, " (explore)" if x.get("explore", false) else ""])
 				var actions: Array = e.actions.map(func(a): return a.label)
 				if people: out.append("  people: " + ", ".join(people))
 				if items: out.append("  items: " + ", ".join(items))
