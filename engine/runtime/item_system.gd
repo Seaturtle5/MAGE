@@ -251,6 +251,23 @@ static func bare(game, what: String) -> bool:
 ## head to feet, with remarks on a bare chest, crotch or feet, then the
 ## weapon and what hangs on the back or sits at the end. A covered bra or
 ## underwear is not mentioned.
+## The player undressing a body area, for scene text (Basic Functions.i7x
+## SelfStripCrotch / SelfStripChest): the worn items in `slots`, in that order.
+static func strip_text(game, slots: Array, verb: String, area: String, bare: String) -> String:
+	var items: Array = []
+	for slot in slots:
+		for id: String in game.state.equipped:
+			if gear(game, id, "slot", "none") == slot and item_name(game, id) not in items:
+				items.append(item_name(game, id))
+				break
+	if items.is_empty():
+		return bare
+	var listed: String = items[0] if items.size() == 1 else ", ".join(items.slice(0, -1)) + " and " + str(items[-1])
+	if items.size() == 1:
+		return "%s your %s and bare your %s" % [verb, listed, area]
+	return "%s your %s, baring your %s" % [verb, listed, area]
+
+
 static func worn_description(game) -> String:
 	var lines: PackedStringArray = []
 	var body: String = game.content.typed_value("form", game.part_form("player", "torso"), "name", "human").to_lower()

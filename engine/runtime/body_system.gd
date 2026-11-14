@@ -22,7 +22,8 @@ static func fields(game, form: String, part: String) -> Dictionary:
 ## that differs changes (all of them when `all`, for transform effects); a
 ## body (torso) change also adjusts breasts, size and sex, a genital change
 ## adjusts sex. Resistant, Mutable and Mighty Mutation follow the original.
-static func infect(game, form: String, all: bool = false) -> void:
+## `keep_sex`: the infection leaves sex alone (the original's "Nochange" sex entry).
+static func infect(game, form: String, all: bool = false, keep_sex: bool = false) -> void:
 	if game.content.get_def("form", form) == null:
 		game.warn("No form '%s' to infect with." % form)
 		return
@@ -38,15 +39,15 @@ static func infect(game, form: String, all: bool = false) -> void:
 	if _has(game, "resistant") and game.rng.chance(1, 3):
 		_say(game, "Your nanites['] programmed resistance to change prevents further mutation.")
 	else:
-		_roll(game, form)
+		_roll(game, form, keep_sex)
 		if _has(game, "mutable") and game.rng.chance(1, 2):
-			_roll(game, form)
+			_roll(game, form, keep_sex)
 	if _has(game, "mighty_mutation"):
 		_stat_drift(game, form)
 	_libido_drift(game, form)
 
 
-static func _roll(game, form: String) -> void:
+static func _roll(game, form: String, keep_sex: bool = false) -> void:
 	var available: Array = []
 	for part in PARTS:
 		if not fields(game, form, part).is_empty() and game.part_form("player", part) != form:
@@ -59,9 +60,11 @@ static func _roll(game, form: String) -> void:
 			if game.part_form("player", "torso") != form:
 				_change_part(game, form, "torso")
 			_attributes(game, form)
-			_sex(game, form)
+			if not keep_sex:
+				_sex(game, form)
 		"cock", "cunt":
-			_sex(game, form)
+			if not keep_sex:
+				_sex(game, form)
 			_change_part(game, form, part, part == "cunt" or game.adjective("player", "male"))
 		_:
 			_change_part(game, form, part)
@@ -84,7 +87,7 @@ static func _change_part(game, form: String, part: String, message: bool = true)
 static func _attributes(game, form: String) -> void:
 	game.state.values.erase("player.scale")
 	var target := int(game.content.typed_value("form", form, "scale", "3"))
-	var tags: Array = game.content._list(game.content.get_def("form", form), "tags")
+	var tags: Array = game.content.form_tags(form)
 	if "taur" in tags or "no_legs" in tags:
 		for id: String in game.state.equipped.duplicate():
 			if ItemSystem.gear(game, id, "taur compatible", "no") != "yes":
@@ -100,6 +103,17 @@ static func _has(game, feat: String) -> bool:
 
 
 ## The original's preference adjectives (Feats.i7x:36-52).
+## The sex a form's infection moves toward: its `sex`, or with `sex by preference: yes`
+## the player's preferred sex when there is one (the original's PrepCombat
+## "if Player is MalePreferred: now sex entry is ..." idiom).
+static func target_sex(game, form: String) -> String:
+	if game.content.typed_value("form", form, "sex by preference", "no") == "yes":
+		for p in ["male", "herm", "female"]:
+			if _prefers(game, p):
+				return p
+	return game.content.typed_value("form", form, "sex", "")
+
+
 static func _prefers(game, sex: String) -> bool:
 	var m := _has(game, "male_preferred")
 	var f := _has(game, "female_preferred")
@@ -129,7 +143,7 @@ static func _target(game, form: String, part: String, key: String) -> int:
 
 ## The original's sex change rule (Infections.i7x:10-224).
 static func _sex(game, form: String) -> void:
-	var sex: String = game.content.typed_value("form", form, "sex", "")
+	var sex: String = target_sex(game, form)
 	var maleish := sex in ["male", "herm"]
 	var femaleish := sex in ["female", "herm"]
 	var single := 0
@@ -325,7 +339,7 @@ static func _breasts(game, form: String, quiet: bool = false) -> void:
 			_setn(game, "nipples", nipples - 2)
 	if _num(game, "nipples") == 0:
 		return
-	var sex: String = game.content.typed_value("form", form, "sex", "")
+	var sex: String = target_sex(game, form)
 	var target := -1
 	var grow_ok := true
 	if sex in ["female", "herm"]:

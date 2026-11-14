@@ -2458,6 +2458,7 @@ func _open_credits() -> void:
 	for artist in by_artist:
 		box.add_child(FsTheme.label("%s — %s" % [artist, ", ".join(by_artist[artist])], 15, FsTheme.TEXT_DIM))
 	box.add_child(FsTheme.section("Engine"))
+	box.add_child(FsTheme.label("MAGE (Modular Adventure Game Engine), created by Seaturtle5.", 15, FsTheme.TEXT_DIM))
 	box.add_child(FsTheme.label("Fonts: Literata by TypeTogether and Barlow by Jeremy Tribby, both under the SIL Open Font License (ui/fonts).", 15, FsTheme.TEXT_DIM))
 	box.add_child(FsTheme.section("Content packs"))
 	for p: Dictionary in credits.packs:

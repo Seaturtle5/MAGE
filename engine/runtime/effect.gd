@@ -14,10 +14,13 @@ const PLAYER_STATS := ["humanity", "libido", "morale", "xp", "score", "freecred"
 static var _cache: Dictionary = {}
 static var _rules: Array = [
 	["cancel_use", RegEx.create_from_string("^cancel use$")],
+	# In a creature's encounter: the meeting ends without a fight (the original's combat abort).
+	["no_fight", RegEx.create_from_string("^no fight$")],
 	["resolve", RegEx.create_from_string("^resolve(?: (\\w+))?$")],
 	["end_pregnancy", RegEx.create_from_string("^end pregnancy$")],
 	["end_heat", RegEx.create_from_string("^end heat$")],
 	["reset_human", RegEx.create_from_string("^reset to human$")],
+	["outcome_of", RegEx.create_from_string("^outcome (\\w+) of (\\w+)$")],
 	["outcome", RegEx.create_from_string("^outcome (\\w+)$")],
 	["activate", RegEx.create_from_string("^(activate|deactivate) (\\w+)$")],
 	["quest", RegEx.create_from_string("^quest (\\w+) = (\\w+)$")],
@@ -36,17 +39,23 @@ static var _rules: Array = [
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
 	["take", RegEx.create_from_string("^take (\\w+)(?: (.+))?$")],
 	["move", RegEx.create_from_string("^move (\\w+) to (\\w+)$")],
+	# A creature's zones or infection change in play: "creature centaur found in plains",
+	# "creature centaur found in nowhere", "creature centaur infectious yes", "creature rabbit gender female".
+	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender) ([a-z0-9_, ]+)$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) lives at (\\w+)$")],
 	["discover", RegEx.create_from_string("^discover (\\w+)$")],
 	["go", RegEx.create_from_string("^go to (\\w+)$")],
-	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?$")],
+	["infect_part", RegEx.create_from_string("^infect with player (head|torso|body|skin|tail|cock|cunt|face)$")],
+	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
 	["sex", RegEx.create_from_string("^sex (\\w+) receives (\\w+) from (\\w+)$")],
+	["infects_as", RegEx.create_from_string("^this fight infects as (\\w+)$")],
+	["no_infection", RegEx.create_from_string("^this fight does not infect$")],
 	["ending", RegEx.create_from_string("^ending (\\w+)$")],
 	["pregnancy_faster", RegEx.create_from_string("^pregnancy faster by (\\d+)$")],
 	["extend_heat", RegEx.create_from_string("^extend heat by (\\d+) turns?$")],
 	["survival", RegEx.create_from_string("^(drink|eat|heal|hurt) (.+)$")],
-	["stat", RegEx.create_from_string("^(humanity|libido|morale|xp|score|freecred) ([+-]) (.+)$")],
+	["stat", RegEx.create_from_string("^(humanity|libido|morale|hunger|thirst|xp|score|freecred) ([+-]) (.+)$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
 ]
@@ -80,10 +89,13 @@ static func _match(s: String) -> Dictionary:
 			"resolve":
 				# "resolve" ends this event; "resolve other_event" ends another one.
 				return {"op": "resolve", "event": m.get_string(1)}
-			"cancel_use", "end_pregnancy", "end_heat", "reset_human":
+			"cancel_use", "no_fight", "end_pregnancy", "end_heat", "reset_human":
 				return {"op": rule[0]}
 			"outcome":
 				return {"op": "outcome", "outcome": m.get_string(1)}
+			"outcome_of":
+				# Another event's outcome ("~ outcome defeated of dullahan_knight").
+				return {"op": "outcome", "outcome": m.get_string(1), "event": m.get_string(2)}
 			"activate":
 				return {"op": m.get_string(1), "event": m.get_string(2)}
 			"quest":
@@ -134,21 +146,30 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "meter", "meter": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
 			"move":
 				return {"op": "move", "who": m.get_string(1), "place": m.get_string(2)}
+			"creature_change":
+				return {"op": "creature_change", "creature": m.get_string(1), "field": m.get_string(2), "value": m.get_string(3).strip_edges()}
 			"lives_at":
 				return {"op": "lives_at", "who": m.get_string(1), "place": m.get_string(2)}
 			"discover":
 				return {"op": "discover", "place": m.get_string(1)}
 			"go":
 				return {"op": "go", "place": m.get_string(1)}
+			"infect_part":
+				# The strain the player's part already has (the original's "infect BodyName of Player").
+				return {"op": "infect", "part": {"body": "torso", "face": "head"}.get(m.get_string(1), m.get_string(1)), "form": "", "times": {"value": {"op": "num", "v": 1}}, "keep_sex": false}
 			"infect":
 				var times := amount(m.get_string(2)) if m.get_string(2) != "" else {"value": {"op": "num", "v": 1}}
 				if times.has("error"):
 					return {"error": times.error}
-				return {"op": "infect", "form": m.get_string(1), "times": times}
+				return {"op": "infect", "form": m.get_string(1), "times": times, "keep_sex": m.get_string(3) != ""}
 			"transform":
 				return {"op": "transform", "form": m.get_string(1)}
 			"sex":
 				return {"op": "sex", "taker": m.get_string(1), "act": m.get_string(2), "giver": m.get_string(3)}
+			"infects_as":
+				return {"op": "infects_as", "creature": m.get_string(1)}
+			"no_infection":
+				return {"op": "infects_as", "creature": ""}
 			"ending":
 				return {"op": "ending", "ending": m.get_string(1)}
 			"pregnancy_faster":
@@ -171,9 +192,9 @@ static func _match(s: String) -> Dictionary:
 				if bounds.size() == 2:
 					var low := Expr.parse(bounds[0])
 					var high := Expr.parse(bounds[1])
-					if low.has("error") or high.has("error"):
-						return {"error": "cannot read range '%s'" % m.get_string(2)}
-					return {"op": "set", "path": m.get_string(1), "value": {"op": "num", "v": 0}, "range": [low, high]}
+					if not low.has("error") and not high.has("error"):
+						return {"op": "set", "path": m.get_string(1), "value": {"op": "num", "v": 0}, "range": [low, high]}
+					# Otherwise the "to" belongs to an expression such as "10 + (random 1 to 50)".
 				var value := Expr.parse(m.get_string(2))
 				if value.has("error"):
 					return {"error": "cannot read value '%s': %s" % [m.get_string(2), value.error]}

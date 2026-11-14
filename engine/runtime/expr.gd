@@ -13,7 +13,7 @@ extends RefCounted
 ##   {"op": "bool", "v": true}        {"op": "path", "v": "player.libido"}
 ##   {"op": "word", "v": "camp"}      {"op": "+", "a": ..., "b": ...}
 
-static var _token_re := RegEx.create_from_string("\\s*(\"[^\"]*\"|-?\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_.]*|[-+*/()])")
+static var _token_re := RegEx.create_from_string("\\s*(\"[^\"]*\"|-?\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_.]*|[-+*/%()])")
 
 
 static func tokenize(text: String) -> PackedStringArray:
@@ -66,7 +66,7 @@ class _P:
 
 	func product() -> Dictionary:
 		var a := atom()
-		while err == "" and i < t.size() and (t[i] == "*" or t[i] == "/"):
+		while err == "" and i < t.size() and (t[i] == "*" or t[i] == "/" or t[i] == "%"):
 			var op := t[i]
 			i += 1
 			a = {"op": op, "a": a, "b": atom()}
@@ -85,6 +85,15 @@ class _P:
 				return {}
 			i += 1
 			return inner
+		if tok == "random":
+			# "random 1 to 20": a whole number rolled each time the expression is evaluated.
+			var low := product()
+			if i >= t.size() or t[i] != "to":
+				err = "'random' needs 'to': random 1 to 20"
+				return {}
+			i += 1
+			var high := product()
+			return {"op": "random", "a": low, "b": high}
 		if tok.begins_with("\""):
 			return {"op": "text", "v": tok.substr(1, tok.length() - 2)}
 		if tok.is_valid_int():
@@ -95,7 +104,7 @@ class _P:
 			return {"op": "bool", "v": true}
 		if tok == "no" or tok == "false":
 			return {"op": "bool", "v": false}
-		if tok in ["+", "-", "*", "/", ")"]:
+		if tok in ["+", "-", "*", "/", "%", ")"]:
 			err = "unexpected '%s'" % tok
 			return {}
 		if "." in tok:
@@ -119,6 +128,14 @@ static func evaluate(node: Dictionary, ctx) -> Variant:
 		"/":
 			var d := _num(evaluate(node.b, ctx))
 			return 0 if d == 0 else _num(evaluate(node.a, ctx)) / d
+		"random":
+			var lo := _num(evaluate(node.a, ctx))
+			var hi := _num(evaluate(node.b, ctx))
+			return ctx.rng.range_int(mini(lo, hi), maxi(lo, hi))
+		"%":
+			# The original's "the remainder after dividing a by b".
+			var m := _num(evaluate(node.b, ctx))
+			return 0 if m == 0 else posmod(_num(evaluate(node.a, ctx)), m)
 	return null
 
 
@@ -137,7 +154,7 @@ static func paths(node: Dictionary, out: Array = []) -> Array:
 	match node.get("op", ""):
 		"path":
 			out.append(node.v)
-		"+", "-", "*", "/":
+		"+", "-", "*", "/", "%", "random":
 			paths(node.a, out)
 			paths(node.b, out)
 	return out

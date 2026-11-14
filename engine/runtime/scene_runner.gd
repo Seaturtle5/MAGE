@@ -32,7 +32,12 @@ func start(target: String, extra: Dictionary = {}) -> void:
 func play_now(pid: String) -> void:
 	_push(pid, {})
 	if status == "idle":
+		# Content run between actions (hooks, meters): if it says nothing, the player's
+		# view stays as it was instead of the location being shown again.
+		var before: int = game.output.size()
 		run()
+		if status == "idle" and game.output.slice(before).all(func(e): return e.type in ["scene_end", "location"]):
+			game.output.resize(before)
 
 
 ## Starts an event. `preface` holds output events (text, rolls) that led to
@@ -65,6 +70,13 @@ func _push(target: String, extra: Dictionary) -> void:
 	var f := {"kind": "script", "pid": target, "pc": 0}
 	f.merge(extra)
 	frames.append(f)
+
+
+## Plays a creature's encounter field as a scene, if it has one.
+func _push_encounter(creature: String) -> void:
+	game.fight_cancelled = false  # only the encounter that is about to play can call off its fight
+	if game.content.program(creature + "#encounter") != null:
+		frames.append({"kind": "script", "pid": creature + "#encounter", "pc": 0})
 
 
 func current_event() -> String:
@@ -107,11 +119,22 @@ func run() -> void:
 			status = "continue"
 			return
 		if f.kind == "encounter":
+			# Steps: 0 shows the title and plays the creature's encounter as a scene
+			# (it may set values and flags, show pictures and break pages); 2 starts
+			# the fight; 1 is after the fight.
 			if f.pc == 0:
-				f.pc = 1
+				f.pc = 2
 				if f.get("title", false):
 					emit_title("Encounter: " + game.content.typed_value("creature", f.creature, "name", f.creature), "",
 						game.content.typed_value("creature", f.creature, "image"))
+				_push_encounter(f.creature)
+				continue
+			if f.pc == 2:
+				f.pc = 1
+				if game.fight_cancelled:
+					game.fight_cancelled = false
+					_pop()
+					continue
 				f["fight"] = {"creature": f.creature, "outcomes": {}, "after": 1}
 				CombatSystem.begin(game, f.creature)
 				if game.state.combat.result != "":
@@ -177,6 +200,21 @@ func run() -> void:
 			"play":
 				_push(ins.target, {})
 			"fight":
+				if f.has("encountering"):
+					# Second pass, after the creature's encounter scene: start the fight.
+					ins = f.encountering
+					f.erase("encountering")
+					if game.fight_cancelled:
+						game.fight_cancelled = false
+						f.pc = ins.after
+						continue
+					f["fight"] = ins
+					CombatSystem.begin(game, ins.creature)
+					if game.state.combat.result != "":
+						_finish_fight()
+						continue
+					status = "combat"
+					return
 				if ins.creature == "random":
 					# The original's plain Fight: a random creature of this zone.
 					var zone: String = game.content.typed_value("location", game.state.location, "zone")
@@ -188,13 +226,11 @@ func run() -> void:
 					ins.creature = pool[game.rng.range_int(0, pool.size() - 1)]
 					emit_title("Encounter: " + game.content.typed_value("creature", ins.creature, "name", ins.creature), "",
 						game.content.typed_value("creature", ins.creature, "image"))
-				f["fight"] = ins
-				CombatSystem.begin(game, ins.creature)
-				if game.state.combat.result != "":
-					_finish_fight()
-					continue
-				status = "combat"
-				return
+				# The creature's encounter plays first, then this instruction runs again.
+				f["encountering"] = ins
+				f.pc -= 1
+				_push_encounter(ins.creature)
+				continue
 			"return":
 				_pop()
 	if _queue_scheduled_scenes():
@@ -412,9 +448,11 @@ func show_location() -> void:
 
 
 ## Renders a text-only program into paragraphs of spans (descriptions).
-func render_paragraphs(prog: Program) -> Array:
+## The text of a text field (and the scenes it hands over to). With `run_effects`
+## its effects run as it is shown (a creature's attack landing).
+func render_paragraphs(prog: Program, depth: int = 0, run_effects: bool = false) -> Array:
 	var paras: Array = []
-	if prog == null:
+	if prog == null or depth > 8:
 		return paras
 	var pc := 0
 	var steps := 0
@@ -431,6 +469,13 @@ func render_paragraphs(prog: Program) -> Array:
 			"unless":
 				if ins.cond.has("error") or not Condition.evaluate(ins.cond, game):
 					pc = ins.to
+			"effect":
+				if run_effects and not ins.effect.has("error"):
+					game.apply(ins.effect)
+			"goto":
+				# A text field may hand over to a scene of text and conditions ("attack: -> wolf_attacks").
+				paras += render_paragraphs(game.content.program(ins.target), depth + 1, run_effects)
+				break
 			"return":
 				break
 	return paras
@@ -784,7 +829,7 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 	var out: Array = []
 	for id in game.content.all_of("creature"):
 		var d: FscParser.Definition = game.content.get_def("creature", id)
-		if zone not in game.content._list(d, "found in"):
+		if zone not in Array(game.creature_field(id, "found in").split(",")).map(func(z): return z.strip_edges()):
 			continue
 		if game.filter_block(game.content._list(d, "tags"), hunted) != "":
 			continue

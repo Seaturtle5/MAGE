@@ -46,3 +46,29 @@ func test_evaluate_logic_and_negation() -> void:
 	assert_true(Condition.evaluate(Condition.compile("player is male and not adam is male"), g))
 	assert_true(Condition.evaluate(Condition.compile("adam is male or player is male"), g))
 	assert_true(Condition.evaluate(Condition.compile("adam is not male"), g))
+
+func test_odd_and_even() -> void:
+	var g := FakeGame.new()
+	g.values["hawk.beaten"] = 3
+	assert_eq(Condition.compile("hawk.beaten is odd").op, "parity")
+	assert_true(Condition.evaluate(Condition.compile("hawk.beaten is odd"), g))
+	assert_false(Condition.evaluate(Condition.compile("hawk.beaten is even"), g))
+	assert_true(Condition.evaluate(Condition.compile("hawk.beaten is not even"), g))
+	assert_true(Condition.evaluate(Condition.compile("unset.value is even"), g), "an unset number is 0, which is even")
+
+func test_chance_with_computed_odds() -> void:
+	var g := FakeGame.new()
+	g.values["d.tt"] = 4
+	var node := Condition.compile("chance d.tt + 16 in player.libido")
+	assert_eq(node.op, "chance_expr")
+	assert_eq(Condition.compile("chance 1 in 3").op, "chance", "plain numbers keep the simple form")
+	assert_true(Condition.compile("chance d.tt in").has("error"))
+	Condition.evaluate(node, g)
+	assert_eq(g.asked.back(), "chance", "the computed odds are rolled like a plain chance")
+
+func test_remainder() -> void:
+	var g := FakeGame.new()
+	g.values["d.n"] = 7
+	assert_true(Condition.evaluate(Condition.compile("d.n % 5 = 2"), g))
+	assert_true(Condition.evaluate(Condition.compile("d.n % 5 != 0 and d.n > 2"), g))
+	assert_true(Condition.evaluate(Condition.compile("(d.n - 2) % 5 = 0"), g))

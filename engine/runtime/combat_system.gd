@@ -23,8 +23,6 @@ static func begin(game, id: String) -> void:
 	game.state.combat = {"creature": id, "hp": number(game, id, "hp", 12),
 		"maxhp": number(game, id, "hp", 12), "libido": number(game, id, "libido", 0),
 		"penalty": 0, "round": 1, "grappled": false, "result": ""}
-	for spans in game.runner.render_paragraphs(game.content.program(id + "#encounter")):
-		game.emit({"type": "paragraph", "spans": spans})
 	if int(game.value("player.hp")) <= 0:
 		game.state.combat.result = "lost"
 		return
@@ -86,7 +84,8 @@ static func act(game, action: String) -> bool:
 				c.result = "lost by submitting" if action == "submit" else "lost"
 			"attack":
 				var w := ItemSystem.weapon(game)
-				if _roll(game, "Attack", dex + level * 2 + int(w.hit) - enemy_dex - enemy_level * 2, false, false, int(w.penalty)):
+				# Alt Combat.i7x:342: the creature's dodge bonus (mondodgebonus) adds to its defense.
+				if _roll(game, "Attack", dex + level * 2 + int(w.hit) - enemy_dex - enemy_level * 2 - number(game, id, "dodge bonus", 0), false, false, int(w.penalty)):
 					var damage: int = int(w.damage) * game.rng.range_int(80, 120 + level) / 100
 					var stat := "perception" if w.type == "ranged" else "strength"
 					damage += (int(game.value("player." + stat)) - 10) / 2 + ItemSystem.bonus(game, "damage bonus")
@@ -117,7 +116,8 @@ static func act(game, action: String) -> bool:
 				elif immune:
 					game.notice("This creature is immune to seduction.", false)
 			"flee":
-				var bonus := dex + int(game.value("player.intelligence")) + level * 2 + ItemSystem.bonus(game, "flee bonus") - enemy_dex - enemy_level * 2 - 10
+				# Alt Combat.i7x:807: the creature's hit bonus also works against fleeing.
+				var bonus := dex + int(game.value("player.intelligence")) + level * 2 + ItemSystem.bonus(game, "flee bonus") - enemy_dex - enemy_level * 2 - 10 - number(game, id, "hit bonus", 0)
 				if _roll(game, "Flee", bonus, false, true):
 					c.result = "fled"
 					var name: String = game.content.typed_value("creature", id, "name", id).to_lower()
@@ -152,7 +152,8 @@ static func after_item(game) -> void:
 static func _retaliate(game) -> void:
 	var c: Dictionary = game.state.combat
 	var id: String = c.creature
-	var bonus := stat(game, id, "dexterity") + number(game, id, "level", 1) * 2
+	# Alt Combat.i7x:984: the creature's hit bonus (monhitbonus) adds to its attack.
+	var bonus := stat(game, id, "dexterity") + number(game, id, "level", 1) * 2 + number(game, id, "hit bonus", 0)
 	bonus -= int(game.value("player.dexterity")) + int(game.value("player.level")) * 2 + ItemSystem.bonus(game, "dodge bonus")
 	if not _roll(game, "Enemy attack", bonus, true):
 		game.notice("The enemy misses.", false)
@@ -160,11 +161,11 @@ static func _retaliate(game) -> void:
 	var special: String = game.content.typed_value("creature", id, "special")
 	if special.begins_with("grapple ") and game.rng.chance(int(special.get_slice(" ", 1).trim_suffix("%")), 100):
 		c.grappled = true
-		for spans in game.runner.render_paragraphs(game.content.program(id + "#grapple")):
+		for spans in game.runner.render_paragraphs(game.content.program(id + "#grapple"), 0, true):
 			game.emit({"type": "paragraph", "spans": spans})
 		_grapple_damage(game)
 		return
-	for spans in game.runner.render_paragraphs(game.content.program(id + "#attack")):
+	for spans in game.runner.render_paragraphs(game.content.program(id + "#attack"), 0, true):
 		game.emit({"type": "paragraph", "spans": spans})
 	var damage: int = number(game, id, "damage", 3) * game.rng.range_int(80, 120) / 100
 	if "hard" in game.settings.mode and game.rng.chance(1, 10):
@@ -230,10 +231,14 @@ static func aftermath(game, id: String, result: String) -> void:
 	elif result.begins_with("lost"):
 		# Alt Combat.i7x:1448-1489: one infection with the creature's form, or
 		# its cross infection unless that is banned; none for non-infectious ones.
-		var infectious: bool = game.content.typed_value("creature", id, "infectious", "yes") != "no"
+		# A scene of this fight may name another creature to infect as (the
+		# original's setmonster in a loss scene).
+		id = str(game.state.combat.get("infects_as", id))
+		# "this fight does not infect" names no creature.
+		var infectious: bool = id != "" and game.creature_field(id, "infectious", "yes") != "no"
 		var form: String = game.content.typed_value("creature", id, "form")
 		var cross: String = game.content.typed_value("creature", id, "cross infection")
-		if cross != "" and game.filter_block(game.content._list(game.content.get_def("form", cross), "tags"), true) == "":
+		if cross != "" and game.filter_block(game.content.form_tags(cross), true) == "":
 			form = cross
 		if infectious and form != "":
 			BodySystem.infect(game, form)

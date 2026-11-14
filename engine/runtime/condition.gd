@@ -10,7 +10,7 @@ extends RefCounted
 ## typos are reported when content loads instead of silently being false.
 
 const PARTS := ["head", "torso", "back", "arms", "legs", "ass", "tail", "cock", "cunt", "skin", "body", "face", "balls", "breasts"]
-const COMPARATORS := [">=", "<=", ">", "<", "="]
+const COMPARATORS := [">=", "<=", "!=", ">", "<", "="]
 
 static var _cache: Dictionary = {}
 
@@ -18,6 +18,7 @@ static var _cache: Dictionary = {}
 static var _rules: Array = [
 	["chance", RegEx.create_from_string("^chance (\\d+) in (\\d+)$")],
 	["percent", RegEx.create_from_string("^chance (\\d+)%$")],
+	["chance_expr", RegEx.create_from_string("^chance (.+) in (.+)$")],
 	["check", RegEx.create_from_string("^check (\\w+) vs (\\d+)$")],
 	["check_expr", RegEx.create_from_string("^check (.+) vs (.+)$")],
 	["quest", RegEx.create_from_string("^quest (\\w+) (is not|is|reached|has not reached|is before) (\\w+)$")],
@@ -27,7 +28,7 @@ static var _rules: Array = [
 	["level", RegEx.create_from_string("^level (\\w+) is (not |at least |at most )?(\\w+)$")],
 	["mode", RegEx.create_from_string("^mode (\\w+)$")],
 	["scenario", RegEx.create_from_string("^scenario is (not )?(\\w+)$")],
-	["fight_result", RegEx.create_from_string("^(won by seduction|lost by submitting|won|lost|fled)$")],
+	["fight_result", RegEx.create_from_string("^(won by seduction|won by fighting|lost by submitting|lost by injury|lost by lust|won|lost|fled)$")],
 	["since", RegEx.create_from_string("^since ([a-z0-9_.]+) (>=|<=|>|<|=) (\\d+) turns?$")],
 	["has_condition", RegEx.create_from_string("^player (has|does not have) condition (\\w+)$")],
 	["feat", RegEx.create_from_string("^(\\w+) (has|does not have) feat (\\w+)$")],
@@ -41,7 +42,9 @@ static var _rules: Array = [
 	["in_heat", RegEx.create_from_string("^(\\w+) is (not )?in heat$")],
 	["in", RegEx.create_from_string("^player is (not )?in (\\w+)$")],
 	["knows", RegEx.create_from_string("^player (knows|does not know) (\\w+)$")],
+	["part_tagged", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?tagged (\\w+)$")],
 	["part_is", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?(\\w+)$")],
+	["parity", RegEx.create_from_string("^([a-z0-9_.]+) is (not )?(odd|even)$")],
 	["at_least", RegEx.create_from_string("^([a-z0-9_.]+) is (at least|at most) (\\w+)$")],
 	["is", RegEx.create_from_string("^(\\w+) is (not )?([a-z][a-z ]*)$")],
 	["value_is", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?(.+)$")],
@@ -71,7 +74,7 @@ static func compile(text: String) -> Dictionary:
 
 static func _words(text: String) -> PackedStringArray:
 	var out: PackedStringArray = []
-	var re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|[()<>=]|[^\\s()<>=]+")
+	var re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|!=|[()<>=!]|[^\\s()<>=!]+")
 	for m in re.search_all(text):
 		out.append(m.get_string())
 	return out
@@ -166,6 +169,13 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "chance", "n": int(m.get_string(1)), "d": int(m.get_string(2))}
 			"percent":
 				return {"op": "chance", "n": int(m.get_string(1)), "d": 100}
+			"chance_expr":
+				# "chance tt + 16 in player.humanity": computed odds.
+				var n := Expr.parse(m.get_string(1))
+				var d := Expr.parse(m.get_string(2))
+				if n.has("error") or d.has("error"):
+					return {"error": "cannot read chance '%s'" % s}
+				return {"op": "chance_expr", "n": n, "d": d}
 			"check":
 				return {"op": "check", "stat": m.get_string(1), "target": int(m.get_string(2))}
 			"check_expr":
@@ -221,8 +231,12 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "is_at", "who": "player", "place": m.get_string(2), "neg": m.get_string(1) != ""}
 			"knows":
 				return {"op": "knows", "place": m.get_string(2), "neg": m.get_string(1) != "knows"}
+			"part_tagged":
+				return {"op": "part_tagged", "who": m.get_string(1), "part": m.get_string(2), "tag": m.get_string(4), "neg": m.get_string(3) != ""}
 			"part_is":
 				return {"op": "part_is", "who": m.get_string(1), "part": m.get_string(2), "form": m.get_string(4), "neg": m.get_string(3) != ""}
+			"parity":
+				return {"op": "parity", "value": {"op": "path", "v": m.get_string(1)}, "even": m.get_string(3) == "even", "neg": m.get_string(2) != ""}
 			"at_least":
 				return {"op": "order", "path": m.get_string(1), "rel": m.get_string(2), "state": m.get_string(3)}
 			"is":
@@ -257,6 +271,11 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 			return idx >= target if node.rel == "at least" else idx <= target
 		"since":
 			return compare(ctx.turns_since(node.path), node.cmp, node.n, {}, ctx)
+		"chance_expr":
+			return ctx.ask({"op": "chance", "n": int(Expr._num(Expr.evaluate(node.n, ctx))), "d": int(Expr._num(Expr.evaluate(node.d, ctx)))})
+		"parity":
+			var even := posmod(int(Expr._num(Expr.evaluate(node.value, ctx))), 2) == 0
+			return (even == node.even) != node.neg
 		_:
 			var result: bool = ctx.ask(node)
 			return not result if node.get("neg", false) else result

@@ -29,10 +29,11 @@ const SCHEMA := {
 		"gender": "text", "special": "text", "seduction immune": "text", "tags": "list", "source": "meta",
 		"title": "text", "personal name": "text", "unique": "text", "group": "text", "infectious": "text",
 		"cross infection": "text", "research bypass": "text", "magic": "text", "loot": "text",
+		"hit bonus": "text", "dodge bonus": "text",
 		"encounter": "script", "attack": "script", "grapple": "script", "escape": "script", "struggle": "script", "defeated": "script", "victory": "script"},
 	"form": {"name": "text", "sex": "text", "scale": "text", "body type": "text", "descriptor": "text",
 		"stats": "text", "libido": "text", "tags": "list", "source": "meta", "head": "fields", "torso": "fields",
-		"milk item": "text", "cum item": "text",
+		"milk item": "text", "cum item": "text", "each turn": "script", "sex by preference": "text",
 		"back": "fields", "arms": "fields", "legs": "fields", "ass": "fields", "tail": "fields", "cock": "fields",
 		"cunt": "fields", "skin": "fields", "breasts": "fields", "balls": "fields"},
 	"character": {"name": "text", "pronouns": "text", "image": "text", "scent": "script", "description": "script",
@@ -66,20 +67,23 @@ const SCHEMA := {
 		"enters": "script", "still": "script", "each update": "script",
 		"blocks rest": "text", "rest refusal": "script",
 		"source": "meta"},
+	## A hook: content that runs at a moment of play instead of an every-turn rule.
+	"hook": {"on": "text", "when": "text", "while incapacitated": "text", "do": "script", "source": "meta"},
 	"image": {"artist": "text", "link": "text", "tags": "list", "description": "text", "source": "meta"},
 	"filter": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
 	"level": {"name": "text", "description": "text", "default": "text", "options": "fields", "from": "text", "source": "meta"},
 	"tag": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
 }
 ## Types the format defines but the engine does not run yet. They load with a warning.
-const PENDING_TYPES := ["shop", "ending", "epilogue", "each"]
+const PENDING_TYPES := ["shop", "ending", "epilogue"]
 ## When several types share an ID (a creature and its form, an item and its
 ## condition, a location and its image), lookups by ID alone return the type
 ## that comes first here.
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
-	"condition", "meter", "image", "each", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag"]
+	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag"]
 
+var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
 var by_id: Dictionary = {}  ## id -> first definition with that ID (any type), for lookups by ID alone
 var packs: Array = []  ## {id, path, version, requires}
@@ -111,6 +115,7 @@ func errors() -> Array:
 ## packs it requires. A pack whose requirement is missing still loads, with
 ## a warning; packs that require each other load in name order.
 func load_folders(folders: Array) -> void:
+	_form_tags.clear()
 	var found := {}  ## pack id -> {"path", "requires"}
 	for folder in folders:
 		var dir := DirAccess.open(folder)
@@ -509,6 +514,21 @@ static func found_by(text: String) -> Dictionary:
 
 
 ## Lists the comma-separated values of a field.
+## A form's tags: its own and those of the creatures that infect with it (the
+## original's lists such as LatexList name creatures; the port keeps them there).
+func form_tags(form: String) -> Array:
+	if _form_tags.is_empty():
+		for id in all_of("form"):
+			_form_tags[id] = _list(get_def("form", id), "tags")
+		for id in all_of("creature"):
+			var f := typed_value("creature", id, "form")
+			if _form_tags.has(f):
+				for t in _list(get_def("creature", id), "tags"):
+					if t not in _form_tags[f]:
+						_form_tags[f].append(t)
+	return _form_tags.get(form, [])
+
+
 func _list(d: FscParser.Definition, name: String) -> Array:
 	var out: Array = []
 	if d.fields.has(name):

@@ -184,3 +184,9 @@ func test_conversion_assistant_markers_block_loading() -> void:
 func test_resolving_an_unknown_event_is_reported() -> void:
 	var db := _load({"s.fsc": "== scene s\n~ resolve no_such_event\n"})
 	assert_true(_has(_messages(db), "2 Event 'no_such_event' does not exist."), str(_messages(db)))
+
+
+func test_unknown_sex_act() -> void:
+	var errs := _messages(_load({"s.fsc": "== scene s\n~ sex player receives oral_cock from player\n~ sex player receives oralcock from player\n"}))
+	assert_true(_has(errs, "3 Unknown sex act 'oralcock'"), str(errs))
+	assert_false(_has(errs, "'oral_cock'"), str(errs))

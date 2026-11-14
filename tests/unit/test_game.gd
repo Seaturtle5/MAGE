@@ -153,3 +153,18 @@ func test_text_variation_orders_follow_inform() -> void:
 	var compiled := TextTemplate.compile("[one of]a[or]b[sticky random]")
 	assert_false(compiled.has("error"), "[sticky random] is accepted")
 	g.dispose()
+
+
+func test_fight_results_tell_how_the_fight_ended() -> void:
+	var cases := {"won": ["won", "won by fighting"], "won by seduction": ["won", "won by seduction"],
+		"lost": ["lost", "lost by injury"], "lost by submitting": ["lost", "lost by submitting"], "fled": ["fled"]}
+	var all := ["won", "won by fighting", "won by seduction", "lost", "lost by injury", "lost by submitting", "lost by lust", "fled"]
+	for result in cases:
+		game.last_fight = result
+		for word in all:
+			assert_eq(Condition.evaluate(Condition.compile(word), game), word in cases[result], "%s after '%s'" % [word, result])
+
+
+func test_an_effect_can_set_another_events_outcome() -> void:
+	game.apply(Effect.compile("outcome bitten of stray_dog"))
+	assert_eq(str(game.value("stray_dog.outcome")), "bitten")
