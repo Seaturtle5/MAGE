@@ -34,7 +34,7 @@ extends RefCounted
 
 const CHILD_PARTS := ["head", "torso", "back", "arms", "legs", "ass", "tail"]
 const STORED := ["gestation", "kind", "father", "ovi", "hijack", "male_hijack", "litter", "births", "children",
-	"mpreg_count", "feral_births", "offspring", "sired", "sired_turns", "self", "rolled", "child_head", "child_torso", "child_back",
+	"mpreg_count", "feral_births", "offspring", "sired", "sired_turns", "self", "rolled", "unbirth", "child_head", "child_torso", "child_back",
 	"child_arms", "child_legs", "child_ass", "child_tail"]
 const COMPUTED := ["fpreg_ok", "mpreg_ok", "impreg_ok", "fpreg_able", "mpreg_able", "impreg_able", "fpreg_now",
 	"mpreg_now", "impreg_now", "fem_vacant", "male_vacant", "partial_vacant", "total_vacant", "sire_bonus", "father_name",
@@ -229,6 +229,29 @@ static func accept(game) -> void:
 	_play(game, "conceived")
 
 
+## Unbirthing (VoreSystem, the original's ubbyplayer): the swallowed creature
+## becomes a pregnancy of its own strain at once, whatever the player's
+## fertility, lasting the vore rules' `unbirth gestation` (else the usual gestation).
+## `pregnancy.unbirth` holds the creature until the birth.
+static func unbirth(game, creature: String) -> void:
+	if rules(game) == "" or gestation(game) > 0:
+		return
+	var form := _father_form(game, creature)
+	if form == "":
+		return
+	_put(game, "kind", "female")
+	_put(game, "father", form)
+	_put(game, "self", false)
+	_put(game, "rolled", false)
+	var ovi_level: String = game.level("ovi") if game.content.levels.has("ovi") else ""
+	_put(game, "ovi", ovi_level == "always")
+	var span := _range(VoreSystem.rule(game, "unbirth gestation", _rule(game, "gestation", "24 to 48")))
+	_put(game, "gestation", game.rng.range_int(span[0], span[1]))
+	for part in CHILD_PARTS:
+		_put(game, "child_" + part, form)
+	_put(game, "unbirth", creature)
+
+
 ## The child's strains, part by part: the father's, the player's, or one of the two at random.
 static func _shape_child(game, father: String) -> void:
 	var like := "mix"
@@ -394,7 +417,7 @@ static func record_child(game) -> void:
 
 ## `~ end pregnancy`: the pregnancy ends without a birth.
 static func end(game) -> void:
-	for key in ["gestation", "kind", "father", "ovi", "litter", "self", "rolled", "pending_kind", "pending_father", "pending_ovi"] + CHILD_PARTS.map(func(p): return "child_" + p):
+	for key in ["gestation", "kind", "father", "ovi", "litter", "self", "rolled", "unbirth", "pending_kind", "pending_father", "pending_ovi"] + CHILD_PARTS.map(func(p): return "child_" + p):
 		game.state.values.erase("pregnancy." + key)
 
 

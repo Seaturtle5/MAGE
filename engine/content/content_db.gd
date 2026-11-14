@@ -31,7 +31,7 @@ const SCHEMA := {
 		"flee fails": "text", "won": "script", "lost": "script", "source": "meta"},
 	"scavenge_rules": {"generic": "text", "generic chance": "text", "target": "text", "start": "text", "found": "text",
 		"failure": "text", "only at": "text", "source": "meta"},
-	"creature": {"name": "text", "species": "text", "image": "text", "found in": "list", "active": "text",
+	"creature": {"name": "text", "vore": "script", "vore when": "text", "hard vore": "script", "hard vore when": "text", "unbirth": "script", "unbirth when": "text", "species": "text", "image": "text", "found in": "list", "active": "text",
 		"level": "text", "hp": "text", "damage": "text", "stats": "text", "libido": "text", "form": "text",
 		"gender": "text", "special": "text", "seduction immune": "text", "tags": "list", "source": "meta",
 		"title": "text", "personal name": "text", "unique": "text", "group": "text", "infectious": "text",
@@ -92,6 +92,15 @@ const SCHEMA := {
 		"sire odds modifiers": "fields", "sire anal tag": "text", "sire turns": "text",
 		"ask": "script", "conceived": "script", "each turn": "script", "birth": "script", "child": "script",
 		"after birth": "script", "sired": "script", "sired birth": "script", "source": "meta"},
+	"vore_rules": {"can vore when": "text", "can unbirth when": "text", "vore when": "text", "unbirth when": "text",
+		"vore chance": "text", "vore chance modifiers": "fields", "vore chance out of": "text", "vore always when": "text",
+		"unbirth chance": "text", "unbirth chance modifiers": "fields", "unbirth chance out of": "text",
+		"vore automatic when": "text", "unbirth automatic when": "text", "hard vore when": "text", "unbirth gestation": "text",
+		"vore label": "text", "unbirth label": "text", "suppress label": "text", "give in label": "text", "hold back label": "text",
+		"vore urge": "script", "vore urge automatic": "script", "unbirth urge": "script", "unbirth urge automatic": "script",
+		"both urge": "script", "both urge automatic": "script", "hunger wins": "script", "womb wins": "script",
+		"vore": "script", "hard vore": "script", "unbirth": "script", "own scene when": "text", "absorb above": "text",
+		"after vore": "script", "after unbirth": "script", "source": "meta"},
 	"companion_rules": {"party size": "text", "party size modifiers": "fields", "companion xp": "text",
 		"companion xp modifiers": "fields", "player xp cost": "text", "player xp cost modifiers": "fields",
 		"player xp cost when": "text", "level up at": "text", "level up at modifiers": "fields", "levels while": "text",
@@ -127,7 +136,7 @@ const PENDING_TYPES := ["epilogue"]
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
-	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules",
+	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "vore_rules",
 	"interest"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)

@@ -173,6 +173,8 @@ func _fight_value(path: String) -> Variant:
 		return false if key == "grappled" else 0
 	if ENEMY_STATE.has(key):
 		return c[ENEMY_STATE[key]]
+	if key == "scale":
+		return VoreSystem.scale_of(self, c.creature)
 	if key in CombatSystem.ATTRIBUTES:
 		return CombatSystem.stat(self, c.creature, key)
 	return CombatSystem.number(self, c.creature, key.replace("_", " "), 0)
@@ -299,6 +301,12 @@ func ask(node: Dictionary) -> bool:
 			return node.mode in settings.mode
 		"scenario":
 			return settings.scenario == node.scenario
+		"can_vore":
+			# The original's "Player can vore" / "Player can UB" (VoreSystem).
+			return VoreSystem.can(self, node.kind)
+		"enemy_tagged":
+			# The creature being fought (or met last) or its form carries the tag.
+			return node.tag in VoreSystem.tags_of(self, current_creature())
 		"fight_result":
 			# "won by fighting" and "lost by injury" are the plain results ("won", "lost");
 			# "lost by lust" comes with lust attacks (combat package) and is not produced yet.
@@ -347,6 +355,10 @@ func ask(node: Dictionary) -> bool:
 func adjective(who: String, adj: String) -> bool:
 	if _subject != "" and who == "player":
 		who = _subject
+	if who == "enemy":
+		if content.has(adj, "creature"):
+			return current_creature() == adj  # "enemy is bald_eagle"
+		who = current_creature()  # "enemy is female": the creature being fought or met
 	if who == "player" and adj in ["dead", "imprisoned", "gone"]:
 		# What the endings said happened (EndingSystem): "player is dead".
 		return Condition._truthy(state.values.get("end." + ("left" if adj == "gone" else adj), false))
@@ -569,6 +581,14 @@ func describe(name: String) -> String:
 			return str(skin) if skin != null and str(skin) != "" else "smooth"
 		"ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine":
 			return monster_word(what)
+		"enemy body type":
+			# The original's "type entry": the body type of the creature being fought.
+			var foe_form := creature_field(current_creature(), "form", current_creature())
+			var foe_type := content.typed_value("form", foe_form, "body type", content.typed_value("form", foe_form, "name", foe_form).to_lower())
+			if "[" in foe_type:
+				var ft := TextTemplate.compile(foe_type)
+				return foe_type if ft.has("error") else TextTemplate.plain(render(ft))
+			return foe_type
 		"body descriptor":
 			# The original's bodydesc (Infections.i7x:982-984, 1072).
 			var form := part_form(who, "torso")
@@ -954,9 +974,12 @@ func apply(e: Dictionary) -> void:
 			for _t in e.turns:
 				pass_turn()
 		"sex":
-			SexSystem.record(self, e.taker, e.act, e.giver)
-			if e.giver == "player":
-				PregnancySystem.after_sex(self, e.taker, e.act)  # a creature may carry the player's young
+			# "enemy" stands for the creature being fought or met (vore and fight scenes).
+			var taker: String = current_creature() if e.taker == "enemy" else e.taker
+			var giver: String = current_creature() if e.giver == "enemy" else e.giver
+			SexSystem.record(self, taker, e.act, giver)
+			if giver == "player":
+				PregnancySystem.after_sex(self, taker, e.act)  # a creature may carry the player's young
 		"condition":
 			start_condition(e.condition, e.turns, quiet)
 		"infects_as":
@@ -1001,6 +1024,14 @@ func apply(e: Dictionary) -> void:
 			PregnancySystem.record_child(self)
 		"end_pregnancy":
 			PregnancySystem.end(self)
+		"vore":
+			VoreSystem.perform(self, e.kind)
+		"absorb_enemy_stat":
+			VoreSystem.absorb_stat(self, quiet)
+		"infect_enemy":
+			VoreSystem.infect_enemy(self)
+		"unbirth_pregnancy":
+			PregnancySystem.unbirth(self, current_creature())
 		"continue_moving":
 			continue_moving = true
 		"end_captivity":

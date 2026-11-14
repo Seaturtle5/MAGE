@@ -28,7 +28,9 @@ static var _rules: Array = [
 	["level", RegEx.create_from_string("^level (\\w+) is (not |at least |at most )?(\\w+)$")],
 	["mode", RegEx.create_from_string("^mode (\\w+)$")],
 	["scenario", RegEx.create_from_string("^scenario is (not )?(\\w+)$")],
-	["fight_result", RegEx.create_from_string("^(won by seduction|won by fighting|lost by submitting|lost by injury|lost by lust|won|lost|fled)$")],
+	["fight_result", RegEx.create_from_string("^(won by seduction|won by fighting|won by vore|won by unbirth|lost by submitting|lost by injury|lost by lust|won|lost|fled)$")],
+	["can_vore", RegEx.create_from_string("^player (can|cannot) (vore|unbirth)$")],
+	["enemy_tagged", RegEx.create_from_string("^(?:the )?enemy is (not )?tagged (\\w+)$")],
 	["since", RegEx.create_from_string("^since ([a-z0-9_.]+) (>=|<=|>|<|=) (\\d+) turns?$")],
 	["has_condition", RegEx.create_from_string("^player (has|does not have) condition (\\w+)$")],
 	["feat", RegEx.create_from_string("^(\\w+) (has|does not have) feat (\\w+)$")],
@@ -217,6 +219,10 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "scenario", "scenario": m.get_string(2), "neg": m.get_string(1) != ""}
 			"fight_result":
 				return {"op": "fight_result", "result": m.get_string(1)}
+			"can_vore":
+				return {"op": "can_vore", "kind": m.get_string(2), "neg": m.get_string(1) == "cannot"}
+			"enemy_tagged":
+				return {"op": "enemy_tagged", "tag": m.get_string(2), "neg": m.get_string(1) != ""}
 			"since":
 				return {"op": "since", "path": m.get_string(1), "cmp": m.get_string(2), "n": int(m.get_string(3))}
 			"has_condition":

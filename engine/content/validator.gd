@@ -11,7 +11,7 @@ extends RefCounted
 
 const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
 	"cock", "cock size", "cup size", "strip crotch", "strip chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
-	"picked creature", "enemy name", "the enemy", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
+	"picked creature", "enemy name", "the enemy", "enemy body type", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
@@ -52,6 +52,7 @@ static func run(content: ContentDB) -> void:
 	v._check_status_bar()
 	v._check_companions()
 	v._check_levels()
+	v._check_vore()
 	v._check_scavenge_rules()
 	v._check_world()
 	v._check_filters()
@@ -673,6 +674,59 @@ func _check_companions() -> void:
 				_check_condition_text(d.fields[f].value, d.fields[f].line, "companion_rules:" + id)
 
 
+## Vore rules (VoreSystem): one per game; conditions, numbers with modifiers,
+## the unbirth gestation as "A to B".
+func _check_vore() -> void:
+	var defs: Dictionary = db.all_of("vore_rules")
+	for id in defs.keys().slice(1):
+		var d := db.get_def("vore_rules", id)
+		_path = d.path
+		_warn(d.line, "Only one vore_rules is used (%s); this one is ignored." % defs.keys()[0])
+	for id in defs:
+		var d := db.get_def("vore_rules", id)
+		_path = d.path
+		for f in ["can vore when", "can unbirth when", "vore when", "unbirth when", "vore always when",
+				"vore automatic when", "unbirth automatic when", "hard vore when"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, "vore_rules:" + id)
+		for f in ["vore chance", "vore chance out of", "unbirth chance", "unbirth chance out of", "absorb above"]:
+			if d.fields.has(f):
+				var e := Expr.parse(d.fields[f].value)
+				if e.has("error"):
+					_err(d.fields[f].line, "%s: %s." % [f.left(1).to_upper() + f.substr(1), e.error])
+				else:
+					for p in Expr.paths(e):
+						_check_path(p, d.fields[f].line)
+		for f in ["vore chance modifiers", "unbirth chance modifiers"]:
+			if not d.fields.has(f):
+				continue
+			for l: FscParser.Line in d.fields[f].children:
+				if l.is_blank():
+					continue
+				if not ":" in l.text:
+					_err(l.number, "A modifier is written 'condition: amount'.")
+					continue
+				var parts := l.text.rsplit(":", true, 1)
+				_check_condition_text(parts[0].strip_edges(), l.number, "vore_rules:" + id)
+				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
+				if amount.has("error"):
+					_err(l.number, "Modifier amount: %s." % amount.error)
+		if d.fields.has("unbirth gestation") and not RegEx.create_from_string("^\\d+( to \\d+)?$").search(d.fields["unbirth gestation"].value):
+			_err(d.fields["unbirth gestation"].line, "Unbirth gestation is a number of turns or a range such as '8 to 16'.")
+		if not d.fields.has("can vore when") and not d.fields.has("can unbirth when"):
+			_warn(d.line, "Without 'can vore when' or 'can unbirth when' nobody can vore or unbirth.")
+		if d.fields.has("own scene when"):
+			_check_condition_text(d.fields["own scene when"].value, d.fields["own scene when"].line, "vore_rules:" + id)
+	for id in db.all_of("creature"):
+		var d := db.get_def("creature", id)
+		_path = d.path
+		for f in ["vore when", "hard vore when", "unbirth when"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, "creature:" + id)
+				if not d.fields.has(f.trim_suffix(" when")):
+					_warn(d.fields[f].line, "%s only matters with the creature's own '%s:' scene." % [f.capitalize(), f.trim_suffix(" when")])
+
+
 ## Level rules, feats offered on levels, interests and combat rules.
 func _check_levels() -> void:
 	for type in ["level_rules", "combat_rules"]:
@@ -684,7 +738,9 @@ func _check_levels() -> void:
 	for id in db.all_of("level_rules"):
 		var d := db.get_def("level_rules", id)
 		_path = d.path
-		if d.fields.has("xp needed"):
+		if not d.fields.has("xp needed"):
+			_err(d.line, "Level rules need 'xp needed:', the experience the next level costs (an expression such as (player.level + 1) * 10).")
+		else:
 			var e := Expr.parse(d.fields["xp needed"].value)
 			if e.has("error"):
 				_err(d.fields["xp needed"].line, "Xp needed: %s." % e.error)
@@ -1077,7 +1133,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
-			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat"]:
+			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat",
+			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
@@ -1254,8 +1311,8 @@ func _check_path(path: String, line: int) -> void:
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
 		return  # a fight's own scratch numbers
 	if parts[0] == "enemy" and parts.size() == 2:
-		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS):
-			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS)])
+		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido"]):
+			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido"])])
 		return
 	if parts[0] == "sex" and parts.size() == 2 and parts[1] in ["taker", "giver", "act", "with"]:
 		return  # the last sex record (SexSystem), for `after sex` hooks
@@ -1372,6 +1429,10 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				if c.adjective != "ending":
 					_err(line, "Use 'captivity is ending' (after ~ end captivity or ~ escape captivity).")
 				return
+			if c.who == "enemy":
+				if not (c.adjective in Game.CREATURE_SEXES or db.has(c.adjective, "creature")):
+					_err(line, "Use 'enemy is male/female/herm/neuter', 'enemy is <creature>' or 'enemy is tagged <tag>'.")
+				return  # the creature being fought: "enemy is female", "enemy is bald_eagle"
 			if db.has(c.who, "creature") and (c.adjective in Game.CREATURE_SEXES or c.adjective.begins_with("variant ")):
 				if c.adjective.begins_with("variant ") and c.adjective.substr(8) not in VariantSystem.variants(db, c.who):
 					_err(line, "%s has no variant '%s'.%s" % [c.who, c.adjective.substr(8), _variant_list(c.who)])
@@ -1394,7 +1455,7 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			_need(c.place, "location", line)
 		"knows", "visited":
 			_need(c.place, "location", line)
-		"part_tagged":
+		"part_tagged", "enemy_tagged":
 			_need(c.tag, "tag", line)
 		"check_expr":
 			for p in Expr.paths(c.bonus) + Expr.paths(c.target):

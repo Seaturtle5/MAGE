@@ -18,6 +18,9 @@ static var _rules: Array = [
 	["no_fight", RegEx.create_from_string("^no fight$")],
 	["resolve", RegEx.create_from_string("^resolve(?: (\\w+))?$")],
 	["end_pregnancy", RegEx.create_from_string("^end pregnancy$")],
+	# Vore (VoreSystem): "~ vore enemy", "~ unbirth enemy", and what the vore scripts do.
+	["vore", RegEx.create_from_string("^(vore|unbirth) enemy$")],
+	["vore_step", RegEx.create_from_string("^(absorb enemy stat|infect enemy|unbirth pregnancy)$")],
 	# Pregnancy (PregnancySystem): "~ impregnation chance", "~ impregnate female by wolf with eggs".
 	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
 	["pregnancy_step", RegEx.create_from_string("^(accept pregnancy|give birth|record child)$")],
@@ -134,6 +137,10 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "impregnate", "sure": m.get_string(1) == "impregnate", "kind": m.get_string(2),
 					"father": m.get_string(3).replace("random creature", "random"), "eggs": m.get_string(4) != ""}
 			"pregnancy_step":
+				return {"op": m.get_string(1).replace(" ", "_")}
+			"vore":
+				return {"op": "vore", "kind": m.get_string(1)}
+			"vore_step":
 				return {"op": m.get_string(1).replace(" ", "_")}
 			"outcome":
 				return {"op": "outcome", "outcome": m.get_string(1)}

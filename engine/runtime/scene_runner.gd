@@ -292,6 +292,10 @@ func run() -> void:
 			CombatSystem.aftermath(game, f.creature, f.result)
 			game.state.combat = {}
 			continue
+		if f.kind == "vore_offer":
+			if _vore_step(f):
+				return
+			continue
 		if f.kind == "feat_choice":
 			if _feat_choice_step(f):
 				return
@@ -623,6 +627,63 @@ func _end_captivity(escaped: bool) -> void:
 
 
 ## `~ choose feat <group>`: the feats of that group the player can take now.
+## The vore offer after a won fight (VoreSystem; Alt Combat.i7x:1300-1360): the
+## urge text, then the choice, or the automatic act when the rules say so.
+func _vore_step(f: Dictionary) -> bool:
+	var v: bool = f.vore
+	var u: bool = f.unbirth
+	var va := VoreSystem.automatic(game, "vore")
+	var ua := VoreSystem.automatic(game, "unbirth")
+	if f.step == "start":
+		f.step = "decide"
+		var urge := "vore urge" if not u else "unbirth urge" if not v else "both urge"
+		if v and u:
+			urge = "both urge automatic" if va and ua else "hunger wins" if va else "womb wins" if ua else "both urge"
+		elif (v and va) or (u and ua):
+			urge += " automatic"
+		var prog := VoreSystem.program(game, urge)
+		if prog != null:
+			frames.append({"kind": "script", "pid": prog.id, "pc": 0})
+		return false
+	# Decide: act at once, or offer the choice.
+	var act := ""
+	if v and u:
+		act = "" if va == ua else "vore" if va else "unbirth"
+	elif (v and va) or (u and ua):
+		act = "vore" if v else "unbirth"
+	if act != "":
+		frames.erase(f)
+		_vore_do(f, act)
+		return false
+	var shown: Array = []
+	pending = []
+	var labels := {"vore": VoreSystem.rule(game, "vore label", "Consume them"),
+		"unbirth": VoreSystem.rule(game, "unbirth label", "Unbirth them")}
+	if v and u:
+		for kind in ["vore", "unbirth"]:
+			shown.append({"text": labels[kind], "enabled": true})
+			pending.append({"vore": kind, "enabled": true})
+		if not (va and ua):
+			shown.append({"text": VoreSystem.rule(game, "suppress label", "Suppress the urge"), "enabled": true})
+			pending.append({"vore": "suppress", "enabled": true})
+	else:
+		shown.append({"text": VoreSystem.rule(game, "give in label", "Give in"), "enabled": true})
+		pending.append({"vore": "vore" if v else "unbirth", "enabled": true})
+		shown.append({"text": VoreSystem.rule(game, "hold back label", "Hold back"), "enabled": true})
+		pending.append({"vore": "suppress", "enabled": true})
+	game.emit({"type": "choices", "options": shown})
+	status = "choice"
+	return true
+
+
+func _vore_do(f: Dictionary, kind: String) -> void:
+	if kind == "suppress":
+		# Held back: the creature's own `defeated` scene plays as after any win.
+		_push_if(str(f.creature) + "#defeated")
+		return
+	VoreSystem.perform(game, kind)
+
+
 func choose_feat(group: String) -> void:
 	frames.append({"kind": "feat_choice", "group": group, "shown": false})
 	if status == "idle":
@@ -671,6 +732,9 @@ func choose(index: int) -> bool:
 		if str(p.feat) != "":
 			game.apply(Effect.compile("feat + %s" % p.feat))
 			_push_if("feat:%s#gained" % p.feat)
+	elif p.has("vore"):
+		frames.erase(f)
+		_vore_do(f, str(p.vore))
 	elif p.has("shop"):
 		if p.shop == "leave":
 			frames.pop_back()
@@ -722,6 +786,14 @@ func _finish_fight() -> void:
 	f.pc = ins.outcomes.get(result, ins.outcomes.get(fallback, ins.after))
 	f.erase("fight")
 	frames.append({"kind": "combat_end", "creature": ins.creature, "result": result})
+	if fallback == "won":
+		# A beaten creature may be consumed or unbirthed instead (VoreSystem): the
+		# offer comes before the creature's `defeated` scene, which it may replace.
+		var offer := VoreSystem.offers(game, ins.creature, result)
+		if offer.vore or offer.unbirth:
+			frames.append({"kind": "vore_offer", "creature": ins.creature, "vore": offer.vore, "unbirth": offer.unbirth,
+				"step": "start"})
+			return
 	var field := "defeated" if fallback == "won" else "victory" if fallback == "lost" else ""
 	if field != "" and game.content.program(ins.creature + "#" + field) != null:
 		_push(ins.creature + "#" + field, {})

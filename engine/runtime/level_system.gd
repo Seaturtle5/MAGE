@@ -6,10 +6,10 @@ extends RefCounted
 ## The rules are pack data, one `== level_rules` definition:
 ##
 ##   == level_rules player_levels
-##   xp needed: (player.level + 1) * 10       (an expression)
+##   xp needed: player.level * 20 + 20        (an expression; required)
 ##   xp needed modifiers:
-##       player has feat fast_learner: - (player.level + 1) * 2
-##   levels when: player.humanity > 0         (a condition)
+##       player has feat quick_study: - 5
+##   levels when: player.hp > 0               (a condition)
 ##   level up:
 ##       You have gained level [player.level]!
 ##       ...                                  (stat choices, health, feats)
@@ -37,9 +37,11 @@ static func rule(game, field: String, fallback: String = "") -> String:
 
 ## The experience the next level needs: `xp needed` plus its modifiers.
 static func needed(game) -> int:
-	var fallback := (int(game.value("player.level")) + 1) * 10
-	var e := Expr.parse(rule(game, "xp needed", str(fallback)))
-	var n: int = fallback if e.has("error") else Expr._num(Expr.evaluate(e, game))
+	# `xp needed` is required (the validator says so); the numbers are the game's own.
+	var e := Expr.parse(rule(game, "xp needed", ""))
+	if e.has("error"):
+		return 1 << 30  # no usable rule: no level is ever reached
+	var n: int = Expr._num(Expr.evaluate(e, game))
 	var id := rules(game)
 	if id != "":
 		var d: FscParser.Definition = game.content.get_def("level_rules", id)
