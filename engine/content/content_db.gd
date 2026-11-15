@@ -14,7 +14,7 @@ const SCHEMA := {
 		"statuses": "fields", "warnings": "fields", "refreshed": "script", "collapse": "script", "wake": "script", "source": "meta"},
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
-		"menu icons": "list"},
+		"menu icons": "list", "loading": "text", "loading frames": "text"},
 	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "not found": "script", "source": "meta"},
 	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
@@ -266,6 +266,40 @@ func branding() -> Dictionary:
 			for key in ["title", "subtitle", "logo", "background", "about"]:
 				out[key] = d.fields[key].value if d.fields.has(key) else ""
 			out["menu icons"] = _list(d, "menu icons")  # pictures shown beside a hovered menu entry
+	return out
+
+
+## The loading animation of the game pack (the one with a `title:`), read from
+## the pack manifests alone so it can show while everything else loads:
+## {"image": path of the sprite sheet, "frames": how many frames side by side}.
+## `loading:` may name several sheets; each start shows one of them at random.
+## Empty when no pack has one.
+static func peek_loading(folders: Array) -> Dictionary:
+	var out := {}
+	for folder in folders:
+		var dir := DirAccess.open(folder)
+		if dir == null:
+			continue
+		var subs := Array(dir.get_directories())
+		subs.sort()
+		for sub in subs:
+			var pack_path: String = folder.path_join(sub)
+			var manifest := pack_path.path_join("pack.fsc")
+			if not FileAccess.file_exists(manifest):
+				continue
+			for d in FscParser.parse(FileAccess.get_file_as_string(manifest), manifest).definitions:
+				if d.type != "pack" or not d.fields.has("title") or not d.fields.has("loading"):
+					continue
+				var sheets: Array = []
+				for id in str(d.fields["loading"].value).split(",", false):
+					for ext in ["png", "webp", "jpg", "jpeg"]:
+						var path := pack_path.path_join("images/%s.%s" % [id.strip_edges(), ext])
+						if FileAccess.file_exists(path):
+							sheets.append(path)
+							break
+				if not sheets.is_empty():
+					var frames := int(str(d.fields["loading frames"].value)) if d.fields.has("loading frames") else 1
+					out = {"image": sheets[randi() % sheets.size()], "frames": maxi(frames, 1)}  # one of them, at random
 	return out
 
 

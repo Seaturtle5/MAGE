@@ -141,7 +141,35 @@ func _ready() -> void:
 	theme = FsTheme.build()
 	_build()
 	db = ContentDB.new()
-	db.load_folders(["res://tests/packs"] if test_content else _content_folders(extra_packs))
+	var folders: Array = ["res://tests/packs"] if test_content else _content_folders(extra_packs)
+	if shot_path == "" and start == "" and not test_content:
+		_load_with_loading_screen(folders)  # a player starting the game: show something while the packs load
+		return
+	db.load_folders(folders)
+	_after_load(start, test_content)
+
+
+## Loads the packs on a thread while the game pack's loading animation plays.
+func _load_with_loading_screen(folders: Array) -> void:
+	var info := ContentDB.peek_loading(folders)
+	var sheet: Texture2D = null
+	if info.has("image"):
+		var img := Image.load_from_file(ProjectSettings.globalize_path(str(info.image)))
+		if img != null:
+			sheet = ImageTexture.create_from_image(img)
+	var screen := LoadingScreen.new()
+	add_child(screen)
+	screen.setup(sheet, int(info.get("frames", 1)))
+	var loader := Thread.new()
+	loader.start(db.load_folders.bind(folders))
+	while loader.is_alive():
+		await get_tree().process_frame
+	loader.wait_to_finish()
+	screen.queue_free()
+	_after_load("", false)
+
+
+func _after_load(start: String, test_content: bool) -> void:
 	if not db.errors().is_empty():
 		_show_errors(db.errors())
 		return
