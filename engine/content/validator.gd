@@ -1484,7 +1484,9 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				# The value must be a state list whose states are all items.
 				_check_path(e.item_path, line)
 				var decl: Dictionary = db.values.get(e.item_path, {})
-				if decl.get("kind", "") != "states":
+				if decl.get("kind", "") == "text":
+					pass  # an item ID put there in play ("~ ask x as item tagged milky: ...")
+				elif decl.get("kind", "") != "states":
 					_err(line, "%s must be declared with item names as its states, for example 'item: food, water_bottle'." % e.item_path)
 				else:
 					for st in decl.states:
