@@ -382,6 +382,17 @@ func test_a_portrait_changes_in_play() -> void:
 	assert_eq(game.character_image("angie"), "angie_plain")
 
 
+func test_a_part_goes_back_to_a_form_kept_in_a_value() -> void:
+	game.apply(Effect.compile("transform torso into vixen"))
+	game.set_value("log.pick", str(game.value("player.body.torso")))
+	game.set_value("player.body.torso", "human")  # the curse's change at night
+	game.apply(Effect.compile("transform torso into log.pick"))
+	assert_eq(game.part_form("player", "torso"), "vixen", "back to the kept form")
+	game.set_value("log.pick", "")
+	game.apply(Effect.compile("transform torso into log.pick"))
+	assert_eq(game.part_form("player", "torso"), "vixen", "an empty value changes nothing")
+
+
 func test_known_places_are_counted() -> void:
 	var before := int(game.value("places.known"))
 	game.apply(Effect.compile("discover cell"))

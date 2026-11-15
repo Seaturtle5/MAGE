@@ -123,7 +123,7 @@ static var _rules: Array = [
 	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|anywhere|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
 	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
-	["transform_part", RegEx.create_from_string("^transform (head|face|torso|body|back|arms|legs|ass|tail|cock|cunt|skin) into (\\w+)$")],
+	["transform_part", RegEx.create_from_string("^transform (head|face|torso|body|back|arms|legs|ass|tail|cock|cunt|skin) into ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)$")],
 	["sex", RegEx.create_from_string("^sex (\\w+) receives (\\w+) from (\\w+)$")],
 	["infects_as", RegEx.create_from_string("^this fight infects as (\\w+)$")],
 	["no_infection", RegEx.create_from_string("^this fight does not infect$")],
@@ -374,7 +374,11 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "transform", "form": m.get_string(1)}
 			"transform_part":
 				# One part takes the form, quietly (the original's "now SkinName of Player is X").
-				return {"op": "transform", "form": m.get_string(2), "part": BodySystem.ALIASES.get(m.get_string(1), m.get_string(1))}
+				# "into wereraptor.oldhead": the form a value holds (a part's form kept earlier from player.body.head).
+				var part: String = BodySystem.ALIASES.get(m.get_string(1), m.get_string(1))
+				if "." in m.get_string(2):
+					return {"op": "transform", "form": "", "form_path": m.get_string(2), "part": part}
+				return {"op": "transform", "form": m.get_string(2), "part": part}
 			"sex":
 				return {"op": "sex", "taker": m.get_string(1), "act": m.get_string(2), "giver": m.get_string(3)}
 			"infects_as":

@@ -1200,7 +1200,11 @@ func apply(e: Dictionary) -> void:
 				state.values["infection.bypass"] = content.has(source, "creature") and creature_field(source, "research bypass", "no") == "yes"
 				BodySystem.infect(self, form, false, e.get("keep_sex", false))
 		"transform":
-			if e.get("part", "") != "":
+			if e.has("form_path"):
+				var kept = value(e.form_path)
+				if kept != null and str(kept) != "":
+					BodySystem.set_part(self, str(kept), e.part)
+			elif e.get("part", "") != "":
 				BodySystem.set_part(self, e.form, e.part)
 			else:
 				BodySystem.infect(self, e.form, true)

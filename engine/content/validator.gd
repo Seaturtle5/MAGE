@@ -1513,7 +1513,9 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			if not (e.op == "move" and e.who != "player" and e.place == "nowhere"):
 				_need(e.place, "location", line)
 		"infect", "transform":
-			if e.get("part", "") == "" and e.form != "@picked":
+			if e.has("form_path"):
+				_check_path(e.form_path, line)
+			elif e.get("part", "") == "" and e.form != "@picked":
 				_need(e.form, "form", line)
 		"discover", "go", "forget":
 			_need(e.place, "location", line)
