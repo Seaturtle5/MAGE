@@ -191,7 +191,27 @@ func errors() -> Array:
 ## Loads every pack found directly inside the given folders, each after the
 ## packs it requires. A pack whose requirement is missing still loads, with
 ## a warning; packs that require each other load in name order.
+var _progress_lock := Mutex.new()
+var _progress := {"step": "", "pack": "", "done": 0, "total": 0}
+
+
+## How far load_folders has come, for a loading screen on another thread:
+## {"step": what it does now, "pack": the pack being read, "done", "total" packs}.
+func progress() -> Dictionary:
+	_progress_lock.lock()
+	var p := _progress.duplicate()
+	_progress_lock.unlock()
+	return p
+
+
+func _set_progress(step: String, pack: String, done: int, total: int) -> void:
+	_progress_lock.lock()
+	_progress = {"step": step, "pack": pack, "done": done, "total": total}
+	_progress_lock.unlock()
+
+
 func load_folders(folders: Array) -> void:
+	_set_progress("Finding packs", "", 0, 0)
 	_form_tags.clear()
 	var found := {}  ## pack id -> {"path", "requires"}
 	for folder in folders:
@@ -210,11 +230,16 @@ func load_folders(folders: Array) -> void:
 			if found.has(id):
 				error(manifest, 1, "Pack '%s' is also at %s; pack IDs must be unique." % [id, found[id].path])
 				continue
-			found[id] = {"path": pack_path, "requires": info.get("requires", []), "manifest": manifest}
-	for id in _load_order(found):
-		load_pack(found[id].path)
+			found[id] = {"path": pack_path, "requires": info.get("requires", []), "manifest": manifest, "name": info.get("name", id)}
+	var order := _load_order(found)
+	for i in order.size():
+		_set_progress("Loading packs", str(found[order[i]].name), i, order.size())
+		load_pack(found[order[i]].path)
+	_set_progress("Linking content", "", order.size(), order.size())
 	_finish()
+	_set_progress("Checking content", "", order.size(), order.size())
 	Validator.run(self)
+	_set_progress("Done", "", order.size(), order.size())
 
 
 ## The pack ID and requirements from a pack.fsc, read before loading.
@@ -222,7 +247,7 @@ func _manifest(path: String) -> Dictionary:
 	var r := FscParser.parse(FileAccess.get_file_as_string(path), path)
 	for d in r.definitions:
 		if d.type == "pack":
-			return {"id": d.id, "requires": _list(d, "requires")}
+			return {"id": d.id, "requires": _list(d, "requires"), "name": str(d.fields["name"].value) if d.fields.has("name") else d.id}
 	return {}
 
 

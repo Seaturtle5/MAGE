@@ -3,7 +3,9 @@ extends Control
 ## Shown while the content packs load. The game pack may name a `loading:`
 ## picture: a sprite sheet of `loading frames:` frames side by side (white
 ## shapes on a transparent background), played as a loop in the accent colour
-## and held a moment on its last frame. Without one only the line shows.
+## and held a moment on its last frame. Without one only the lines show.
+## Under it: what loading does now, a bar of the packs read and the pack
+## being read (show_progress, fed from ContentDB.progress()).
 
 const FPS := 6.0
 const HOLD := 5  ## extra steps the last frame stays before the loop starts again
@@ -11,6 +13,9 @@ const HOLD := 5  ## extra steps the last frame stays before the loop starts agai
 var _frames: Array[AtlasTexture] = []
 var _picture: TextureRect
 var _label: Label
+var _status: Label
+var _bar: ProgressBar
+var _pack: Label
 var _time := 0.0
 
 
@@ -45,7 +50,41 @@ func setup(sheet: Texture2D, frames: int) -> void:
 	_label.add_theme_color_override("font_color", FsTheme.TEXT)
 	_label.custom_minimum_size = Vector2(240, 0)
 	box.add_child(_label)
+	_status = _line(FsTheme.TEXT)
+	box.add_child(_status)
+	_bar = ProgressBar.new()
+	_bar.show_percentage = false
+	_bar.custom_minimum_size = Vector2(320, 6)
+	box.add_child(_bar)
+	_pack = _line(FsTheme.recede(FsTheme.TEXT, 0.35))
+	box.add_child(_pack)
 	_process(0.0)
+
+
+func _line(color: Color) -> Label:
+	var l := Label.new()
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_color_override("font_color", color)
+	l.add_theme_font_size_override("font_size", 14)
+	l.custom_minimum_size = Vector2(320, 0)
+	return l
+
+
+## What loading does now: {"step", "pack", "done", "total"}.
+func show_progress(p: Dictionary) -> void:
+	var total := int(p.get("total", 0))
+	var done := int(p.get("done", 0))
+	_status.text = str(p.get("step", ""))
+	_bar.max_value = maxi(total, 1)
+	_bar.value = done
+	_bar.visible = total > 0
+	var pack := str(p.get("pack", ""))
+	if pack != "":
+		_pack.text = "%s  (%d of %d)" % [pack, done + 1, total]
+	elif total > 0:
+		_pack.text = "%d packs" % total
+	else:
+		_pack.text = ""
 
 
 func _process(delta: float) -> void:

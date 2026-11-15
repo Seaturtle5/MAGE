@@ -163,6 +163,7 @@ func _load_with_loading_screen(folders: Array) -> void:
 	var loader := Thread.new()
 	loader.start(db.load_folders.bind(folders))
 	while loader.is_alive():
+		screen.show_progress(db.progress())
 		await get_tree().process_frame
 	loader.wait_to_finish()
 	screen.queue_free()
