@@ -711,6 +711,13 @@ func _finish() -> void:
 		for o in d.options:
 			if menus.has(d.id):
 				menus[d.id].options.append(o)
+		if d.type == "character" and (d.fields.has("stats") or d.fields.has("body") or d.fields.has("relationship") or d.fields.has("companion")):
+			# body:, stats: and the like added by an extension declare their values too.
+			var decls := CharacterSystem.declarations(target)
+			for name in decls:
+				var path := "%s.%s" % [d.id, name]
+				if not values.has(path):
+					values[path] = decls[name]
 	definitions.erase("_extend")
 
 

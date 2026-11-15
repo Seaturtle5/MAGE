@@ -27,6 +27,12 @@ child genders:
     herm: 1
 personalities: grumpy
 
+== extend character nermine
+stats:
+    strength: 14
+companion:
+    tamed: no
+
 == tag bottled
 name: Bottled
 
@@ -391,6 +397,12 @@ func test_a_part_goes_back_to_a_form_kept_in_a_value() -> void:
 	game.set_value("log.pick", "")
 	game.apply(Effect.compile("transform torso into log.pick"))
 	assert_eq(game.part_form("player", "torso"), "vixen", "an empty value changes nothing")
+
+
+func test_an_extension_can_give_a_character_stats_and_a_companion_block() -> void:
+	assert_eq(int(game.value("nermine.strength")), 14, "declared by the extension's stats:")
+	assert_true(game.content.values.has("nermine.damage"), "the companion block's fighting numbers")
+	assert_eq(game.value("nermine.tamed"), false)
 
 
 func test_known_places_are_counted() -> void:
