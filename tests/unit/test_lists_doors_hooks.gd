@@ -20,11 +20,19 @@ values:
     rested: number
     sighted: number
     ambush: flag
+    pick: text
 
 == pregnancy_rules standard
 child genders:
     herm: 1
 personalities: grumpy
+
+== tag bottled
+name: Bottled
+
+== item water_bottle
+name: water bottle
+tags: bottled
 
 == region town
 name: Town
@@ -372,6 +380,25 @@ func test_a_portrait_changes_in_play() -> void:
 	other.dispose()
 	game.apply(Effect.compile("character angie image default"))
 	assert_eq(game.character_image("angie"), "angie_plain")
+
+
+func test_a_carried_item_is_chosen_by_its_tag() -> void:
+	var has := Condition.compile("player has an item tagged bottled")
+	game.state.inventory.erase("water_bottle")
+	assert_false(Condition.evaluate(has, game))
+	game.apply(Effect.compile("ask log.pick as item tagged bottled: Which bottle?"))
+	assert_eq(str(game.value("log.pick")), "", "nothing to choose: empty, no question")
+	game.state.inventory["water_bottle"] = 2
+	assert_true(Condition.evaluate(has, game))
+	assert_false(Condition.evaluate(Condition.compile("player does not have an item tagged bottled"), game))
+	game.apply(Effect.compile("ask log.pick as item tagged bottled: Which bottle?"))
+	var asked: Dictionary = game.take_output().filter(func(e): return e.type == "choices")[-1]
+	assert_eq(asked.title, "Which bottle?")
+	assert_eq(asked.options.map(func(o): return o.text), ["water bottle", "Nevermind"])
+	assert_true(game.runner.choose(0))
+	assert_eq(str(game.value("log.pick")), "water_bottle")
+	game.apply(Effect.compile("take log.pick"))
+	assert_eq(int(game.state.inventory.get("water_bottle", 0)), 1, "~ take with the value that holds the item")
 
 
 func test_pronouns_change_in_play_and_can_follow_the_body() -> void:

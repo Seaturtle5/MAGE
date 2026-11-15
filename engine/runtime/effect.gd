@@ -67,6 +67,8 @@ static var _rules: Array = [
 	["choose_feat", RegEx.create_from_string("^choose feat (\\w+)$")],
 	# Typed text into a value: "~ ask child.name: Please name your child".
 	# A typed number: "~ ask x.n as number from 0 to 13: How long?" (asked again until it fits).
+	# A carried item chosen by tag: "~ ask x.drink as item tagged milky: Which milk?" (nothing chosen: empty).
+	["ask_item", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:an? )?item tagged (\\w+):\\s*(.+)$")],
 	["ask_number", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:a )?number(?: from (.+?) to (.+?))?:\\s*(.+)$")],
 	["ask", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+)(?: up to (\\d+) letters)?:\\s*(.+)$")],
 	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
@@ -92,7 +94,7 @@ static var _rules: Array = [
 	["item_strain", RegEx.create_from_string("^item (\\w+) infects as (\\w+)$")],
 	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
-	["take", RegEx.create_from_string("^take (\\w+)(?: (.+))?$")],
+	["take", RegEx.create_from_string("^take ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+))?$")],
 	["move", RegEx.create_from_string("^move (\\w+) to (\\w+)$")],
 	# A creature's zones or infection change in play: "creature centaur found in plains",
 	# "creature centaur found in nowhere", "creature centaur infectious yes", "creature rabbit gender female".
@@ -248,6 +250,11 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "check_level"}
 			"choose_feat":
 				return {"op": "choose_feat", "group": m.get_string(1)}
+			"ask_item":
+				var item_prompt := TextTemplate.compile(m.get_string(3))
+				if item_prompt.has("error"):
+					return {"error": item_prompt.error}
+				return {"op": "ask_item", "path": m.get_string(1), "tag": m.get_string(2), "prompt": item_prompt}
 			"ask":
 				var prompt := TextTemplate.compile(m.get_string(3))
 				if prompt.has("error"):

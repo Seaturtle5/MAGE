@@ -326,6 +326,10 @@ func run() -> void:
 			if _feat_choice_step(f):
 				return
 			continue
+		if f.kind == "item_choice":
+			if _item_choice_step(f):
+				return
+			continue
 		if f.kind == "trophy_choice":
 			_trophy_step(f)
 			return
@@ -807,6 +811,37 @@ func choose_feat(group: String) -> void:
 		run()
 
 
+## `~ ask <value> as item tagged <tag>: <prompt>`: the player picks one of the
+## carried items with that tag (or Nevermind); its ID goes into the value, which
+## is empty when nothing was picked or nothing fits.
+func choose_item(path: String, tag: String, prompt: Dictionary) -> void:
+	frames.append({"kind": "item_choice", "path": path, "tag": tag, "prompt": prompt, "shown": false})
+	if status == "idle":
+		run()
+
+
+func _item_choice_step(f: Dictionary) -> bool:
+	if f.shown:
+		frames.erase(f)
+		return false
+	f.shown = true
+	game.set_value(str(f.path), "")
+	var ids: Array = game.carried_tagged(str(f.tag))
+	if ids.is_empty():
+		frames.erase(f)
+		return false
+	var shown: Array = []
+	pending = []
+	for id: String in ids:
+		shown.append({"text": game.content.typed_value("item", id, "name", id), "description": "", "enabled": true})
+		pending.append({"item_pick": id, "enabled": true})
+	shown.append({"text": "Nevermind", "description": "", "enabled": true, "leave": true})
+	pending.append({"item_pick": "", "enabled": true})
+	game.emit({"type": "choices", "title": TextTemplate.plain(game.render(f.prompt)), "options": shown})
+	status = "choice"
+	return true
+
+
 func _feat_choice_step(f: Dictionary) -> bool:
 	if f.shown:
 		frames.erase(f)
@@ -855,6 +890,9 @@ func choose(index: int) -> bool:
 		if str(p.feat) != "":
 			game.apply(Effect.compile("feat + %s" % p.feat))
 			_push_if("feat:%s#gained" % p.feat)
+	elif p.has("item_pick"):
+		frames.erase(f)
+		game.set_value(str(f.path), str(p.item_pick))
 	elif p.has("vore"):
 		frames.erase(f)
 		_vore_do(f, str(p.vore))
@@ -1791,7 +1829,7 @@ func load_frames(saved: Array) -> void:
 	status = "idle" if frames.is_empty() else "continue"
 	for f in frames:
 		f.pc = int(f.get("pc", 0))
-		if f.kind == "ask":
+		if f.kind == "ask" or f.kind == "item_choice":
 			f.shown = false  # asked again after loading
 			f.max = int(f.get("max", 40))
 	if not game.state.combat.is_empty() and game.state.combat.get("result", "") == "":

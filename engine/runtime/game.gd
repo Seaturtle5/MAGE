@@ -161,6 +161,17 @@ func value(path: String) -> Variant:
 	return null
 
 
+## The carried items with a tag, sorted ("milky": the bottles of milk).
+func carried_tagged(tag: String) -> Array:
+	var out: Array = []
+	for id: String in state.inventory.keys():
+		var def: FscParser.Definition = content.get_def("item", id)
+		if int(state.inventory[id]) > 0 and def != null and tag in content._list(def, "tags"):
+			out.append(id)
+	out.sort()
+	return out
+
+
 ## A character's portrait: the one set in play (`~ character X image Y`), else its `image:`.
 func character_image(id: String) -> String:
 	if state.values.has("character.%s.image" % id):
@@ -387,6 +398,8 @@ func ask(node: Dictionary) -> bool:
 			return body_count(node.who, node.part) > 0
 		"has_item":
 			return int(state.inventory.get(node.item, 0)) >= node.n
+		"has_tagged":
+			return not carried_tagged(node.tag).is_empty()
 		"has_condition":
 			return state.conditions.has(node.id)
 		"wears":
@@ -1023,6 +1036,8 @@ func apply(e: Dictionary) -> void:
 			LevelSystem.check(self)
 		"choose_feat":
 			runner.choose_feat(e.group)
+		"ask_item":
+			runner.choose_item(e.path, e.tag, e.prompt)
 		"ask":
 			if e.get("number", false):
 				# A typed number, within its bounds when it has them (worked out now).

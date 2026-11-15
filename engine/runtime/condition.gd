@@ -50,6 +50,8 @@ static var _rules: Array = [
 	["arrived", RegEx.create_from_string("^player (did not arrive|arrived) by (walking|travelling)$")],
 	["has_part", RegEx.create_from_string("^(\\w+) (has|does not have) (head|torso|back|arms|legs|ass|tail|cock|cunt|balls|breasts)$")],
 	["wears", RegEx.create_from_string("^(\\w+) (wears|does not wear|wields|does not wield) (\\w+)$")],
+	# "player has an item tagged milky": any carried item with that tag.
+	["has_tagged", RegEx.create_from_string("^player (has|does not have) (?:an? |any )item tagged (\\w+)$")],
 	["has_item", RegEx.create_from_string("^(\\w+) (has|does not have) (\\w+)(?: (\\d+))?$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) (lives|does not live) at (\\w+)$")],
 	["is_at", RegEx.create_from_string("^(\\w+) is (not )?at (\\w+)$")],
@@ -259,6 +261,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "ending", "kind": "ended_by", "id": m.get_string(2), "neg": m.get_string(1) != "ended"}
 			"has_part":
 				return {"op": "has_part", "who": m.get_string(1), "part": m.get_string(3), "neg": m.get_string(2) != "has"}
+			"has_tagged":
+				return {"op": "has_tagged", "tag": m.get_string(2), "neg": m.get_string(1) != "has"}
 			"has_item":
 				return {"op": "has_item", "who": m.get_string(1), "item": m.get_string(3), "n": int(m.get_string(4)) if m.get_string(4) != "" else 1, "neg": m.get_string(2) != "has"}
 			"wears":

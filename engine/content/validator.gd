@@ -1333,7 +1333,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
-			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
+			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
@@ -1347,6 +1347,9 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			for bound in ["low", "high"]:
 				if e.has(bound):
 					_check_expr(e[bound], line)
+			_check_template(e.prompt, line, "")
+		"ask_item":
+			_check_path(e.path, line)
 			_check_template(e.prompt, line, "")
 		"ask":
 			_check_path(e.path, line)
