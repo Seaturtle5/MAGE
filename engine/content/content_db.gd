@@ -17,12 +17,15 @@ const SCHEMA := {
 		"menu icons": "list"},
 	"hunt_rules": {"target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "not found": "script", "source": "meta"},
-	"survival_rules": {"hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
+	"survival_rules": {"sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
 		"lust descriptions": "fields", "humanity ending": "text", "rescue ending": "text", "anticipation within": "text",
 		"rescue anticipation": "text", "rescue after": "text", "healing": "script", "hunger rises": "script", "thirst rises": "script", "source": "meta"},
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
+	# Character creation (CreationSystem): the new-game choices and the scripts around them.
+	"creation_rules": {"choices": "list", "feats": "fields", "before": "script", "after": "script", "source": "meta"},
+	"game_mode": {"name": "text", "description": "text", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
 		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "body text": "text", "group": "text", "available when": "text",
 		"gained": "script", "source": "meta"},
@@ -30,7 +33,7 @@ const SCHEMA := {
 		"source": "meta"},
 	"interest": {"name": "text", "description": "text", "default": "text", "group": "text", "source": "meta"},
 	# How infection treats the body (BodySystem.rule): conditions, chances, caps.
-	"infection_rules": {"resists when": "text", "resist chance": "text", "changes twice when": "text",
+	"infection_rules": {"blocked when": "text", "resists when": "text", "resist chance": "text", "changes twice when": "text",
 		"twice chance": "text", "stats follow when": "text", "stats keep when": "text",
 		"prefers male when": "text", "prefers female when": "text", "prefers herm when": "text",
 		"single sex when": "text", "keeps cock when": "text", "keeps cunt when": "text", "modest when": "text",
@@ -148,7 +151,7 @@ const PENDING_TYPES := ["epilogue"]
 ## When several types share an ID (a creature and its form, an item and its
 ## condition, a location and its image), lookups by ID alone return the type
 ## that comes first here.
-const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
+const LOOKUP_PRIORITY := ["creation_rules", "game_mode", "location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
 	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "infection_rules", "vore_rules",

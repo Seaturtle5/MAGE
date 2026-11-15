@@ -1552,6 +1552,23 @@ func _explore_location(zone: String, bonus: int) -> bool:
 ## outside; "a creature is picked" is false when none can be found.
 func pick_creature(tag: String, zone: String, favoring: Array, with_outside: bool = false) -> void:
 	game.state.values.erase("picked.creature")
+	if zone == "anywhere":
+		# Any infectious creature that lives somewhere and is not banned (the original's weak random infection).
+		var any: Array = []
+		for id: String in game.content.all_of("creature"):
+			if game.creature_field(id, "infectious", "yes") == "no" or game.creature_field(id, "found in", "nowhere") in ["", "nowhere"]:
+				continue
+			if game.filter_block(game.content._list(game.content.get_def("creature", id), "tags"), true) != "":
+				continue
+			if tag != "" and tag not in game.content._list(game.content.get_def("creature", id), "tags"):
+				continue
+			any.append(id)
+		any.sort()
+		if not any.is_empty():
+			var chosen: String = any[game.rng.range_int(0, any.size() - 1)]
+			game.state.values["picked.creature"] = chosen
+			VariantSystem.pick(game, chosen)
+		return
 	var here: String = game.zone_here()
 	var zones: Array = [zone] if zone != "" else [here if here != "" else "outside"]
 	if zone == "" and zones[0] != "outside":

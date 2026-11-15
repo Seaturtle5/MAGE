@@ -601,6 +601,7 @@ static func aftermath(game, id: String, result: String) -> void:
 		if cross != "" and game.filter_block(game.content.form_tags(cross), true) == "":
 			form = cross
 		if infectious and form != "":
+			game.state.values["infection.bypass"] = game.creature_field(id, "research bypass", "no") == "yes"
 			BodySystem.infect(game, form)
 		game.set_value("player.hp", maxi(1, int(game.value("player.hp"))))
 		game.set_value("player.xp", int(game.value("player.xp")) + level / 2)

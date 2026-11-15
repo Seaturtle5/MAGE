@@ -1076,7 +1076,9 @@ func apply(e: Dictionary) -> void:
 				form = content.typed_value("creature", picked, "form", picked) if picked != "" else ""
 				if form == "":
 					return
+			var source := str(value("picked.creature")) if e.form == "@picked" else form
 			for _i in Effect.resolve_amount(e.times, self):
+				state.values["infection.bypass"] = content.has(source, "creature") and creature_field(source, "research bypass", "no") == "yes"
 				BodySystem.infect(self, form, false, e.get("keep_sex", false))
 		"transform":
 			if e.get("part", "") != "":
@@ -1298,9 +1300,12 @@ func content_settings() -> Dictionary:
 
 # --- World and time ---------------------------------------------------------
 
-func start_scenario(id: String, name: String = "Player", main_stat: String = "strength", pronouns: String = "he") -> bool:
-	if not content.has(id, "scenario") or main_stat not in ["strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]:
-		warn("The scenario or main stat is not available.")
+## Starts a new game with a scenario. `choices` holds the new-game answers
+## (CreationSystem: question ID -> option index, "feat <group>" -> feat ID);
+## the game's modes are already in `settings.mode`.
+func start_scenario(id: String, name: String = "Player", pronouns: String = "he", choices: Dictionary = {}) -> bool:
+	if not content.has(id, "scenario"):
+		warn("The scenario is not available.")
 		return false
 	state = GameState.new()
 	runner.frames.clear()
@@ -1312,18 +1317,8 @@ func start_scenario(id: String, name: String = "Player", main_stat: String = "st
 	settings.started = true
 	set_value("player.name", name)
 	set_value("player.pronouns", pronouns)
-	set_value("player.level", 0)
-	set_value("player." + main_stat, 17)
-	set_value("player.maxhp", int(value("player.stamina")) * 2 + 5)
-	set_value("player.hp", value("player.maxhp"))
-	if role("morale") != "":
-		set_value(role("morale"), int(value("player.charisma")) + int(value("player.perception")))
-	set_value("player.cocks", 1)
-	set_value("player.cunts", 0)
-	set_value("player.balls.size", 3)
-	set_value("player.balls.count", 2)
-	set_value("player.cock.length", 6)
-	set_value("player.breasts.size", 0)
+	CreationSystem.create(self, choices)
+	output.clear()  # creation speaks quietly; the game starts with the scenario
 	start(content.typed_value("scenario", id, "start"))
 	runner.start(id + "#setup")
 	runner.emit_title(content.typed_value("scenario", id, "name", id))

@@ -45,6 +45,7 @@ static func run(content: ContentDB) -> void:
 	v._check_items()
 	v._check_rest_rules()
 	v._check_survival_rules()
+	v._check_creation_rules()
 	v._check_heat()
 	v._check_pregnancy()
 	v._check_captivity()
@@ -562,6 +563,33 @@ func _check_status_bar() -> void:
 			_check_path("player." + str(k), d.fields.sheet.line)
 
 
+## Character creation (CreationSystem): its questions are menus, its free feats exist.
+func _check_creation_rules() -> void:
+	var definitions := db.all_of("creation_rules")
+	for id in definitions:
+		var d := db.get_def("creation_rules", id)
+		_path = d.path
+		if definitions.size() > 1:
+			_err(d.line, "Only one creation_rules definition may be active across loaded packs.")
+		for menu in db._list(d, "choices"):
+			if not db.menus.has(menu):
+				_err(d.fields.choices.line, "Choice '%s' is not a menu. Each choice is a '== menu' whose options are the answers." % menu)
+		if d.fields.has("feats"):
+			for line: FscParser.Line in d.fields.feats.children:
+				if line.is_blank():
+					continue
+				var p := line.text.split(":", true, 1)
+				if p.size() != 2:
+					_err(line.number, "A free feat is written 'group: default_feat'.")
+					continue
+				var group := p[0].strip_edges()
+				if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == group):
+					_err(line.number, "No feat has group '%s'." % group)
+				var feat := p[1].strip_edges()
+				if feat != "":
+					_need(feat, "feat", line.number)
+
+
 func _check_survival_rules() -> void:
 	var definitions := db.all_of("survival_rules")
 	for id in definitions:
@@ -572,6 +600,8 @@ func _check_survival_rules() -> void:
 		for field in ["starving hint at", "journal hint below", "anticipation within"]:
 			if d.fields.has(field) and not d.fields[field].value.is_valid_int():
 				_err(d.fields[field].line, "%s must be a whole number." % field.capitalize())
+		if d.fields.has("sanity floor when"):
+			_check_condition_text(d.fields["sanity floor when"].value, d.fields["sanity floor when"].line, "survival_rules:" + id)
 		for field in ["starving hint", "morale normalized", "humanity loss", "journal hint", "rescue anticipation",
 				"hunger death", "thirst death", "humanity ending", "rescue ending"]:
 			if d.fields.has(field):
@@ -1249,7 +1279,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"pick":
 			if e.tag != "":
 				_need(e.tag, "tag", line)
-			if e.zone != "":
+			if e.zone != "" and e.zone != "anywhere":
 				_need(e.zone, "zone", line)
 			for c in e.favoring:
 				_need(c, "creature", line)

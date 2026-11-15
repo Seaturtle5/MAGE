@@ -106,6 +106,10 @@ static func tick(game) -> void:
 		say(game, text(game, "humanity loss"))
 		if game.role_number("sanity") < int(text(game, "journal hint below", "50")):
 			say(game, text(game, "journal hint"))
+	# Survival rules can keep sanity from running out (Flexible Survival's Researcher start).
+	var floor_when := text(game, "sanity floor when", "")
+	if sanity != "" and game.role_number("sanity") < 1 and floor_when != "" and Condition.evaluate(Condition.compile(floor_when), game):
+		game.set_value(sanity, 1)
 	if sanity != "" and game.role_number("sanity") <= 0:
 		_end(game, sanity.get_slice(".", 1), text(game, "humanity ending", "Your sanity is lost."))
 	elif rescue_turn(game) >= 0 and game.state.turn >= rescue_turn(game):

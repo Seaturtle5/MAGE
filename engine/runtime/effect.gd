@@ -84,7 +84,7 @@ static var _rules: Array = [
 	["go", RegEx.create_from_string("^go to (\\w+)$")],
 	["infect_part", RegEx.create_from_string("^infect with player (head|torso|body|skin|tail|cock|cunt|face)$")],
 	["infect_picked", RegEx.create_from_string("^infect picked creature( keeping sex)?$")],
-	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
+	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|anywhere|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
 	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
 	["transform_part", RegEx.create_from_string("^transform (head|face|torso|body|back|arms|legs|ass|tail|cock|cunt|skin) into (\\w+)$")],

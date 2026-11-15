@@ -1936,12 +1936,34 @@ func _open_new_game() -> void:
 		pronouns.add_item(label)
 	box.add_child(FsTheme.heading("Pronouns"))
 	box.add_child(pronouns)
-	var main_stat := OptionButton.new()
-	for label in ["Strength", "Dexterity", "Stamina", "Charisma", "Intelligence", "Perception"]:
-		main_stat.add_item(label)
-	box.add_child(FsTheme.heading("Main stat"))
-	box.add_child(main_stat)
-	box.add_child(FsTheme.label("Your main stat starts at 17 and the others at 12.", 15, FsTheme.TEXT_DIM))
+	# The game's own questions (creation rules): each a menu of answers.
+	var answers := {}
+	for q: Dictionary in CreationSystem.questions(game):
+		answers[q.id] = q.default
+		box.add_child(_creation_row(q.title, q.options.map(func(o): return o.label),
+			q.options.map(func(o): return o.description), q.options.map(func(o): return o.enabled), q.default,
+			func(i: int): answers[q.id] = i))
+	for f: Dictionary in CreationSystem.feat_choices(game):
+		var ids: Array = f.feats.map(func(x): return x.id)
+		var pick := maxi(0, ids.find(f.default))
+		if not ids.is_empty():
+			answers["feat " + str(f.group)] = ids[pick]
+			box.add_child(_creation_row("%s feat" % str(f.group).capitalize(), f.feats.map(func(x): return x.name),
+				f.feats.map(func(x): return x.description), f.feats.map(func(_x): return true), pick,
+				func(i: int): answers["feat " + str(f.group)] = ids[i]))
+	var chosen_modes: Array = []
+	for m: Dictionary in CreationSystem.modes(game):
+		var toggle := CheckBox.new()
+		toggle.text = str(m.name)
+		toggle.tooltip_text = str(m.description)
+		toggle.toggled.connect(func(on: bool):
+			if on and m.id not in chosen_modes:
+				chosen_modes.append(m.id)
+			elif not on:
+				chosen_modes.erase(m.id))
+		box.add_child(toggle)
+		if str(m.description) != "":
+			box.add_child(FsTheme.label(str(m.description), 14, FsTheme.TEXT_DIM))
 	# Automated screenshots use the defaults, not this player's remembered choices.
 	if shot_path == "" and fresh:
 		_load_content_prefs()
@@ -1970,8 +1992,9 @@ func _open_new_game() -> void:
 			_close_overlay()
 			_hide_title()
 			_save_content_prefs()
+			game.settings.mode = chosen_modes.duplicate()
 			game.start_scenario(id, name.text.strip_edges() if name.text.strip_edges() != "" else "Player",
-				main_stat.get_item_text(main_stat.selected).to_lower(), ["he", "she", "they"][pronouns.selected])
+				["he", "she", "they"][pronouns.selected], answers)
 			_drain())
 		overlay_footer.add_child(start_button)
 	overlay_footer.add_child(content_toggle)
@@ -1994,6 +2017,24 @@ func _open_settings() -> void:
 		box.add_child(FsTheme.label("Content filters and levels are chosen on the new-game screen, and can be changed here during a game.", 15, FsTheme.TEXT_DIM))
 	box.add_child(FsTheme.section("Keys"))
 	box.add_child(FsTheme.label("1–9 choose · Space or Enter continue · I inventory · J journal · M map · C character · L log · F5 quicksave · F9 quickload · Esc menu", 15, FsTheme.TEXT_DIM))
+
+
+## A new-game question: a heading, a pick list of answers and the chosen answer's description.
+func _creation_row(title: String, labels: Array, descriptions: Array, enabled: Array, selected: int, changed: Callable) -> Control:
+	var col := VBoxContainer.new()
+	col.add_child(FsTheme.heading(title))
+	var pick := OptionButton.new()
+	for i in labels.size():
+		pick.add_item(str(labels[i]))
+		pick.set_item_disabled(i, not bool(enabled[i]))
+	pick.select(selected)
+	col.add_child(pick)
+	var about := FsTheme.label(str(descriptions[selected]) if selected < descriptions.size() else "", 15, FsTheme.TEXT_DIM)
+	col.add_child(about)
+	pick.item_selected.connect(func(i: int):
+		about.text = str(descriptions[i])
+		changed.call(i))
+	return col
 
 
 func _choice_row(name: String, description: String, options: Array, selected: int, changed: Callable) -> Control:

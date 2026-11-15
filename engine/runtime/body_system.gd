@@ -27,6 +27,12 @@ static func infect(game, form: String, all: bool = false, keep_sex: bool = false
 	if game.content.get_def("form", form) == null:
 		game.warn("No form '%s' to infect with." % form)
 		return
+	# Infection rules can block infection altogether (Flexible Survival's Researcher start);
+	# `infection.bypass` says the infecting creature gets through anyway (research bypass).
+	if not all and rule(game, "blocked when"):
+		game.state.values.erase("infection.bypass")
+		return
+	game.state.values.erase("infection.bypass")
 	if all:
 		for part in PARTS:
 			if not fields(game, form, part).is_empty():
