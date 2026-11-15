@@ -106,7 +106,7 @@ static var _rules: Array = [
 	# The map changed in play: "~ change north exit of park_trail to picnic_area" (or "to nothing").
 	["change_exit", RegEx.create_from_string("^change (\\w+) exit of (\\w+) to (\\w+)$")],
 	["form_sex", RegEx.create_from_string("^form (\\w+) sex (male|female|herm|neuter|unchanged)$")],
-	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with) ([a-z0-9_,% ]+)$")],
+	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with|name known) ([a-z0-9_,% ]+)$")],
 	# A character's portrait changed in play: "~ character jay image jay_rubber" (the original's
 	# "now the icon of Jay is Figure of X"); "default" goes back to its own `image:`.
 	["character_image", RegEx.create_from_string("^character (\\w+) image (\\w+)$")],

@@ -17,6 +17,8 @@ extends RefCounted
 ##   choices   {"options": [{"label", "description", "cond", "then_leave",
 ##              "always_shown", "to": index}], "after": index}
 ##   fight     {"creature", "variant", "outcomes": {name: index}, "after": index}
+##             fights in a row add "creatures" (a list) or "times" (an expression),
+##             and "each": index of the block played before each fight (-1 for none)
 ##   return    {}                          end of the program
 ##
 ## Compile errors are collected in `errors` as {"line", "message"}.
@@ -135,7 +137,23 @@ func _choices(n: Dictionary) -> void:
 
 func _fight(n: Dictionary) -> void:
 	var instr := {"op": "fight", "line": n.line, "creature": n.creature, "variant": n.variant, "outcomes": {}, "after": -1}
-	_emit(instr)
+	var at := _emit(instr)
+	if n.has("creatures"):
+		instr["creatures"] = n.creatures
+	if n.has("times"):
+		var times := Expr.parse(n.times)
+		if times.has("error"):
+			errors.append({"line": n.line, "message": "cannot read how many fights '%s': %s" % [n.times, times.error]})
+		instr["times"] = times
+	if n.has("creatures") or n.has("times"):
+		# The `each:` block runs before every fight of the row, then goes back to the fight.
+		instr["each"] = -1
+		var skip := _emit({"op": "jump", "line": n.line, "to": -1})
+		if n.has("each"):
+			instr["each"] = code.size()
+			_block(n.each)
+			_emit({"op": "jump", "line": n.line, "to": at})
+		code[skip].to = code.size()
 	var exits: Array[int] = []
 	for outcome in n.outcomes:
 		instr.outcomes[outcome] = code.size()

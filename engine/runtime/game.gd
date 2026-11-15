@@ -711,6 +711,8 @@ func describe(name: String) -> String:
 			# The original's EnemyNameOrTitle: the creature fought (or met last), "the wolf",
 			# or a unique creature's own title.
 			var foe := current_creature()
+			if creature_field(foe, "name known", "no") == "yes" and creature_field(foe, "personal name") != "":
+				return creature_field(foe, "personal name")  # the original's enemy type 2: "Yodgrak"
 			var title := creature_field(foe, "title")
 			var unique := creature_field(foe, "unique", "no") == "yes"
 			var word := title if title != "" else creature_field(foe, "name", foe if foe != "" else "creature").to_lower()
@@ -1413,6 +1415,13 @@ func set_level(id: String, option: String) -> bool:
 
 ## The filter that keeps tagged content out, or "". Banned filters always
 ## do; warded filters only keep content out of random selection.
+## A character whose tags hold a banned filter is hidden: not shown at its place,
+## and its talk, sex, look, smell, actions and summoning are not offered. Wards
+## do not hide characters (the player seeks them out, as with a hunt).
+func character_hidden(id: String) -> bool:
+	return content.has(id, "character") and filter_block(content._list(content.get_def("character", id), "tags"), true) != ""
+
+
 func filter_block(tags: Array, hunted: bool = false) -> String:
 	for t in tags:
 		if t in settings.banned:
@@ -1742,11 +1751,18 @@ func quest_list() -> Array:
 			continue
 		var history: Array = []
 		for k in range(1, idx):
-			history.append(q.journal.get(q.stages[k], ""))
+			if q.journal.get(q.stages[k], "") != "":
+				history.append(q.journal.get(q.stages[k], ""))
 		var done_at := content.field_value(id, "done at", q.stages[-1])
+		# A `journal:` text says where the quest stands now, worked out when the journal is
+		# shown (the original's quest log phrases); else the stage's own line.
+		var line: String = q.journal.get(stage, "")
+		var written: Program = content.program("%s#journal" % id, "quest")
+		if written != null:
+			line = runner.render_inline(written)
 		out.append({"id": id, "name": content.field_value(id, "name", id),
 			"region": content.field_value(content.field_value(id, "region"), "name", "Other"),
-			"stage": stage, "journal": q.journal.get(stage, ""), "history": history,
+			"stage": stage, "journal": line, "history": history,
 			"done": q.stages.find(done_at) <= idx})
 	return out
 

@@ -17,7 +17,9 @@ const TAB_WIDTH := 4
 static var _header_re := RegEx.create_from_string("^==\\s+(?:(extend|replace)\\s+)?(\\w+)\\s+([a-z0-9_.\\-]+)\\s*$")
 static var _field_re := RegEx.create_from_string("^([A-Za-z][A-Za-z0-9 _]*?)\\s*:(?:\\s+(.*))?$")
 static var _choice_suffix_re := RegEx.create_from_string("\\s*\\[(if [^\\[\\]]+|then leave|always shown|number -?\\d+ to -?\\d+)\\]\\s*$")
-static var _fight_re := RegEx.create_from_string("^fight\\s+([a-z0-9_.]+)(?:\\s*\\(([^)]*)\\))?\\s*:$")
+## "fight wolf:", "fight goblin (female):", and fights in a row: "fight leopardman 2 times:",
+## "fight pink_gel, blue_gel, purple_gel:" (until one is lost or fled).
+static var _fight_re := RegEx.create_from_string("^fight\\s+([a-z0-9_.]+(?:\\s*,\\s*[a-z0-9_]+)*)(?:\\s*\\(([^)]*)\\))?(?:\\s+(\\S+)\\s+times)?\\s*:$")
 static var _outcome_re := RegEx.create_from_string("^(won|lost|fled|won by seduction|lost by submitting)\\s*:$")
 
 
@@ -331,7 +333,14 @@ class _ScriptParser:
 			result.error(l.number, "A fight must look like 'fight creature_id:' or 'fight creature_id (variant):'.")
 			children(l)
 			return {"kind": "text", "line": l.number, "text": ""}
-		var node := {"kind": "fight", "line": l.number, "creature": m.get_string(1), "variant": m.get_string(2), "outcomes": {}}
+		var creatures: Array = Array(m.get_string(1).split(",")).map(func(c): return c.strip_edges())
+		var node := {"kind": "fight", "line": l.number, "creature": creatures[0], "variant": m.get_string(2), "outcomes": {}}
+		if creatures.size() > 1 and m.get_string(3) != "":
+			result.error(l.number, "Fights in a row name one creature with 'N times' or several creatures, not both.")
+		if creatures.size() > 1:
+			node["creatures"] = creatures
+		elif m.get_string(3) != "":
+			node["times"] = m.get_string(3)
 		var next := peek()
 		if next == null or next.indent <= l.indent:
 			return node
@@ -340,6 +349,11 @@ class _ScriptParser:
 			var o := peek()
 			if o == null or o.indent != inner:
 				break
+			if o.text.strip_edges() == "each:" and (node.has("creatures") or node.has("times")):
+				# Before each fight of a row: its words (fights.number is the fight about to start).
+				pos += 1
+				node["each"] = children(o)
+				continue
 			var om := FscParser._outcome_re.search(o.text)
 			if om == null:
 				result.error(o.number, "Inside a fight, use 'won:', 'lost:' or 'fled:' blocks.")

@@ -139,7 +139,7 @@ func _check_slice_types() -> void:
 		for zone in db._list(d, "found in"):
 			if zone != "nowhere":
 				_need(zone, "zone", d.fields["found in"].line)
-		for flag in ["unique", "group", "infectious", "research bypass", "magic", "seduction immune"]:
+		for flag in ["unique", "name known", "group", "infectious", "research bypass", "magic", "seduction immune"]:
 			if d.fields.has(flag) and d.fields[flag].value not in ["yes", "no"]:
 				_err(d.fields[flag].line, "%s must be yes or no." % flag.capitalize())
 		if d.fields.has("gender") and d.fields.gender.value not in CREATURE_GENDERS:
@@ -505,7 +505,7 @@ func _check_shops() -> void:
 ## family) or a `filter` (a category players can ban or ward). The engine
 ## applies filters to creatures and events; on other content a filter tag
 ## would be ignored, so it is reported instead.
-const FILTERED_TYPES := ["creature", "event"]
+const FILTERED_TYPES := ["creature", "event", "character"]
 
 
 func _check_filters() -> void:
@@ -535,7 +535,7 @@ func _check_filters() -> void:
 				if not db.has(t, "filter") and not db.has(t, "tag"):
 					_err(line, "Tag '%s' is not declared. Declare it as a tag, or as a filter if players can ban it.%s" % [t, _suggest(t, known)])
 				elif db.has(t, "filter") and type not in FILTERED_TYPES:
-					_warn(line, "Filter '%s' on a %s is not applied yet; only creatures and events are filtered. Check the setting in the scene instead, for example 'if filter %s is allowed'." % [t, type, t])
+					_warn(line, "Filter '%s' on a %s is not applied yet; only creatures, events and characters are filtered. Check the setting in the scene instead, for example 'if filter %s is allowed'." % [t, type, t])
 
 
 func _check_conditions() -> void:
@@ -1215,7 +1215,7 @@ func _check_programs() -> void:
 			# A creature's combat scripts, and the options of its `attacks:` menu.
 			var combat_script: bool = (type == "creature" and field in COMBAT_SCRIPTS) or (type == "character" and field == "companion attack") or \
 				(str(pid).contains(".attacks@") and db.has(str(pid).get_slice(".attacks@", 0), "creature"))
-			if (type == "location" and field in ["description", "presence", "scent"]) or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
+			if (type == "location" and field in ["description", "presence", "scent"]) or (type == "quest" and field == "journal") or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
 				# A creature's combat scripts may also change values as they land (a roll, lust, a blow).
 				var effects_ok: bool = combat_script and field not in ["escape", "struggle"]
 				if ins.op == "goto":
@@ -1288,6 +1288,11 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 				_err(ins.line, "Creature '%s' does not exist.%s" % [ins.creature, _suggest(ins.creature, _ids("creature"))])
 			elif ins.variant != "" and ins.variant not in VariantSystem.variants(db, ins.creature):
 				_err(ins.line, "%s has no variant '%s'.%s" % [ins.creature, ins.variant, _variant_list(ins.creature)])
+			for c: String in ins.get("creatures", []).slice(1):
+				if c != "random" and not db.has(c, "creature"):
+					_err(ins.line, "Creature '%s' does not exist.%s" % [c, _suggest(c, _ids("creature"))])
+			if ins.has("times"):
+				_check_expr(ins.times, ins.line)
 		"show":
 			if not _images.has(ins.image):
 				_warn(ins.line, "Image '%s' was not found in any pack's images folder." % ins.image)
@@ -1433,6 +1438,10 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_err(line, "Strike with names an attribute: %s." % ", ".join(CombatSystem.ATTRIBUTES))
 			elif e.field == "infectious" and e.value not in ["yes", "no"]:
 				_err(line, "A creature is infectious yes or no.")
+			elif e.field == "name known" and e.value not in ["yes", "no"]:
+				_err(line, "A creature's name is known yes or no.")
+			elif e.field == "name known" and db.typed_value("creature", e.creature, "personal name") == "":
+				_err(line, "%s has no 'personal name:' to be known by." % e.creature)
 			elif e.field == "variant" and e.value not in VariantSystem.variants(db, e.creature):
 				_err(line, "%s has no variant '%s'.%s" % [e.creature, e.value, _variant_list(e.creature)])
 			elif e.field == "gender" and e.value not in CREATURE_GENDERS:
@@ -1581,6 +1590,8 @@ func _check_path(path: String, line: int) -> void:
 		if parts[1] not in BodySystem.PARTS and not BodySystem.ALIASES.has(parts[1]):
 			_err(line, "'%s' is not a body part. Parts: %s." % [parts[1], ", ".join(BodySystem.PARTS)])
 		return
+	if parts[0] == "fights" and parts.size() == 2 and parts[1] in ["number", "won", "total"]:
+		return  # fights in a row: the one now (from 1), how many were won, how many there are
 	if parts[0] == "change" and parts.size() == 2 and parts[1] in ["owner", "amount", "value"]:
 		return  # a value's own change text ("when raised:"): whose value, by how much, now
 	if parts[0] == "sex" and parts.size() == 2 and parts[1] in ["taker", "giver", "act", "with"]:

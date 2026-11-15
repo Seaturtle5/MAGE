@@ -415,6 +415,30 @@ func run() -> void:
 				for i in range(times, 0, -1):
 					_push(target, {"play_index": i, "play_count": times} if ins.has("times") else {})
 			"fight":
+				if ins.has("each") and not f.has("encountering"):
+					# Fights in a row (the original's "while fightoutcome < 20 and GroupFightCounter < N"):
+					# one after another until one is lost or fled; `each:` plays before each.
+					var here: int = f.pc - 1
+					var row: Dictionary = f.get("row", {})
+					if int(row.get("at", -1)) != here:
+						var total: int = ins.creatures.size() if ins.has("creatures") else Expr._num(Expr.evaluate(ins.times, game))
+						row = {"at": here, "number": 1, "total": total, "ready": false}
+						f["row"] = row
+						game.state.values["fights.number"] = 1
+						game.state.values["fights.won"] = 0
+						game.state.values["fights.total"] = total
+						if total < 1:
+							f.erase("row")
+							f.pc = ins.outcomes.get("won", ins.after)
+							continue
+					if not row.ready:
+						row.ready = true
+						if int(ins.each) >= 0:
+							f.pc = int(ins.each)
+							continue
+					ins = ins.duplicate()
+					if ins.has("creatures"):
+						ins.creature = ins.creatures[int(row.number) - 1]
 				if f.has("encountering"):
 					# Second pass, after the creature's encounter scene: start the fight.
 					ins = f.encountering
@@ -884,6 +908,18 @@ func _finish_fight() -> void:
 	game.last_fight = result
 	var fallback := "won" if result.begins_with("won") else "lost" if result.begins_with("lost") else "fled"
 	f.pc = ins.outcomes.get(result, ins.outcomes.get(fallback, ins.after))
+	if f.has("row") and ins.has("each"):
+		var row: Dictionary = f.row
+		if fallback == "won":
+			game.state.values["fights.won"] = int(game.state.values.get("fights.won", 0)) + 1
+		if fallback == "won" and int(row.number) < int(row.total):
+			# The next fight of the row, after this one's aftermath.
+			row.number = int(row.number) + 1
+			row.ready = false
+			game.state.values["fights.number"] = row.number
+			f.pc = int(row.at)
+		else:
+			f.erase("row")
 	f.erase("fight")
 	frames.append({"kind": "combat_end", "creature": ins.creature, "result": result})
 	# Trophies the player may take one of, offered first (the original's trophy list).
@@ -966,7 +1002,7 @@ func show_location() -> void:
 			view.description.append_array(render_paragraphs(db.program(door + "#shown in room")))
 			shown_doors.append(door)
 	for c in db.all_of("character"):
-		if game.where(c) == loc:
+		if game.where(c) == loc and not game.character_hidden(c):
 			var fields: Dictionary = db.get_def("character", c).fields
 			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
 				"image": game.character_image(c),
@@ -1094,6 +1130,8 @@ func _queue_scheduled_scenes() -> bool:
 func _act(action: String, arg: String) -> bool:
 	var db: ContentDB = game.content
 	var loc: String = game.state.location
+	if action in ["talk", "sex", "smell", "look", "actions", "summon"] and arg != "" and game.character_hidden(arg):
+		return false  # a character hidden by a banned filter
 	match action:
 		"wait":
 			frames.append({"kind": "turn", "turns": 1})
@@ -1738,7 +1776,8 @@ func start_encounter(id: String, hunted: bool = false) -> void:
 
 
 func _encounter_title(id: String) -> void:
-	emit_title("Encounter: " + game.creature_field(id, "name", id), "", game.creature_field(id, "image"))
+	var known: bool = game.creature_field(id, "name known", "no") == "yes" and game.creature_field(id, "personal name") != ""
+	emit_title("Encounter: " + game.creature_field(id, "personal name" if known else "name", id), "", game.creature_field(id, "image"))
 
 
 # --- Saving -----------------------------------------------------------------
