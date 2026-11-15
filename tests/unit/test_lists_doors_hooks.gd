@@ -4,8 +4,9 @@ extends GutTest
 ## to 13: ...`), story children with a random gender and personality (`~ new
 ## child`), hooks instead of resting, talking or sex and after resting, and a
 ## sex change that keeps the cock's strain, an event made unresolved again, a
-## character's portrait changed in play, values every character has with their
-## own change texts (`when raised:`), and a story's unbirth pregnancy.
+## character's portrait changed in play, an event that starts inactive, values
+## every character has with their own change texts (`when raised:`), and a
+## story's unbirth pregnancy.
 
 const ROOT := "user://lists_doors_hooks_test_packs"
 
@@ -132,6 +133,13 @@ found by: nowhere
 outcomes: raided
 play:
     ~ outcome raided
+
+== event dormant
+name: Dormant
+found by: nowhere
+active: no
+play:
+    Nothing yet.
 
 == form vixen
 name: Vixen
@@ -338,6 +346,17 @@ func test_an_event_is_made_unresolved_again() -> void:
 	assert_true(Condition.evaluate(Condition.compile("canning outcome is raided"), game), "its outcome stays, as in the original")
 	var other := _saved()
 	assert_false(other.adjective("canning", "resolved"), "kept in a save")
+	other.dispose()
+
+
+func test_an_event_starting_inactive_reads_so_until_activated() -> void:
+	assert_false(game.adjective("dormant", "active"), "active: no holds before anything touches the event")
+	assert_true(game.adjective("canning", "active"))
+	game.apply(Effect.compile("activate dormant"))
+	assert_true(game.adjective("dormant", "active"))
+	var other := _saved()
+	assert_true(other.adjective("dormant", "active"), "kept in a save")
+	assert_eq(typeof(other.state.events.dormant.last_turn), TYPE_INT, "its numbers stay whole numbers after loading")
 	other.dispose()
 
 

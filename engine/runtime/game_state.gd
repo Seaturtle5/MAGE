@@ -75,7 +75,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.char_location = d.get("char_location", {})
 	s.residence = d.get("residence", {})
 	s.companions = d.get("companions", [])
-	s.events = d.get("events", {})
+	s.events = _whole(d.get("events", {}))  # last_turn and other numbers
 	s.conditions = d.get("conditions", {})
 	for entry: Dictionary in s.conditions.values():
 		entry.remaining = int(entry.get("remaining", 0))

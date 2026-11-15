@@ -503,7 +503,13 @@ func adjective(who: String, adj: String) -> bool:
 			# The original's inafight: true while a fight is going on.
 			return who == "player" and not state.combat.is_empty() and str(state.combat.get("result", "")) == ""
 		"resolved", "active":
-			return bool(state.events.get(who, {}).get(adj, adj == "active"))
+			var ev: Dictionary = state.events.get(who, {})
+			if ev.has(adj):
+				return bool(ev[adj])
+			# An event not touched yet starts as its definition says (active: no).
+			if adj == "active" and content.has(who, "event"):
+				return content.typed_value("event", who, "active", "yes") == "yes"
+			return adj == "active"
 		"ready":
 			# The original's PrereqComplete: the event's own requirements hold now.
 			if not content.has(who, "event"):
