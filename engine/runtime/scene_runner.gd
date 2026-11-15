@@ -498,6 +498,7 @@ func run() -> void:
 
 func _pop() -> void:
 	var f: Dictionary = frames.pop_back()
+	var cancelled: bool = game.use_cancelled
 	if f.has("refund") and game.use_cancelled:
 		game.state.inventory[f.refund] = int(game.state.inventory.get(f.refund, 0)) + 1
 		game.use_cancelled = false
@@ -510,6 +511,8 @@ func _pop() -> void:
 			frames.pop_back()
 		elif settings.get("pause after each", "no") == "yes":
 			m["pause"] = true
+	if f.has("used") and not cancelled:
+		game.run_hooks("after using " + str(f.used))  # hooks "after using water_bottle"
 
 
 func _goto(target: String) -> void:
@@ -523,7 +526,7 @@ func _goto(target: String) -> void:
 			var extra := {}
 			if not frames.is_empty() and frames[-1].kind == "script":
 				var f: Dictionary = frames.pop_back()
-				for k in ["event", "refund"]:
+				for k in ["event", "refund", "used"]:
 					if f.has(k):
 						extra[k] = f[k]
 			_push(target, extra)
@@ -1240,7 +1243,7 @@ func _act(action: String, arg: String) -> bool:
 			if db.program(arg + "#use") == null:
 				return false
 			game.use_cancelled = false
-			var extra := {}
+			var extra := {"used": arg}
 			if db.typed_value("item", arg, "consumed", "yes") != "no":
 				game.apply({"op": "take", "item": arg, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
 				extra["refund"] = arg

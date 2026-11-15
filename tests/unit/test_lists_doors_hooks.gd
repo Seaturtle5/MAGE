@@ -40,6 +40,22 @@ name: Bottled
 name: water bottle
 tags: bottled
 
+== item snack
+name: snack
+use:
+    You eat the snack.
+
+== hook after_snack
+on: after using snack
+do:
+    You feel full.
+    ~ log.sighted + 1 quietly
+
+== item collar
+name: collar
+equipment:
+    slot: neck
+
 == region town
 name: Town
 
@@ -394,6 +410,10 @@ func test_a_part_goes_back_to_a_form_kept_in_a_value() -> void:
 	game.set_value("player.body.torso", "human")  # the curse's change at night
 	game.apply(Effect.compile("transform torso into log.pick"))
 	assert_eq(game.part_form("player", "torso"), "vixen", "back to the kept form")
+	game.set_value("player.body.torso", "human")
+	game.state.values["picked.creature"] = "vixen"  # as ~ pick random creature leaves it
+	game.apply(Effect.compile("transform torso into picked.creature"))
+	assert_eq(game.part_form("player", "torso"), "vixen", "into the picked creature's form")
 	game.set_value("log.pick", "")
 	game.apply(Effect.compile("transform torso into log.pick"))
 	assert_eq(game.part_form("player", "torso"), "vixen", "an empty value changes nothing")
@@ -414,6 +434,43 @@ func test_a_time_value_moves_earlier_or_later() -> void:
 	assert_eq(int(game.state.stamps["nermine.last_sex"]), t - 2)
 	game.apply(Effect.compile("nermine.last_sex later by 5 turns"))
 	assert_eq(int(game.state.stamps["nermine.last_sex"]), t + 3)
+
+
+func test_a_creatures_name_can_be_known_and_it_can_become_unique() -> void:
+	var known := Condition.compile("margay name is known")
+	assert_false(Condition.evaluate(known, game))
+	game.apply(Effect.compile("creature margay name known yes"))
+	assert_true(Condition.evaluate(known, game))
+	assert_false(Condition.evaluate(Condition.compile("margay name is not known"), game))
+	game.apply(Effect.compile("creature margay unique yes"))
+	assert_eq(game.creature_field("margay", "unique", "no"), "yes")
+
+
+func test_a_forms_change_text_for_a_part() -> void:
+	game.set_value("log.pick", "vixen")
+	assert_eq(TextTemplate.plain(game.render(TextTemplate.compile("Your body shifts as [torso change of log.pick]."))), "Your body shifts as you grow fur.")
+	assert_eq(TextTemplate.plain(game.render(TextTemplate.compile("[torso change of vixen]"))), "you grow fur")
+
+
+func test_whatever_is_worn_on_a_slot_comes_off() -> void:
+	game.state.inventory["collar"] = 1
+	game.state.equipped.append("collar")
+	game.apply(Effect.compile("remove whatever is worn on neck"))
+	assert_false("collar" in game.state.equipped)
+	game.apply(Effect.compile("remove whatever is worn on neck"))
+	assert_false("collar" in game.state.equipped, "nothing there: nothing happens")
+
+
+func test_a_hook_runs_after_an_item_is_used() -> void:
+	game.state.inventory["snack"] = 1
+	game.take_output()
+	assert_true(game.runner.act("use", "snack"))
+	while game.runner.status == "continue":
+		game.runner.proceed()
+	var said := game.take_output().filter(func(e): return e.type == "paragraph").map(func(e): return TextTemplate.plain(e.spans))
+	assert_true("You eat the snack." in said)
+	assert_true("You feel full." in said, "the hook after the use")
+	assert_eq(int(game.value("log.sighted")), 1)
 
 
 func test_known_places_are_counted() -> void:

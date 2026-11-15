@@ -416,8 +416,14 @@ func _check_world() -> void:
 		for prefix: String in Game.HOOK_CHARACTER_MOMENTS:
 			if on.begins_with(prefix):
 				about = on.substr(prefix.length()).strip_edges()
+		var item_about := ""
+		for prefix: String in Game.HOOK_ITEM_MOMENTS:
+			if on.begins_with(prefix):
+				item_about = on.substr(prefix.length()).strip_edges()
 		if about != "":
 			_need(about, "character", d.fields["on"].line)
+		elif item_about != "":
+			_need(item_about, "item", d.fields["on"].line)
 		elif on not in Game.HOOK_MOMENTS:
 			_err(d.fields["on"].line if d.fields.has("on") else d.line, "A hook needs 'on:' with one of: %s, or %s." % [", ".join(Game.HOOK_MOMENTS),
 				" or ".join(Game.HOOK_CHARACTER_MOMENTS.map(func(m): return "'%s<character>'" % m))])
@@ -1294,7 +1300,7 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 			if ins.has("times"):
 				_check_expr(ins.times, ins.line)
 		"show":
-			if not _images.has(ins.image):
+			if ins.image != "" and not _images.has(ins.image):
 				_warn(ins.line, "Image '%s' was not found in any pack's images folder." % ins.image)
 		"effect":
 			if not ins.effect.has("error"):
@@ -1325,7 +1331,7 @@ func _check_target(target: String, line: int) -> void:
 
 
 func _check_effect(e: Dictionary, line: int, owner: String) -> void:
-	if e.op not in ["set", "set_time", "shift_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
+	if e.op not in ["remove_slot", "set", "set_time", "shift_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
 			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
@@ -1577,7 +1583,7 @@ func _need(id: String, type: String, line: int) -> void:
 
 
 func _check_path(path: String, line: int) -> void:
-	if db.values.has(path) or path == "game.turn" or path == "places.known":
+	if db.values.has(path) or path in ["game.turn", "places.known", "picked.creature"]:
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:
@@ -1726,6 +1732,9 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_err(line, "Event '%s' does not exist.%s" % [c.event, _suggest(c.event, _ids("event"))])
 			elif c.outcome not in outs:
 				_err(line, "'%s' is not an outcome of event %s." % [c.outcome, c.event])
+		"name_known":
+			if c.creature != "enemy":
+				_need(c.creature, "creature", line)
 		"has_item", "wears":
 			_need(c.item, "item", line)
 		"has_condition":

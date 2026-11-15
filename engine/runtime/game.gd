@@ -402,6 +402,9 @@ func ask(node: Dictionary) -> bool:
 			return int(state.inventory.get(node.item, 0)) >= node.n
 		"has_tagged":
 			return not carried_tagged(node.tag).is_empty()
+		"name_known":
+			var known_id: String = current_creature() if node.creature == "enemy" else node.creature
+			return creature_field(known_id, "name known", "no") == "yes"
 		"has_condition":
 			return state.conditions.has(node.id)
 		"wears":
@@ -646,6 +649,13 @@ func describe(name: String) -> String:
 	var parts := n.split(" of ", true, 1)
 	var what := parts[0]
 	var who := parts[1] if parts.size() > 1 else "player"
+	if what.ends_with(" change") and parts.size() > 1:
+		# "[head change of x.form]": how a part changes into that form (the form's `change:`;
+		# the original's "[face change entry]"), for a form a value holds or one named.
+		var part: String = what.trim_suffix(" change")
+		part = BodySystem.ALIASES.get(part, part)
+		var form := str(value(who)) if "." in who else who
+		return BodySystem._text(self, str(BodySystem.fields(self, form, part).get("change", "")))
 	match what:
 		"name":
 			if who == "player":
@@ -1207,7 +1217,10 @@ func apply(e: Dictionary) -> void:
 			if e.has("form_path"):
 				var kept = value(e.form_path)
 				if kept != null and str(kept) != "":
-					BodySystem.set_part(self, str(kept), e.part)
+					var kept_form := str(kept)
+					if not content.has(kept_form, "form") and content.has(kept_form, "creature"):
+						kept_form = content.typed_value("creature", kept_form, "form", kept_form)  # "into picked.creature"
+					BodySystem.set_part(self, kept_form, e.part)
 			elif e.get("part", "") != "":
 				BodySystem.set_part(self, e.form, e.part)
 			else:
@@ -1266,6 +1279,10 @@ func apply(e: Dictionary) -> void:
 			ItemSystem.wear(self, e.item, quiet)
 		"remove":
 			ItemSystem.remove(self, e.item, quiet)
+		"remove_slot":
+			for worn: String in state.equipped.duplicate():
+				if ItemSystem.gear(self, worn, "slot", "none") == e.slot:
+					ItemSystem.remove(self, worn, quiet)
 		"wield":
 			ItemSystem.wield(self, e.item, quiet)
 		"unwield":
@@ -1633,6 +1650,8 @@ const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity sta
 	"after resting", "instead of resting"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
+## Moments about one item: "after using water_bottle" (a use that was not cancelled).
+const HOOK_ITEM_MOMENTS := ["after using "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`

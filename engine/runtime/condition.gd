@@ -71,7 +71,9 @@ static var _rules: Array = [
 	["part_is", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?(\\w+)$")],
 	["parity", RegEx.create_from_string("^([a-z0-9_.]+) is (not )?(odd|even)$")],
 	["at_least", RegEx.create_from_string("^([a-z0-9_.]+) is (at least|at most) (\\w+)$")],
-	["is", RegEx.create_from_string("^(\\w+) is (not )?([a-z][a-z ]*)$")],
+	# "wyvern name is known": the player knows a unique creature's own name (the original's enemy type 2).
+	["name_known", RegEx.create_from_string("^(\\w+) name is (not )?known$")],
+	["is", RegEx.create_from_string("^(\\w+) is (not )?([a-z][a-z0-9_ ]*)$")],
 	["value_is", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?(.+)$")],
 ]
 
@@ -261,6 +263,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "ending", "kind": "ended_by", "id": m.get_string(2), "neg": m.get_string(1) != "ended"}
 			"has_part":
 				return {"op": "has_part", "who": m.get_string(1), "part": m.get_string(3), "neg": m.get_string(2) != "has"}
+			"name_known":
+				return {"op": "name_known", "creature": m.get_string(1), "neg": m.get_string(2) != ""}
 			"has_tagged":
 				return {"op": "has_tagged", "tag": m.get_string(2), "neg": m.get_string(1) != "has"}
 			"has_item":

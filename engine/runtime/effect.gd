@@ -78,6 +78,8 @@ static var _rules: Array = [
 	["schedule", RegEx.create_from_string("^schedule ([a-z0-9_.]+) after (\\d+) actions?$")],
 	["give_one", RegEx.create_from_string("^give one of ([a-z0-9_, ]+)$")],
 	["give", RegEx.create_from_string("^give ([a-z0-9_]+(?:\\.[a-z0-9_.]+)?)(?: (.+))?$")],
+	# "~ remove whatever is worn on neck": takes off what is worn in that slot (not cursed gear).
+	["remove_slot", RegEx.create_from_string("^remove whatever is worn on (head|hair|eyes|face|neck|back|body|chest|breast|stomach|arms|hands|legs|waist|crotch|feet)$")],
 	["gear", RegEx.create_from_string("^(wear|remove|wield) (\\w+)$")],
 	["unwield", RegEx.create_from_string("^unwield$")],
 	["resize", RegEx.create_from_string("^resize to ([1-5])$")],
@@ -108,7 +110,7 @@ static var _rules: Array = [
 	# The map changed in play: "~ change north exit of park_trail to picnic_area" (or "to nothing").
 	["change_exit", RegEx.create_from_string("^change (\\w+) exit of (\\w+) to (\\w+)$")],
 	["form_sex", RegEx.create_from_string("^form (\\w+) sex (male|female|herm|neuter|unchanged)$")],
-	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with|name known) ([a-z0-9_,% ]+)$")],
+	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with|name known|unique) ([a-z0-9_,% ]+)$")],
 	# A character's portrait changed in play: "~ character jay image jay_rubber" (the original's
 	# "now the icon of Jay is Figure of X"); "default" goes back to its own `image:`.
 	["character_image", RegEx.create_from_string("^character (\\w+) image (\\w+)$")],
@@ -286,6 +288,8 @@ static func _match(s: String) -> Dictionary:
 				if "." in item:
 					return {"op": rule[0], "item": "", "item_path": item, "amount": amt}
 				return {"op": rule[0], "item": item, "amount": amt}
+			"remove_slot":
+				return {"op": "remove_slot", "slot": m.get_string(1)}
 			"take_all":
 				return {"op": "take_all", "item": m.get_string(1)}
 			"give_one":

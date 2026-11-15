@@ -297,7 +297,8 @@ class _ScriptParser:
 		if t.begins_with("play "):
 			return {"kind": "play", "line": l.number, "target": t.substr(5).strip_edges()}
 		if t.begins_with("show "):
-			return {"kind": "show", "line": l.number, "image": t.substr(5).strip_edges()}
+			var shown := t.substr(5).strip_edges()
+			return {"kind": "show", "line": l.number, "image": "" if shown == "nothing" else shown}  # "show nothing" clears the picture
 		if t.begins_with("fight "):
 			return fight(l)
 		if t.begins_with("if "):
