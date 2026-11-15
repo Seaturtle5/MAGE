@@ -102,7 +102,7 @@ var prefs := ConfigFile.new()
 var title: TitleScreen
 var game_root: Control  ## the in-game screen, hidden while the title shows
 var last_autosave_turn := -1
-var content_toggle: Button  ## shows the content settings on the new-game screen
+var new_game: NewGameScreen  ## the new-game screen while it is open
 var overlay_scroll: ScrollContainer
 var overlay_footer: HBoxContainer  ## buttons below an overlay's scrolling content
 var inv_selected := ""  ## the item shown in the inventory's detail pane
@@ -1227,6 +1227,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	if overlay != null:
 		if key == KEY_ESCAPE:
 			_close_overlay()
+		elif new_game != null and is_instance_valid(new_game) and new_game.is_visible_in_tree():
+			if new_game.handle_key(key):
+				get_viewport().set_input_as_handled()
 		return
 	if game == null or (title != null and title.visible):
 		return
@@ -1929,84 +1932,27 @@ func _gear_line(name: String, value: String) -> Control:
 
 func _open_new_game() -> void:
 	var fresh := _ensure_game()
-	var box := _open_overlay("New game")
-	var brand := db.branding()
-	if str(brand.get("title", "")) != "":
-		box.add_child(FsTheme.label(str(brand.title), 34, FsTheme.ACCENT))
-	if str(brand.get("subtitle", "")) != "":
-		box.add_child(FsTheme.label(str(brand.subtitle), 17, FsTheme.TEXT_DIM))
-	var name := LineEdit.new()
-	name.text = "Player"
-	name.placeholder_text = "Character name"
-	box.add_child(FsTheme.heading("Name"))
-	box.add_child(name)
-	var pronouns := OptionButton.new()
-	for label in ["He / him", "She / her", "They / them"]:
-		pronouns.add_item(label)
-	box.add_child(FsTheme.heading("Pronouns"))
-	box.add_child(pronouns)
-	# The game's own questions (creation rules): each a menu of answers.
-	var answers := {}
-	for q: Dictionary in CreationSystem.questions(game):
-		answers[q.id] = q.default
-		box.add_child(_creation_row(q.title, q.options.map(func(o): return o.label),
-			q.options.map(func(o): return o.description), q.options.map(func(o): return o.enabled), q.default,
-			func(i: int): answers[q.id] = i))
-	for f: Dictionary in CreationSystem.feat_choices(game):
-		var ids: Array = f.feats.map(func(x): return x.id)
-		var pick := maxi(0, ids.find(f.default))
-		if not ids.is_empty():
-			answers["feat " + str(f.group)] = ids[pick]
-			box.add_child(_creation_row("%s feat" % str(f.group).capitalize(), f.feats.map(func(x): return x.name),
-				f.feats.map(func(x): return x.description), f.feats.map(func(_x): return true), pick,
-				func(i: int): answers["feat " + str(f.group)] = ids[i]))
-	var chosen_modes: Array = []
-	for m: Dictionary in CreationSystem.modes(game):
-		var toggle := CheckBox.new()
-		toggle.text = str(m.name)
-		toggle.tooltip_text = str(m.description)
-		toggle.toggled.connect(func(on: bool):
-			if on and m.id not in chosen_modes:
-				chosen_modes.append(m.id)
-			elif not on:
-				chosen_modes.erase(m.id))
-		box.add_child(toggle)
-		if str(m.description) != "":
-			box.add_child(FsTheme.label(str(m.description), 14, FsTheme.TEXT_DIM))
 	# Automated screenshots use the defaults, not this player's remembered choices.
 	if shot_path == "" and fresh:
 		_load_content_prefs()
-	for id in game.content.all_of("scenario"):
-		box.add_child(FsTheme.heading("Scenario: " + game.content.typed_value("scenario", id, "name", id)))
-		box.add_child(FsTheme.label(game.content.typed_value("scenario", id, "description"), 17))
-	box.add_child(FsTheme.section("Content"))
-	var content_panel := _content_settings_panel()
-	content_panel.visible = false
-	var summary := FsTheme.label(_content_summary(), 15, FsTheme.TEXT_DIM)
-	box.add_child(summary)
-	box.add_child(content_panel)
-	content_panel.child_entered_tree.connect(func(_c: Node): summary.text = _content_summary())
-	content_toggle = Button.new()
-	content_toggle.text = "Content settings"
-	_button_icon(content_toggle, "settings")
-	content_toggle.toggle_mode = true
-	content_toggle.toggled.connect(func(on: bool):
-		content_panel.visible = on
-		if on:
-			_scroll_to.call_deferred(summary))
-	for id in game.content.all_of("scenario"):
-		var start_button := Button.new()
-		start_button.text = "Start — " + game.content.typed_value("scenario", id, "name", id)
-		start_button.pressed.connect(func():
-			_close_overlay()
-			_hide_title()
-			_save_content_prefs()
-			game.settings.mode = chosen_modes.duplicate()
-			game.start_scenario(id, name.text.strip_edges() if name.text.strip_edges() != "" else "Player",
-				["he", "she", "they"][pronouns.selected], answers)
-			_drain())
-		overlay_footer.add_child(start_button)
-	overlay_footer.add_child(content_toggle)
+	var view := get_viewport_rect().size
+	var heading := "New game"
+	var brand := db.branding()
+	if str(brand.get("title", "")) != "":
+		heading = "New game  ·  " + str(brand.title)
+	var box := _open_overlay(heading, true, Vector2(minf(1280, view.x - 60), minf(800, view.y - 50)))
+	overlay_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	overlay_footer.visible = false
+	box.size_flags_vertical = SIZE_EXPAND_FILL
+	new_game = NewGameScreen.new(game, _content_settings_panel, _content_summary, _pack_image)
+	box.add_child(new_game)
+	new_game.begin.connect(func(scenario: String, player_name: String, pronouns: String, answers: Dictionary, modes: Array):
+		_close_overlay()
+		_hide_title()
+		_save_content_prefs()
+		game.settings.mode = modes.duplicate()
+		game.start_scenario(scenario, player_name, pronouns, answers)
+		_drain())
 
 
 func _open_settings() -> void:
@@ -2770,6 +2716,14 @@ func _take_screenshot() -> void:
 				_quicksave()
 			"title":
 				_show_title()
+			"step":
+				# "step 3": the new-game screen's third step.
+				if new_game != null and is_instance_valid(new_game):
+					new_game.go_to_step(int(arg) - 1)
+			"pick":
+				# "pick 2": the second card or chip on the new-game screen's step.
+				if new_game != null and is_instance_valid(new_game):
+					new_game.handle_key(KEY_1 + int(arg) - 1)
 			"theme":
 				# "theme light" / "theme dark", as the sun and moon on the main menu.
 				_set_theme(arg == "light")
@@ -2798,8 +2752,8 @@ func _take_screenshot() -> void:
 					"credits": _open_credits()
 					"menu": _open_pause()
 					"content":
-						if content_toggle != null and is_instance_valid(content_toggle):
-							content_toggle.button_pressed = true
+						if new_game != null and is_instance_valid(new_game):
+							new_game.show_content()
 			_:
 				_act(parts[0], arg)
 	for i in 30:
