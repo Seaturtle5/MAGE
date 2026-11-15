@@ -17,7 +17,7 @@ const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He"
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
 	"lower breast curve", "marks", "gear description", "companions description"]
 const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "strength", "dexterity", "stamina",
-	"charisma", "intelligence", "perception", "hunger", "thirst", "morale", "libido", "humanity", "lust",
+	"charisma", "intelligence", "perception", "hunger", "thirst",
 	"cocks", "cunts", "nipples", "name", "heat", "pregnancy", "balls", "cock", "cunt", "sterile", "fatigue",
 	"capacity", "carried_weight", "scale", "gender_look", "style", "breasts", "pronouns",
 	"heat_turns", "heat_paused", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration",
@@ -734,12 +734,27 @@ func _check_vore() -> void:
 
 ## Level rules, feats offered on levels, interests and combat rules.
 func _check_levels() -> void:
-	for type in ["level_rules", "combat_rules", "hunt_rules"]:
+	for type in ["level_rules", "combat_rules", "hunt_rules", "infection_rules"]:
 		var defs: Dictionary = db.all_of(type)
 		for id in defs.keys().slice(1):
 			var d := db.get_def(type, id)
 			_path = d.path
 			_warn(d.line, "Only one %s is used (%s); this one is ignored." % [type, defs.keys()[0]])
+	# Infection rules: conditions, "N in M" chances and whole-number caps.
+	for id in db.all_of("infection_rules"):
+		var d := db.get_def("infection_rules", id)
+		_path = d.path
+		for name in d.field_order:
+			var f: FscParser.Field = d.fields[name]
+			if name == "source":
+				continue
+			if name.ends_with(" when"):
+				_check_condition_text(f.value, f.line, "infection_rules:" + id)
+			elif name.ends_with(" chance"):
+				if not RegEx.create_from_string("^\\d+ in \\d+$").search(f.value):
+					_err(f.line, "%s is written 'N in M'." % name.capitalize())
+			elif not f.value.is_valid_int():
+				_err(f.line, "%s must be a whole number." % name.capitalize())
 	for id in db.all_of("combat_rules"):
 		var d := db.get_def("combat_rules", id)
 		_path = d.path
@@ -1568,6 +1583,10 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"species_contains":
 			if c.who != "player":
 				_need(c.who, "character", line)
+		"species_same":
+			for w in [c.who, c.other]:
+				if w != "player":
+					_need(w, "character", line)
 		"at_flagged":
 			if c.who != "player":
 				_need(c.who, "character", line)
@@ -1643,9 +1662,9 @@ func _check_character_fields(d: FscParser.Definition) -> void:
 			"text":
 				_need(p.value, "form", p.line)
 	for p in CharacterSystem.pairs(d, "stats"):
-		if not CharacterSystem.STATS.has(p.key):
+		if p.key == "hp" or not RegEx.create_from_string("^[a-z][a-z ]*$").search(p.key):
 			var hint := " A character's story stage is a value of its own; fighting health is 'max hp'." if p.key == "hp" else ""
-			_err(p.line, "Unknown stat '%s'. Known: %s.%s" % [p.key, ", ".join(CharacterSystem.STATS.keys()), hint])
+			_err(p.line, "Stat '%s' can't be used: a stat is a lowercase word or words (the engine's own: %s).%s" % [p.key, ", ".join(CharacterSystem.STATS.keys()), hint])
 		elif not p.value.is_valid_int():
 			_err(p.line, "Stat %s must be a whole number." % p.key)
 	for p in CharacterSystem.pairs(d, "relationship"):

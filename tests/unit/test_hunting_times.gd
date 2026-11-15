@@ -101,9 +101,9 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	for name: String in {"pack.fsc": "== pack p\nname: Test\n", "woods.fsc": PACK}:
+	for name: String in {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "woods.fsc": PACK}:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
-		fa.store_string({"pack.fsc": "== pack p\nname: Test\n", "woods.fsc": PACK}[name])
+		fa.store_string({"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "woods.fsc": PACK}[name])
 		fa.close()
 	var db := ContentDB.new()
 	db.load_folders([ROOT])
@@ -259,9 +259,9 @@ if player parts are all unicorn:
     Hi.
 ~ player.hp = 3 turns ago
 """
-	for name: String in {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}:
+	for name: String in {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
-		fa.store_string({"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}[name])
+		fa.store_string({"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}[name])
 		fa.close()
 	var db := ContentDB.new()
 	db.load_folders([ROOT + "_bad"])

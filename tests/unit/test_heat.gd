@@ -103,7 +103,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "heat.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "heat.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -255,7 +255,7 @@ func test_heat_is_paused_and_skipped_in_fights() -> void:
 func test_heat_definitions_are_validated() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_bad/p")
 	var bad := "== heat h\ncycle: 2\nduration: 5\nfemale: maybe\n\n== heat_rules r\ndefault: nothing\nintense lengthens: often\nfemale when: player is grumpy\n\n== form f\nname: F\nheat: missing\n"
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

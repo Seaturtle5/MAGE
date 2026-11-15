@@ -58,6 +58,8 @@ static var _rules: Array = [
 	["at_flagged", RegEx.create_from_string("^(\\w+) is (not )?at a place flagged ([a-z][a-z ]*)$")],
 	# "player parts are all human, herm_human": every body part has one of these forms.
 	["parts_all", RegEx.create_from_string("^(\\w+) parts are (not )?all (\\w+(?:, ?\\w+)*)$")],
+	# "player torso species is not player head species": two parts' strains have the same name.
+	["species_same", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) species is (not )?(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) species$")],
 	# "player tail species contains wolf": the name of the part's strain contains the text.
 	["species_contains", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) species (contains|does not contain) ([a-z][a-z ]*)$")],
 	["part_tagged", RegEx.create_from_string("^(\\w+) (head|torso|back|arms|legs|ass|tail|cock|cunt|skin|body|face) is (not )?tagged (\\w+)$")],
@@ -270,6 +272,9 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "at_flagged", "who": m.get_string(1), "flag": m.get_string(3).strip_edges(), "neg": m.get_string(2) != ""}
 			"parts_all":
 				return {"op": "parts_all", "who": m.get_string(1), "forms": Array(m.get_string(3).split(",")).map(func(x): return x.strip_edges()), "neg": m.get_string(2) != ""}
+			"species_same":
+				return {"op": "species_same", "who": m.get_string(1), "part": m.get_string(2), "neg": m.get_string(3) != "",
+					"other": m.get_string(4), "other_part": m.get_string(5)}
 			"species_contains":
 				return {"op": "species_contains", "who": m.get_string(1), "part": m.get_string(2), "text": m.get_string(4).strip_edges(), "neg": m.get_string(3) != "contains"}
 			"part_tagged":

@@ -34,15 +34,16 @@ static func infect(game, form: String, all: bool = false, keep_sex: bool = false
 		_breasts(game, form, true)
 		_attributes(game, form)
 		_set_sex_targets(game, form)
-		game.set_value("player.libido", int(game.content.typed_value("form", form, "libido", "0")))
+		if game.role("arousal") != "":
+			game.set_value(game.role("arousal"), int(game.content.typed_value("form", form, "libido", "0")))
 		return
-	if _has(game, "resistant") and game.rng.chance(1, 3):
-		_say(game, "Your nanites['] programmed resistance to change prevents further mutation.")
+	if rule(game, "resists when") and _rule_chance(game, "resist chance"):
+		_snippet(game, "infection_resisted")
 	else:
 		_roll(game, form, keep_sex)
-		if _has(game, "mutable") and game.rng.chance(1, 2):
+		if rule(game, "changes twice when") and _rule_chance(game, "twice chance"):
 			_roll(game, form, keep_sex)
-	if _has(game, "mighty_mutation"):
+	if rule(game, "stats follow when"):
 		_stat_drift(game, form)
 	_libido_drift(game, form)
 
@@ -82,8 +83,8 @@ static func grow(game, part: String, amount: int) -> void:
 				return
 			var before := _num(game, "cock.length")
 			var length := before + amount
-			if _has(game, "modest_organs"):
-				length = mini(length, maxi(before, 8))
+			if rule(game, "modest when"):
+				length = mini(length, maxi(before, _cap(game, "modest cock length")))
 			if length > before:
 				_setn(game, "cock.length", length)
 				_snippet(game, "infection_cock_grows")
@@ -92,17 +93,17 @@ static func grow(game, part: String, amount: int) -> void:
 				return
 			var before := _num(game, "balls.size")
 			var size := mini(before + amount, 7)
-			if _has(game, "modest_organs"):
-				size = mini(size, maxi(before, 3))
+			if rule(game, "modest when"):
+				size = mini(size, maxi(before, _cap(game, "modest ball size")))
 			if size > before:
 				_setn(game, "balls.size", size)
 				_snippet(game, "infection_balls_grow")
 		"breasts":
-			if _has(game, "flat_chested") or _num(game, "breasts.size") > 25:
+			if rule(game, "flat chest when") or _num(game, "breasts.size") > 25:
 				return
-			var before_text := TextTemplate.plain(game.render(TextTemplate.compile("[breast_size_desc]", "grow.breasts")))
+			game.set_value("infection.before", TextTemplate.plain(game.render(TextTemplate.compile("[breast_size_desc]", "grow.breasts"))))
 			_setn(game, "breasts.size", mini(_num(game, "breasts.size") + amount, 26))
-			_say(game, "You [one of]groan and grab at your chest[or]give a loud moan, shuddering[or]almost tip forward in surprise[or]look down fearfully as sensation builds[at random], [skin] skin glistening as your %s breasts become [breast_size_desc] [one of]orbs[or]breasts[or]jugs[or]tits[at random]!" % before_text)
+			_snippet(game, "infection_breasts_change")
 
 
 ## One part takes a form at once, without a message ("~ transform skin into X").
@@ -141,8 +142,34 @@ static func _attributes(game, form: String) -> void:
 	game.state.values.erase("player.scale")  # the form gives the size from now on
 
 
-static func _has(game, feat: String) -> bool:
-	return feat in game.state.feats
+## The game's infection rules (one `== infection_rules`): conditions that change
+## how infection treats the player's body. A missing condition is false (or the
+## given fallback), so without rules infection follows its plain course.
+static func rule(game, field: String, fallback: bool = false) -> bool:
+	var defs: Dictionary = game.content.all_of("infection_rules")
+	if defs.is_empty():
+		return fallback
+	var text: String = game.content.typed_value("infection_rules", str(defs.keys()[0]), field, "")
+	if text == "":
+		return fallback
+	return Condition.evaluate(Condition.compile(text), game)
+
+
+static func _rule_text(game, field: String) -> String:
+	var defs: Dictionary = game.content.all_of("infection_rules")
+	return "" if defs.is_empty() else game.content.typed_value("infection_rules", str(defs.keys()[0]), field, "")
+
+
+## "N in M" from the rules, rolled; a missing chance always happens.
+static func _rule_chance(game, field: String) -> bool:
+	var m := RegEx.create_from_string("^(\\d+) in (\\d+)$").search(_rule_text(game, field))
+	return m == null or game.rng.chance(int(m.get_string(1)), int(m.get_string(2)))
+
+
+## A modest cap from the rules (no cap when missing).
+static func _cap(game, field: String) -> int:
+	var text := _rule_text(game, field)
+	return int(text) if text.is_valid_int() else 1 << 30
 
 
 ## The original's preference adjectives (Feats.i7x:36-52).
@@ -165,18 +192,10 @@ static func target_sex(game, form: String) -> String:
 	return str(game.state.values.get("form.%s.sex" % form, game.content.typed_value("form", form, "sex", "")))
 
 
+## The player prefers a sex for infection to move toward ("male", "female",
+## "herm"): the infection rules' `prefers <sex> when`.
 static func _prefers(game, sex: String) -> bool:
-	var m := _has(game, "male_preferred")
-	var f := _has(game, "female_preferred")
-	var h := _has(game, "herm_preferred")
-	match sex:
-		"male":
-			return m and not f and not h
-		"female":
-			return f and not m and not h
-		"herm":
-			return (h or (_has(game, "always_cocky") and _has(game, "always_a_pussy"))) and not m and not f and not _has(game, "single_sexed")
-	return false
+	return sex in ["male", "female", "herm"] and rule(game, "prefers %s when" % sex)
 
 
 static func _num(game, path: String) -> int:
@@ -198,12 +217,16 @@ static func _sex(game, form: String) -> void:
 	var maleish := sex in ["male", "herm"]
 	var femaleish := sex in ["female", "herm"]
 	var single := 0
-	if _has(game, "single_sexed"):
+	if rule(game, "single sex when"):
 		single = 1 if game.adjective("player", "herm") else 2 if game.adjective("player", "male") else 3 if game.adjective("player", "female") else 0
-	var modest := _has(game, "modest_organs")
-	var one_way := _has(game, "one_way")
-	var keep_male := _prefers(game, "male") or _prefers(game, "herm") or _has(game, "always_cocky")
-	var keep_female := _prefers(game, "female") or _prefers(game, "herm") or _has(game, "always_a_pussy")
+	var modest := rule(game, "modest when")
+	var one_way := rule(game, "one way when")
+	var keep_male := _prefers(game, "male") or _prefers(game, "herm") or rule(game, "keeps cock when")
+	var keep_female := _prefers(game, "female") or _prefers(game, "herm") or rule(game, "keeps cunt when")
+	var cap_cock := _cap(game, "modest cock length")
+	var cap_balls := _cap(game, "modest ball size")
+	var cap_depth := _cap(game, "modest cunt depth")
+	var cap_tight := _cap(game, "modest cunt tightness")
 	if maleish:
 		var target := _target(game, form, "cock", "length")
 		var length := _num(game, "cock.length")
@@ -211,7 +234,7 @@ static func _sex(game, form: String) -> void:
 			length += 1
 			length += (target - length) / 3
 			if modest:
-				length = mini(length, 8)
+				length = mini(length, cap_cock)
 			if length > _num(game, "cock.length"):
 				_setn(game, "cock.length", length)
 				_snippet(game, "infection_cock_grows")
@@ -221,14 +244,14 @@ static func _sex(game, form: String) -> void:
 			if keep_male:
 				length = maxi(length, 5)
 			if modest:
-				length = mini(length, 8)
+				length = mini(length, cap_cock)
 			if length < _num(game, "cock.length"):
 				_setn(game, "cock.length", length)
 				_snippet(game, "infection_cock_shrinks")
 		var balls := _num(game, "balls.size")
 		var balls_target := _target(game, form, "balls", "size")
 		if balls < balls_target and game.adjective("player", "male") and not _prefers(game, "female"):
-			balls = mini(balls + 1, 3) if modest else balls + 1
+			balls = mini(balls + 1, cap_balls) if modest else balls + 1
 			if balls > _num(game, "balls.size"):
 				_setn(game, "balls.size", balls)
 				_snippet(game, "infection_balls_grow")
@@ -237,7 +260,7 @@ static func _sex(game, form: String) -> void:
 			if keep_male:
 				balls = maxi(balls, 3)
 			if modest:
-				balls = mini(balls, 3)
+				balls = mini(balls, cap_balls)
 			if balls < _num(game, "balls.size"):
 				_setn(game, "balls.size", balls)
 				_snippet(game, "infection_balls_shrink")
@@ -249,8 +272,8 @@ static func _sex(game, form: String) -> void:
 				_setn(game, "cock.length", 1 + target / 3)
 				_setn(game, "balls.size", 1)
 				if modest:
-					_setn(game, "cock.length", mini(_num(game, "cock.length"), 8))
-			elif game.rng.chance(2, 3) and not _has(game, "just_one"):
+					_setn(game, "cock.length", mini(_num(game, "cock.length"), cap_cock))
+			elif game.rng.chance(2, 3) and not rule(game, "just one when"):
 				_setn(game, "cocks", before + 1)
 			if _num(game, "cocks") > before:
 				_snippet(game, "infection_cock_appears")
@@ -273,10 +296,10 @@ static func _sex(game, form: String) -> void:
 				if new_length < 1 or new_balls < 1:
 					_snippet(game, "infection_male_lost")
 					_remove(game, "cock")
-			if _num(game, "cocks") > 1 and game.rng.chance(2, 5) and not _has(game, "all_the_things"):
+			if _num(game, "cocks") > 1 and game.rng.chance(2, 5) and not rule(game, "keeps extras when"):
 				_snippet(game, "infection_cock_vanishes")
 				_setn(game, "cocks", _num(game, "cocks") - 1)
-		elif _num(game, "cocks") > _target(game, form, "cock", "count") and game.rng.chance(1, 3) and not _has(game, "all_the_things"):
+		elif _num(game, "cocks") > _target(game, form, "cock", "count") and game.rng.chance(1, 3) and not rule(game, "keeps extras when"):
 			_snippet(game, "infection_extra_cock_vanishes")
 			_setn(game, "cocks", _num(game, "cocks") - 1)
 	if femaleish:
@@ -286,7 +309,7 @@ static func _sex(game, form: String) -> void:
 			depth += 1
 			depth += (target - depth) / 3
 			if modest:
-				depth = mini(depth, 8)
+				depth = mini(depth, cap_depth)
 			if depth > _num(game, "cunt.depth"):
 				_setn(game, "cunt.depth", depth)
 				_snippet(game, "infection_cunt_deepens")
@@ -296,7 +319,7 @@ static func _sex(game, form: String) -> void:
 			if keep_female:
 				depth = maxi(depth, 5)
 			if modest:
-				depth = mini(depth, 8)
+				depth = mini(depth, cap_depth)
 			if depth < _num(game, "cunt.depth"):
 				_setn(game, "cunt.depth", depth)
 				_snippet(game, "infection_cunt_shallows")
@@ -306,7 +329,7 @@ static func _sex(game, form: String) -> void:
 			tight += 1
 			tight += (tight_target - tight) / 3
 			if modest:
-				tight = mini(tight, 5)
+				tight = mini(tight, cap_tight)
 			if tight > _num(game, "cunt.tightness"):
 				_setn(game, "cunt.tightness", tight)
 				_snippet(game, "infection_cunt_widens")
@@ -316,7 +339,7 @@ static func _sex(game, form: String) -> void:
 			if keep_female:
 				tight = maxi(tight, 3)
 			if modest:
-				tight = mini(tight, 5)
+				tight = mini(tight, cap_tight)
 			if tight < _num(game, "cunt.tightness"):
 				_setn(game, "cunt.tightness", tight)
 				_snippet(game, "infection_cunt_tightens")
@@ -328,9 +351,9 @@ static func _sex(game, form: String) -> void:
 				_setn(game, "cunt.depth", 1 + target / 3)
 				_setn(game, "cunt.tightness", 1 + tight_target / 3)
 				if modest:
-					_setn(game, "cunt.depth", mini(_num(game, "cunt.depth"), 8))
+					_setn(game, "cunt.depth", mini(_num(game, "cunt.depth"), cap_depth))
 					_setn(game, "cunt.tightness", mini(_num(game, "cunt.tightness"), 5))
-			elif game.rng.chance(2, 3) and not _has(game, "just_one"):
+			elif game.rng.chance(2, 3) and not rule(game, "just one when"):
 				_setn(game, "cunts", before + 1)
 			if _num(game, "cunts") > before:
 				_snippet(game, "infection_cunt_appears")
@@ -354,10 +377,10 @@ static func _sex(game, form: String) -> void:
 				if new_depth < 1 or new_tight < 1:
 					_snippet(game, "infection_female_lost")
 					_remove(game, "cunt")
-			if _num(game, "cunts") > 1 and game.rng.chance(2, 5) and not _has(game, "all_the_things"):
+			if _num(game, "cunts") > 1 and game.rng.chance(2, 5) and not rule(game, "keeps extras when"):
 				_snippet(game, "infection_cunt_vanishes")
 				_setn(game, "cunts", _num(game, "cunts") - 1)
-		elif _num(game, "cunts") > _target(game, form, "cunt", "count") and game.rng.chance(1, 3) and not _has(game, "all_the_things"):
+		elif _num(game, "cunts") > _target(game, form, "cunt", "count") and game.rng.chance(1, 3) and not rule(game, "keeps extras when"):
 			_snippet(game, "infection_cunt_vanishes")
 			_setn(game, "cunts", _num(game, "cunts") - 1)
 
@@ -380,11 +403,11 @@ static func _breasts(game, form: String, quiet: bool = false) -> void:
 	var nipples := _num(game, "nipples")
 	var nipple_target := int(data.get("nipples", "0"))
 	if nipples != nipple_target:
-		if (nipple_target > nipples and not _has(game, "one_pair")) or (nipples == 0 and nipple_target > 0):
+		if (nipple_target > nipples and not rule(game, "nipples stay when")) or (nipples == 0 and nipple_target > 0):
 			_setn(game, "nipples", nipples + 2)
 			if not quiet:
 				_snippet(game, "infection_breasts_appear")
-		elif nipple_target < nipples and not _has(game, "bouncy_bouncy"):
+		elif nipple_target < nipples and not rule(game, "nipples keep when"):
 			if not quiet:
 				_snippet(game, "infection_breasts_vanish")
 			_setn(game, "nipples", nipples - 2)
@@ -395,13 +418,13 @@ static func _breasts(game, form: String, quiet: bool = false) -> void:
 	var grow_ok := true
 	if sex in ["female", "herm"]:
 		target = int(data.get("size", "0"))
-		grow_ok = (not _has(game, "male_preferred") or _has(game, "breasts")) and not _has(game, "flat_chested")
+		grow_ok = rule(game, "breasts grow when", true)
 	elif sex == "male":
 		target = int(data.get("male size", "0"))
-		if _has(game, "breasts"):
+		if rule(game, "male breasts when"):
 			if target == 0:
 				target = int(data.get("size", "0"))
-		elif _has(game, "male_preferred") or _has(game, "flat_chested"):
+		elif rule(game, "male flat when"):
 			target = 0
 	if target < 0:
 		return
@@ -410,14 +433,15 @@ static func _breasts(game, form: String, quiet: bool = false) -> void:
 	if size < target and grow_ok:
 		size += 1
 		size += (target - size) / 3
-	elif size > target and not _has(game, "one_way"):
+	elif size > target and not rule(game, "one way when"):
 		size -= 1
 		size -= (size - target) / 3
 	else:
 		return
 	_setn(game, "breasts.size", size)
 	if not quiet:
-		_say(game, "You [one of]groan and grab at your chest[or]give a loud moan, shuddering[or]almost tip forward in surprise[or]look down fearfully as sensation builds[at random], [skin] skin glistening as your %s breasts become [breast_size_desc] [one of]orbs[or]breasts[or]jugs[or]tits[at random]!" % before_text)
+		game.set_value("infection.before", before_text)
+		_snippet(game, "infection_breasts_change")
 
 
 ## For transform effects: the form's numbers at once.
@@ -444,7 +468,7 @@ static func _stat_drift(game, form: String) -> void:
 	var name: String = game.content.typed_value("form", form, "name", form).to_lower()
 	var have := int(game.value("player." + stat))
 	if have > int(targets[stat]):
-		if game.rng.chance(1, 10) and not _has(game, "bestial_power") and game.rng.chance(1, 2):
+		if game.rng.chance(1, 10) and not rule(game, "stats keep when") and game.rng.chance(1, 2):
 			_snippet(game, "infection_%s_down" % stat)
 			game.change_value("player." + stat, -1)
 	else:
@@ -452,16 +476,19 @@ static func _stat_drift(game, form: String) -> void:
 		game.change_value("player." + stat, 1)
 
 
-## Libido moves toward the form's (Infections.i7x:480-490).
+## The value playing arousal moves toward the form's libido (Infections.i7x:480-490).
 static func _libido_drift(game, form: String) -> void:
+	var path: String = game.role("arousal")
+	if path == "":
+		return
 	var target := int(game.content.typed_value("form", form, "libido", "0"))
-	var old := int(game.value("player.libido"))
+	var old: int = game.role_number("arousal")
 	if old >= target:
 		return
 	var lib := old + 1
 	lib += (target - lib) / 3
-	game.set_value("player.libido", lib)
-	lib = int(game.value("player.libido"))
+	game.set_value(path, lib)
+	lib = game.role_number("arousal")
 	if old < 80 and lib > 79:
 		_snippet(game, "infection_libido_80")
 	elif old < 50 and lib > 49:

@@ -8,7 +8,7 @@ extends RefCounted
 ## limit (`up to 0`, `down to 5`).
 
 const SURVIVAL := ["drink", "eat", "heal", "hurt"]
-const PLAYER_STATS := ["humanity", "libido", "morale", "xp", "score", "hp", "hunger", "thirst",
+const PLAYER_STATS := ["xp", "score", "hp", "hunger", "thirst",
 	"strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]
 
 static var _cache: Dictionary = {}
@@ -101,7 +101,8 @@ static var _rules: Array = [
 	["pregnancy_faster", RegEx.create_from_string("^pregnancy faster by (\\d+)$")],
 	["extend_heat", RegEx.create_from_string("^extend heat by (\\d+) turns?$")],
 	["survival", RegEx.create_from_string("^(drink|eat|heal|hurt) (.+)$")],
-	["stat", RegEx.create_from_string("^(humanity|libido|morale|hunger|thirst|xp|score) ([+-]) (.+)$")],
+	# "~ hunger + 5", "~ humanity - 3": a player value by its short name (any the engine or a pack declares).
+	["stat", RegEx.create_from_string("^([a-z_]+) ([+-]) (.+)$")],
 	["extend_game", RegEx.create_from_string("^extend game by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],

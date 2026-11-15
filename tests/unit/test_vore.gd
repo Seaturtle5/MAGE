@@ -137,7 +137,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "vore.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "vore.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -291,7 +291,7 @@ func test_conditions_and_values() -> void:
 func test_vore_rules_are_validated() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_bad/p")
 	var bad := "== vore_rules r\nvore when: player is grumpy\nvore chance: 3 +\nunbirth gestation: soon\nvore chance modifiers:\n    nonsense\n\n== creature c\nname: C\nhp: 3\nvore when: player is sleepy\n\n== scene s\nif enemy is tagged nosuch:\n    Hm.\n~ vore enemy\n"
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

@@ -28,7 +28,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "s.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "s.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

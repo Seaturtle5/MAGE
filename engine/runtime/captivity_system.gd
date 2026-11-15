@@ -18,7 +18,13 @@ extends RefCounted
 
 const VALUES := ["lust", "struggle", "round", "enduring", "obliging", "recover", "segment", "mod", "mod2",
 	"counter", "timer"]
-const DEFAULT_OBLIGING := "player.hp > 0 or player.humanity < 50"
+## Obliging (rather than abiding) by default: while the player has health, or
+## while the value playing sanity is below half its top.
+static func default_obliging(game) -> String:
+	var sanity: String = game.role("sanity")
+	if sanity == "":
+		return "player.hp > 0"
+	return "player.hp > 0 or %s < %d" % [sanity, int(game.content.values[sanity].get("max", 100)) / 2]
 
 
 static func field(game, id: String, name: String, fallback: String = "") -> String:
@@ -32,7 +38,7 @@ static func reset(game) -> void:
 
 static func begin(game, id: String) -> void:
 	reset(game)
-	game.state.values["captivity.lust"] = int(game.value("player.libido"))
+	game.state.values["captivity.lust"] = game.role_number("arousal")
 	game.state.values["captivity.recover_chance"] = -1
 	game.captivity_exit = ""
 
@@ -71,8 +77,10 @@ static func status_line(game, id: String) -> String:
 		return "" if t.has("error") else TextTemplate.plain(game.render(t))
 	var width := maxi(1, escape_at(game, id) - 1) if field(game, id, "escape at") != "" else maxi(1, number(game, "struggle"))
 	var done := clampi(number(game, "struggle"), 0, width)
-	return "Sanity: %d/100   Lust: %d/%s   Hunger: %d   Thirst: %d   Struggle: [%s%s]" % [
-		int(game.value("player.humanity")), number(game, "lust"), field(game, id, "climax at", "100"),
+	var sanity: String = game.role("sanity")
+	var head := ("Sanity: %d/%d   " % [game.role_number("sanity"), int(game.content.values[sanity].get("max", 100))]) if sanity != "" else ""
+	return head + "Lust: %d/%s   Hunger: %d   Thirst: %d   Struggle: [%s%s]" % [
+		number(game, "lust"), field(game, id, "climax at", "100"),
 		int(game.value("player.hunger")), int(game.value("player.thirst")),
 		"-".repeat(width - done), "X".repeat(done)]
 

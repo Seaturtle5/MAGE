@@ -80,7 +80,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "e.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "e.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -155,7 +155,7 @@ func test_the_rescue_ends_the_game_with_its_sentence() -> void:
 
 func test_an_ending_in_the_middle_of_a_scene_stops_the_scene() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_mid/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "m.fsc": "== location room\nname: Room\ndescription: R.\n\n== scene trap\nThe floor gives way.\n~ ending fell\nAFTER\n"}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "m.fsc": "== location room\nname: Room\ndescription: R.\n\n== scene trap\nThe floor gives way.\n~ ending fell\nAFTER\n"}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_mid/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -205,7 +205,7 @@ func test_plural_items_are_picked_up_as_them() -> void:
 func test_endings_are_validated() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_bad/p")
 	var bad := "== ending e\npriority: soon\ntype: bad end\nwhen: player is grumpy\n\n== scene s\n~ trigger ending nothing_here\nif ending nowhere is triggered:\n    Hm.\n\n== status_bar b\nmeters: hp, sparkle\n"
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

@@ -158,7 +158,7 @@ static func act(game, action: String) -> bool:
 				var hit := _roll(game, "Seduce", int(game.value("player.perception")) + level * 2 + bonus_of(game, "seduce_bonus") - defense - int(c.penalty))
 				if hit and not immune:
 					var gain: int = (int(game.value("player.charisma")) / 3) * game.rng.range_int(70, 130) / 100
-					if game.rng.chance(int(game.value("player.morale")), 200):
+					if game.rng.chance(game.role_number("morale"), 200):
 						gain *= 2
 					c.libido = int(c.libido) + gain
 					game.notice("Enemy lust +%d." % gain, false)
@@ -210,7 +210,7 @@ static func player_attack(game) -> void:
 	var stat_name := "perception" if w.type == "ranged" else "strength"
 	damage += (int(game.value("player." + stat_name)) - 10) / 2 + ItemSystem.bonus(game, "damage bonus") + bonus_of(game, "damage_bonus")
 
-	var motivated: bool = game.rng.chance(int(game.value("player.morale")), 200)
+	var motivated: bool = game.rng.chance(game.role_number("morale"), 200)
 	if motivated:
 		damage *= 2
 	c.hp = int(c.hp) - maxi(0, damage)
@@ -327,8 +327,11 @@ static func _standard_turn(game, id: String) -> void:
 		var level := number(game, id, "level", 1)
 		var damage: int = number(game, id, "damage", 3) * (spread(game, id) + 30 + 2 * level) / 100
 		_text(game, id, "hump", "You are grabbed by your opponent, who grinds against your body. The scent momentarily entices your infected body, and your drive to keep resisting wanes. You take %d damage!" % damage)
-		var lust: int = game.rng.range_int(2, 6) + (1 if "horny_bastard" in game.state.feats else 0) - (1 if "cold_fish" in game.state.feats else 0)
-		game.set_value("player.libido", int(game.value("player.libido")) + lust)
+		# The rules' `hump lust` (an expression) raises the value playing arousal.
+		var lust_expr := Expr.parse(rule(game, "hump lust", "0"))
+		var lust: int = 0 if lust_expr.has("error") else Expr._num(Expr.evaluate(lust_expr, game))
+		if game.role("arousal") != "":
+			game.set_value(game.role("arousal"), game.role_number("arousal") + lust)
 		strike(game, damage, "normal", false)
 		return
 	# Alt Combat.i7x, ftaurpounce rule: double damage, no shield.
@@ -530,14 +533,15 @@ static func _text(game, id: String, field: String, fallback: String) -> void:
 
 
 ## After the creature's turn (Alt Combat.i7x, retaliate): the player loses at
-## 0 HP or at libido 110 and above; a creature brought to 0 HP by a script loses.
+## 0 HP, or by lust when the value playing arousal reaches its in-fight top
+## (`up to N in fights` in its declaration); a creature brought to 0 HP by a script loses.
 static func _check_end(game) -> bool:
 	var c: Dictionary = game.state.combat
 	if c.result != "":
 		return true
 	if int(game.value("player.hp")) <= 0:
 		c.result = "lost"
-	elif int(game.value("player.libido")) >= 110:
+	elif _aroused_out(game):
 		c.result = "lost by lust"
 	elif int(c.hp) <= 0:
 		c.result = "won"
@@ -571,13 +575,18 @@ static func _grapple_text(game, id: String, field: String, fallback: String) -> 
 	game.notice(game.runner.render_inline(prog), false)
 
 
+## The value playing arousal has reached its in-fight top.
+static func _aroused_out(game) -> bool:
+	var path: String = game.role("arousal")
+	if path == "" or not game.content.values[path].has("fight_max"):
+		return false
+	return game.role_number("arousal") >= int(game.content.values[path].fight_max)
+
+
 static func aftermath(game, id: String, result: String) -> void:
 	var level := number(game, id, "level", 1)
 	if result.begins_with("won"):
 		game.set_value("player.xp", int(game.value("player.xp")) + level * 2)
-		game.set_value("player.morale", int(game.value("player.morale")) + 1)
-		if int(game.value("player.libido")) > 25:
-			game.set_value("player.libido", int(game.value("player.libido")) - 4)
 		drop_loot(game, id)
 	elif result.begins_with("lost"):
 		# Alt Combat.i7x:1448-1489: one infection with the creature's form, or
@@ -595,11 +604,10 @@ static func aftermath(game, id: String, result: String) -> void:
 			BodySystem.infect(game, form)
 		game.set_value("player.hp", maxi(1, int(game.value("player.hp"))))
 		game.set_value("player.xp", int(game.value("player.xp")) + level / 2)
-		game.set_value("player.score", int(game.value("player.score")) - 1)
-		game.set_value("player.morale", int(game.value("player.morale")) - 3)
-		var creature_libido := int(game.creature_field(id, "libido", "0"))
-		var rise := 4 if infectious and int(game.value("player.libido")) < creature_libido else 1
-		game.set_value("player.libido", int(game.value("player.libido")) + rise)
+		# For the rules' `lost:` script: whether this loss infected, and the libido of
+		# the creature it infected as.
+		game.state.combat.vars["infected"] = 1 if infectious else 0
+		game.state.combat.vars["infection_libido"] = int(game.creature_field(id, "libido", "0"))
 	# The game's own words and rewards after a fight (combat_rules `won:` / `lost:`,
 	# such as a money reward).
 	var rules := rules_id(game)

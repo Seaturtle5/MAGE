@@ -153,7 +153,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "preg.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "preg.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -355,7 +355,7 @@ offspring gender: mostly male
 ~ impregnate by nobody
 ~ pregnancy.impreg_ok = yes
 """
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

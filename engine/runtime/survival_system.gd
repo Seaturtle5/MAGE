@@ -80,8 +80,8 @@ static func tick(game) -> void:
 			for key in ["hunger", "thirst"]:
 				var value := int(game.value("player." + key))
 				say(game, above(game, key + " warnings", value))
-				if value > 30:
-					game.set_value("player.morale", int(game.value("player.morale")) - (value - 30) / 5)
+				if value > 30 and game.role("morale") != "":
+					game.set_value(game.role("morale"), game.role_number("morale") - (value - 30) / 5)
 				if value > 99:
 					_end(game, key, text(game, key + " death", "You have died of %s." % key))
 					return
@@ -89,9 +89,9 @@ static func tick(game) -> void:
 			if hunger > hint_at or thirst > hint_at:
 				say(game, text(game, "starving hint"))
 		var maxmorale := int(game.value("player.charisma")) + int(game.value("player.perception"))
-		if int(game.value("player.morale")) > maxmorale + int(game.value("player.level")):
+		if game.role("morale") != "" and game.role_number("morale") > maxmorale + int(game.value("player.level")):
 			say(game, text(game, "morale normalized"))
-			game.set_value("player.morale", maxmorale)
+			game.set_value(game.role("morale"), maxmorale)
 	var corruption := 0
 	for part in BodySystem.PARTS:
 		if game.part_form("player", part) != "human":
@@ -99,13 +99,15 @@ static func tick(game) -> void:
 	if corruption > 0:
 		corruption -= game.rng.range_int(0, maxi(0, (int(game.value("player.perception")) - 10) / 2))
 		corruption -= game.rng.range_int(0, maxi(0, (int(game.value("player.charisma")) - 10) / 2))
-	if corruption > 0:
-		game.set_value("player.humanity", int(game.value("player.humanity")) - corruption)
+	# Infected parts wear down the value playing sanity (the rolls above happen either way).
+	var sanity: String = game.role("sanity")
+	if corruption > 0 and sanity != "":
+		game.set_value(sanity, game.role_number("sanity") - corruption)
 		say(game, text(game, "humanity loss"))
-		if int(game.value("player.humanity")) < int(text(game, "journal hint below", "50")):
+		if game.role_number("sanity") < int(text(game, "journal hint below", "50")):
 			say(game, text(game, "journal hint"))
-	if int(game.value("player.humanity")) <= 0:
-		_end(game, "humanity", text(game, "humanity ending", "Your mind is lost to the infection."))
+	if sanity != "" and game.role_number("sanity") <= 0:
+		_end(game, sanity.get_slice(".", 1), text(game, "humanity ending", "Your sanity is lost."))
 	elif rescue_turn(game) >= 0 and game.state.turn >= rescue_turn(game):
 		_end(game, "rescue", text(game, "rescue ending", "You survived until the rescue came."))
 	elif rescue_turn(game) >= 0 and rescue_turn(game) - game.state.turn < int(text(game, "anticipation within", "20")) and game.rng.chance(1, 3):
@@ -124,8 +126,8 @@ static func rescue_turn(game) -> int:
 ## "clean thoughts.", or with a high libido "... thoughts. You are ...": the
 ## original's brain description (Characters.i7x, brain descr rule).
 static func humanity_description(game) -> String:
-	var out := _plain(game, above(game, "humanity descriptions", int(game.value("player.humanity")))) + " thoughts."
-	var lust := _plain(game, above(game, "lust descriptions", int(game.value("player.libido"))))
+	var out := _plain(game, above(game, "humanity descriptions", game.role_number("sanity"))) + " thoughts."
+	var lust := _plain(game, above(game, "lust descriptions", game.role_number("arousal")))
 	return out + (" " + lust if lust != "" else "")
 
 

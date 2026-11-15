@@ -40,14 +40,19 @@ const BODY := {
 	"tongue length": ["tongue.length", "number"],
 	"sterile": ["sterile", "flag"], "twisted capacity": ["twisted_capacity", "flag"],
 }
-## stats key -> value name (all numbers). `hp` is left to stories: the original
-## used "HP of X" for a character's story stage; fighting health is `max hp`.
+## stats key -> value name (all numbers) for the engine's own stats; any other
+## key (a game's own, such as "loyalty") becomes a number of that name. `hp` is
+## left to stories: the original used "HP of X" for a character's story stage;
+## fighting health is `max hp`.
 const STATS := {
 	"level": "level", "max hp": "maxhp", "xp": "xp", "armor": "armor", "damage": "damage",
 	"strength": "strength", "dexterity": "dexterity", "stamina": "stamina", "charisma": "charisma",
-	"intelligence": "intelligence", "perception": "perception", "libido": "libido", "lust": "lust",
-	"loyalty": "loyalty", "humanity": "humanity", "morale": "morale",
+	"intelligence": "intelligence", "perception": "perception",
 }
+
+
+static func stat_name(key: String) -> String:
+	return str(STATS.get(key, key.replace(" ", "_")))
 ## relationship key -> [value name, default]
 const RELATIONSHIP := {
 	"met": ["met", false], "romanced": ["romanced", false], "friended": ["friended", false],
@@ -90,8 +95,8 @@ static func declarations(d: FscParser.Definition) -> Dictionary:
 					v = p.value == "yes"
 			out[spec[0]] = {"kind": spec[1], "default": v, "path": d.path, "line": p.line}
 	for p in pairs(d, "stats"):
-		if STATS.has(p.key):
-			out[STATS[p.key]] = {"kind": "number", "default": int(p.value), "path": d.path, "line": p.line}
+		if p.key != "hp":
+			out[stat_name(p.key)] = {"kind": "number", "default": int(p.value), "path": d.path, "line": p.line}
 	if d.fields.has("companion"):
 		# A possible companion (CompanionSystem): its fighting numbers, whether it is
 		# tamed (can be summoned) and when it last fought.

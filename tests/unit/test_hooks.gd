@@ -4,7 +4,22 @@ extends GutTest
 
 const ROOT := "user://hook_test_packs"
 
-const PACK := """== values clock
+const PACK := """== feat modest_organs
+name: Modest Organs
+
+== feat flat_chested
+name: Flat Chested
+
+== feat male_preferred
+name: Male Preferred
+
+== infection_rules test
+prefers male when: player has feat male_preferred
+modest when: player has feat modest_organs
+modest cock length: 8
+flat chest when: player has feat flat_chested
+
+== values clock
 values:
     ticks: number
     calls: number
@@ -63,7 +78,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "hooks.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "hooks.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -96,7 +111,7 @@ func test_a_form_turn_hook_runs_while_the_player_has_that_body() -> void:
 
 func test_hooks_are_validated() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_bad/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": "== hook h\non: sometimes\nwhen: nonsense here\n"}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": "== hook h\non: sometimes\nwhen: nonsense here\n"}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

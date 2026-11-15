@@ -85,7 +85,7 @@ var game: Game
 
 func before_each() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "c.fsc": PACK}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "c.fsc": PACK}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])
@@ -182,7 +182,7 @@ func test_presence_actions_and_doings_appear_at_the_place() -> void:
 func test_character_fields_are_validated() -> void:
 	DirAccess.make_dir_recursive_absolute(ROOT + "_bad/p")
 	var bad := "== character c\nname: C\nbody:\n    tails: 2\n    cock length: long\n    sterile: maybe\n    form: nothing\nstats:\n    hp: 5\nrelationship:\n    friends: yes\n    met: sometimes\n\n== scene s\n[cock_size_desc of nobody]\n\n== text cock_size_desc\nbig\n"
-	var files := {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad}
+	var files := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad}
 	for name: String in files:
 		var fa := FileAccess.open(ROOT + "_bad/p/" + name, FileAccess.WRITE)
 		fa.store_string(files[name])

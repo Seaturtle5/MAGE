@@ -29,7 +29,17 @@ const SCHEMA := {
 	"level_rules": {"xp needed": "text", "xp needed modifiers": "fields", "levels when": "text", "level up": "script",
 		"source": "meta"},
 	"interest": {"name": "text", "description": "text", "default": "text", "group": "text", "source": "meta"},
-	"combat_rules": {"unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text",
+	# How infection treats the body (BodySystem.rule): conditions, chances, caps.
+	"infection_rules": {"resists when": "text", "resist chance": "text", "changes twice when": "text",
+		"twice chance": "text", "stats follow when": "text", "stats keep when": "text",
+		"prefers male when": "text", "prefers female when": "text", "prefers herm when": "text",
+		"single sex when": "text", "keeps cock when": "text", "keeps cunt when": "text", "modest when": "text",
+		"modest cock length": "text", "modest ball size": "text", "modest cunt depth": "text",
+		"modest cunt tightness": "text", "one way when": "text", "just one when": "text", "keeps extras when": "text",
+		"nipples stay when": "text", "nipples keep when": "text", "breasts grow when": "text",
+		"male breasts when": "text", "male flat when": "text", "flat chest when": "text",
+		"food infection blocked when": "text", "source": "meta"},
+	"combat_rules": {"unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text", "hump lust": "text",
 		"flee fails": "text", "won": "script", "lost": "script", "each round": "script", "before flee": "script",
 		"fight starts": "script", "player damage": "script", "avoid": "script", "enemy damage": "script",
 		"before random fight": "script", "creature chance": "text", "creature chance modifiers": "fields",
@@ -141,7 +151,7 @@ const PENDING_TYPES := ["epilogue"]
 const LOOKUP_PRIORITY := ["location", "character", "item", "event", "quest", "scene", "menu", "text", "creature",
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
-	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "vore_rules",
+	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "infection_rules", "vore_rules",
 	"interest", "hunt_rules"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
@@ -303,6 +313,17 @@ func _add(d: FscParser.Definition, r: FscParser.Result) -> void:
 		_extend(d, r)
 		return
 	var existing: FscParser.Definition = definitions.get(d.type, {}).get(d.id, null)
+	if existing != null and d.type == "values" and d.mode != "replace":
+		# Several packs may declare values for one owner (a game's own player values,
+		# a story pack's additions): each adds its values; a value declared twice is an error.
+		_check_fields(d)
+		for name in _declared_names(d):
+			if values.has("%s.%s" % [d.id, name]):
+				error(d.path, d.line, "Value %s.%s is already declared at %s:%d." % [d.id, name, values["%s.%s" % [d.id, name]].path, values["%s.%s" % [d.id, name]].line])
+				return
+		definitions[d.type]["%s#%d" % [d.id, definitions[d.type].size()]] = d
+		_index(d, r)
+		return
 	if existing != null and d.mode != "replace":
 		error(d.path, d.line, "%s '%s' is already defined at %s:%d. IDs must be unique within a type." % [d.type, d.id, existing.path, existing.line])
 		return
@@ -315,6 +336,18 @@ func _add(d: FscParser.Definition, r: FscParser.Result) -> void:
 		definitions[d.type] = {}
 	definitions[d.type][d.id] = d
 	_index(d, r)
+
+
+## The names a values definition declares (first-level lines of its `values:`).
+func _declared_names(d: FscParser.Definition) -> Array:
+	var out: Array = []
+	if not d.fields.has("values"):
+		return out
+	var f: FscParser.Field = d.fields["values"]
+	for l in f.children:
+		if not l.is_blank() and l.indent <= _min_indent(f.children) and ":" in l.text:
+			out.append(l.text.split(":", true, 1)[0].strip_edges())
+	return out
 
 
 static func _priority(type: String) -> int:
@@ -440,16 +473,31 @@ func _index_level(d: FscParser.Definition) -> void:
 	levels[d.id] = lv
 
 
-static var _number_re := RegEx.create_from_string("^number(?: (-?\\d+))?$")
+static var _number_re := RegEx.create_from_string("^number(?: (-?\\d+))?(?: \\((-?\\d+) to (-?\\d+)(?:, up to (-?\\d+) in fights)?\\))?$")
+## Engine roles a pack gives its values (`role: sanity` under a value): the
+## engine systems read the value playing a role, and skip what no value plays.
+const ROLES := ["sanity", "arousal", "morale"]
+var roles: Dictionary = {}  ## role -> value path ("sanity" -> "player.humanity")
 
 
 func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Result) -> void:
 	var owner := d.id
+	var last := ""  # the value the following metadata lines belong to
 	for l in f.children:
 		if l.is_blank():
 			continue
-		# Only lines at the first level declare values; deeper lines are metadata (from:).
+		# Only lines at the first level declare values; deeper lines are metadata (from:, role:).
 		if l.indent > _min_indent(f.children):
+			var rm := RegEx.create_from_string("^role: *(\\w+)$").search(l.text.strip_edges())
+			if rm != null and last != "":
+				var role := rm.get_string(1)
+				if role not in ROLES:
+					error(d.path, l.number, "Unknown role '%s'. Roles: %s." % [role, ", ".join(ROLES)])
+				elif roles.has(role) and roles[role] != last:
+					error(d.path, l.number, "Role '%s' is already played by %s." % [role, roles[role]])
+				else:
+					roles[role] = last
+					values[last].role = role
 			continue
 		var parts: PackedStringArray = l.text.split(":", true, 1)
 		if parts.size() < 2:
@@ -462,6 +510,12 @@ func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Res
 		if nm != null:
 			decl.kind = "number"
 			decl.default = int(nm.get_string(1)) if nm.get_string(1) != "" else 0
+			if nm.get_string(2) != "":
+				# "number 100 (0 to 100)": kept within its bounds; "up to 110 in fights" raises the top during a fight.
+				decl.min = int(nm.get_string(2))
+				decl.max = int(nm.get_string(3))
+				if nm.get_string(4) != "":
+					decl.fight_max = int(nm.get_string(4))
 		elif spec == "flag":
 			decl.kind = "flag"
 			decl.default = false
@@ -479,6 +533,7 @@ func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Res
 			decl.states = states
 			decl.default = states[0]
 		values["%s.%s" % [owner, name]] = decl
+		last = "%s.%s" % [owner, name]
 
 
 static func _min_indent(lines: Array) -> int:

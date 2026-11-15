@@ -1,0 +1,11 @@
+// The player values of the engine's test game, with the engine roles they play.
+
+== values player
+values:
+    humanity: number 100 (0 to 100)
+        role: sanity
+    libido: number 0 (0 to 100, up to 110 in fights)
+        role: arousal
+    morale: number 0
+        role: morale
+    lust: number 0

@@ -104,7 +104,7 @@ static func _set_turns(game, n: int) -> void:
 static func tick(game) -> void:
 	if rules(game) == "" or Condition._truthy(game.value("player.heat_paused")) or _holds(game, "off when"):
 		return
-	if int(game.value("player.humanity")) <= 0 or not game.state.combat.is_empty():
+	if (game.role("sanity") != "" and game.role_number("sanity") <= 0) or not game.state.combat.is_empty():
 		return
 	var v: Dictionary = game.state.values
 	var kind := kind_now(game)

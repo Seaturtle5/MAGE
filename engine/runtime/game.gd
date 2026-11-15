@@ -11,13 +11,13 @@ const PLAYER_DEFAULTS := {
 	"fatigue": 0,
 	"hp": 20, "maxhp": 20, "xp": 0, "level": 1, "score": 0,
 	"strength": 12, "dexterity": 12, "stamina": 12, "charisma": 12, "intelligence": 12, "perception": 12,
-	"hunger": 0, "thirst": 0, "morale": 0, "libido": 0, "humanity": 100, "lust": 0,
+	"hunger": 0, "thirst": 0,
 	"cocks": 0, "cunts": 1, "nipples": 2, "name": "Player",
 	# Body numbers the original's body adjectives read (Characters.i7x:48-75, 198, 239).
 	"weight": 5, "definition": 5, "androgyny": 5, "body_hair": 2, "ass.width": 3, "ass.depth": 9, "ass.tightness": 2,
 	"mouth.length": 5, "mouth.circumference": 3, "clit.size": 3,
 }
-const BOUNDED := {"hunger": [0, 100], "thirst": [0, 100], "humanity": [0, 100], "libido": [0, 100], "balls.size": [0, 7]}
+const BOUNDED := {"hunger": [0, 100], "thirst": [0, 100], "balls.size": [0, 7]}
 const ATTRIBUTES := ["strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]
 const TIME_SLOTS := ["pre dawn", "post midnight", "night", "early night", "evening", "afternoon", "morning", "early morning"]
 const FILTER_STATES := ["normal", "warded", "banned"]
@@ -202,17 +202,45 @@ func _set_fight_value(path: String, v: Variant) -> void:
 		c.overrides[key] = int(v)
 
 
+## The value playing an engine role ("sanity", "arousal", "morale"; a pack gives
+## it with `role:` under the value's declaration), or "" when none does.
+func role(name: String) -> String:
+	return str(content.roles.get(name, ""))
+
+
+## A role's value as a number; 0 when no value plays the role.
+func role_number(name: String) -> int:
+	var path := role(name)
+	var v = value(path) if path != "" else null
+	return int(v) if v != null else 0
+
+
+## A fight is under way (and not decided yet).
+func in_fight() -> bool:
+	return not state.combat.is_empty() and str(state.combat.get("result", "")) == ""
+
+
+## After a fight, values that may go higher in fights return within their bounds.
+func settle_fight_values() -> void:
+	for path in content.values:
+		if content.values[path].has("fight_max") and state.values.has(path):
+			set_value(path, value(path))
+
+
 func set_value(path: String, v: Variant) -> void:
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		_set_fight_value(path, v)
 		return
+	var decl: Dictionary = content.values.get(path, {})
+	if decl.has("max"):
+		var top: int = decl.fight_max if decl.has("fight_max") and in_fight() else decl.max
+		v = clampi(int(v), int(decl.min), top)
 	if path.begins_with("player."):
 		var key := path.substr(7)
 		if BOUNDED.has(key):
 			v = clampi(int(v), BOUNDED[key][0], BOUNDED[key][1])
 		elif key == "hp":
 			v = mini(int(v), int(value("player.maxhp")))
-	var decl: Dictionary = content.values.get(path, {})
 	if decl.get("kind", "") == "time":
 		state.stamps[path] = state.turn
 		return
@@ -262,6 +290,14 @@ func is_day() -> bool:
 
 
 # --- Conditions -------------------------------------------------------------
+
+## The name of the strain a body part has (a character's form for a character).
+func species_name(who: String, part: String) -> String:
+	var form := part_form(who, part)
+	if who != "player" and content.has(who, "character") and value("%s.form" % who) != null:
+		form = str(value("%s.form" % who))
+	return content.typed_value("form", form, "name", form)
+
 
 func ask(node: Dictionary) -> bool:
 	match node.op:
@@ -365,11 +401,10 @@ func ask(node: Dictionary) -> bool:
 			return true
 		"species_contains":
 			# The original's "BodyName of Player matches the text "Wolf"": the strain's name.
-			var form := part_form(node.who, node.part)
-			if node.who != "player" and content.has(node.who, "character") and value("%s.form" % node.who) != null:
-				form = str(value("%s.form" % node.who))
-			var species := content.typed_value("form", form, "name", form)
-			return species.to_lower().contains(str(node.text).to_lower())
+			return species_name(node.who, node.part).to_lower().contains(str(node.text).to_lower())
+		"species_same":
+			# The original's "BodySpeciesName of Player is not FaceSpeciesName of Player".
+			return species_name(node.who, node.part).to_lower() == species_name(node.other, node.other_part).to_lower()
 		"is":
 			return adjective(node.who, node.adjective)
 	warn("Condition '%s' is not supported yet." % node.op)
@@ -1281,7 +1316,8 @@ func start_scenario(id: String, name: String = "Player", main_stat: String = "st
 	set_value("player." + main_stat, 17)
 	set_value("player.maxhp", int(value("player.stamina")) * 2 + 5)
 	set_value("player.hp", value("player.maxhp"))
-	set_value("player.morale", int(value("player.charisma")) + int(value("player.perception")))
+	if role("morale") != "":
+		set_value(role("morale"), int(value("player.charisma")) + int(value("player.perception")))
 	set_value("player.cocks", 1)
 	set_value("player.cunts", 0)
 	set_value("player.balls.size", 3)

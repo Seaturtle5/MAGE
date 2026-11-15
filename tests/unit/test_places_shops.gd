@@ -351,7 +351,7 @@ replaces trip: yes
 if player has visited nowhere_place:
     Hm.
 """
-	_write(ROOT + "_bad/p", {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad})
+	_write(ROOT + "_bad/p", {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT, "bad.fsc": bad})
 	var db := ContentDB.new()
 	db.load_folders([ROOT + "_bad"])
 	var text := str(db.errors())

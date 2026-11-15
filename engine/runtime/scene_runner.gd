@@ -290,7 +290,8 @@ func run() -> void:
 		if f.kind == "item_infect":
 			frames.pop_back()
 			# Iron Stomach protects against infected food and drink.
-			if not f.get("skip", false) and "iron_stomach" not in game.state.feats:
+			# The infection rules' `food infection blocked when` (the original's Iron Stomach).
+			if not f.get("skip", false) and not BodySystem.rule(game, "food infection blocked when"):
 				BodySystem.infect(game, f.form)
 			continue
 		if f.kind == "combat_item_end":
@@ -550,7 +551,7 @@ func _captivity_step(f: Dictionary) -> bool:
 		"round":
 			v["captivity.round"] = CaptivitySystem.number(game, "round") + 1
 			# Once obliging, the player stays so for the rest of this captivity, as in the original.
-			var cond := Condition.compile(CaptivitySystem.field(game, id, "obliging when", CaptivitySystem.DEFAULT_OBLIGING))
+			var cond := Condition.compile(CaptivitySystem.field(game, id, "obliging when", CaptivitySystem.default_obliging(game)))
 			if not cond.has("error") and Condition.evaluate(cond, game):
 				v["captivity.obliging"] = true
 			CaptivitySystem.roll_recover(game)
@@ -560,14 +561,14 @@ func _captivity_step(f: Dictionary) -> bool:
 				f.step = "climaxed"
 				_push_field(id, "climax")
 		"climaxed":
-			v["captivity.lust"] = int(game.value("player.libido"))  # lust starts over from libido
+			v["captivity.lust"] = game.role_number("arousal")  # lust starts over from arousal
 			f.step = "each"
 		"each":
 			f.step = "check"
 			_push_field(id, "each round")
 			game.run_hooks("captivity round")
 		"check":
-			if int(game.value("player.humanity")) < 1:
+			if game.role("sanity") != "" and game.role_number("sanity") < 1:
 				f.step = "done"
 				_push_field(id, "lost")
 			else:
@@ -824,6 +825,7 @@ func combat_action(action: String) -> bool:
 
 func _finish_fight() -> void:
 	var result: String = game.state.combat.result
+	game.settle_fight_values()  # values allowed higher in fights return within their bounds
 	var f: Dictionary = frames[-1]
 	var ins: Dictionary = f.fight
 	game.last_fight = result

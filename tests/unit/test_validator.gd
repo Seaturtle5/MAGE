@@ -8,7 +8,7 @@ func _load(files: Dictionary) -> ContentDB:
 	DirAccess.make_dir_recursive_absolute(ROOT + "/p")
 	for f in DirAccess.get_files_at(ROOT + "/p"):
 		DirAccess.remove_absolute(ROOT + "/p/" + f)
-	var all := {"pack.fsc": "== pack p\nname: Test\n"}
+	var all := {"pack.fsc": "== pack p\nname: Test\n", "player_values.fsc": TestPlayerValues.TEXT}
 	all.merge(files)
 	for name in all:
 		var fa := FileAccess.open(ROOT + "/p/" + name, FileAccess.WRITE)
