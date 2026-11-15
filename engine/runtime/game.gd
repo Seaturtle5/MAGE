@@ -94,6 +94,8 @@ func value(path: String) -> Variant:
 		path = _subject + path.substr(6)
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
+	if path == "places.known":
+		return state.known.size()  # fast-travel places the player knows (the original's number of known fasttravel rooms)
 	if path == "play.index" or path == "play.count":
 		# The repetition a `play X N times` is on (from 1), and how many there are.
 		var loop: Array = play_loops[-1] if not play_loops.is_empty() else runner.play_loop()

@@ -1575,7 +1575,7 @@ func _need(id: String, type: String, line: int) -> void:
 
 
 func _check_path(path: String, line: int) -> void:
-	if db.values.has(path) or path == "game.turn":
+	if db.values.has(path) or path == "game.turn" or path == "places.known":
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:

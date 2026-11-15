@@ -382,6 +382,14 @@ func test_a_portrait_changes_in_play() -> void:
 	assert_eq(game.character_image("angie"), "angie_plain")
 
 
+func test_known_places_are_counted() -> void:
+	var before := int(game.value("places.known"))
+	game.apply(Effect.compile("discover cell"))
+	assert_eq(int(game.value("places.known")), before + 1)
+	game.apply(Effect.compile("forget cell"))
+	assert_eq(int(game.value("places.known")), before)
+
+
 func test_a_carried_item_is_chosen_by_its_tag() -> void:
 	var has := Condition.compile("player has an item tagged bottled")
 	game.state.inventory.erase("water_bottle")
