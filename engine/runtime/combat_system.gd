@@ -508,8 +508,13 @@ static func _play(game, prog: Program, depth: int = 0) -> void:
 				_play(game, game.content.program(ins.target), depth + 1)
 				return
 			"play":
-				for _i in (Effect.resolve_amount(ins.times, game) if ins.has("times") else 1):
+				var times: int = Effect.resolve_amount(ins.times, game) if ins.has("times") else 1
+				for i in times:
+					if ins.has("times"):
+						game.play_loops.append([i + 1, times])
 					_play(game, game.content.program(ins.target), depth + 1)
+					if ins.has("times"):
+						game.play_loops.pop_back()
 			"return":
 				return
 

@@ -85,6 +85,8 @@ func warn(message: String) -> void:
 ## While a text snippet describes someone else ("[cock_size_desc of francois]"),
 ## the snippet's player values and adjectives read that character's.
 var _subject := ""
+var _ready_checking: Array = []  ## events whose requirements are being checked (no loops)
+var play_loops: Array = []  ## [index, count] of `play X N times` running inside a fight script
 
 
 func value(path: String) -> Variant:
@@ -92,6 +94,10 @@ func value(path: String) -> Variant:
 		path = _subject + path.substr(6)
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
+	if path == "play.index" or path == "play.count":
+		# The repetition a `play X N times` is on (from 1), and how many there are.
+		var loop: Array = play_loops[-1] if not play_loops.is_empty() else runner.play_loop()
+		return (loop[0] if path == "play.index" else loop[1]) if not loop.is_empty() else 0
 	if path.begins_with("people.") and path.count(".") == 1:
 		return people_at(path.substr(7).replace("_", " "))  # people.collected, people.bunker ...
 	if path.begins_with("party."):
@@ -486,6 +492,18 @@ func adjective(who: String, adj: String) -> bool:
 			return who == "player" and not state.combat.is_empty() and str(state.combat.get("result", "")) == ""
 		"resolved", "active":
 			return bool(state.events.get(who, {}).get(adj, adj == "active"))
+		"ready":
+			# The original's PrereqComplete: the event's own requirements hold now.
+			if not content.has(who, "event"):
+				return false
+			var req := content.typed_value("event", who, "requires")
+			if req == "" or who in _ready_checking:
+				return req == ""  # an event that needs itself to be ready is never ready
+			_ready_checking.append(who)
+			var rc := Condition.compile(req)
+			var ok := not rc.has("error") and Condition.evaluate(rc, self)
+			_ready_checking.erase(who)
+			return ok
 		"companion":
 			return who in state.companions
 		"lonely":
@@ -575,10 +593,16 @@ func describe(name: String) -> String:
 				if ItemSystem.gear(self, id, "slot", "none") == slot.strip_edges():
 					return content.typed_value("item", id, "name", id)
 		return ""
-	# "[player.nipples in words]": a number written out.
+	# "[player.nipples in words]": a number written out (also an expression: "[a.x + 1 in words]").
 	if n.ends_with(" in words"):
-		var counted = value(n.trim_suffix(" in words"))
+		var base := n.trim_suffix(" in words")
+		var be := Expr.text_expression(base)
+		var counted = Expr.evaluate(be, self) if not be.is_empty() else value(base)
 		return number_words(int(counted) if counted != null else 0)
+	# "[people.bunker + people.library]": arithmetic on values.
+	var calc := Expr.text_expression(n)
+	if not calc.is_empty():
+		return str(Expr._num(Expr.evaluate(calc, self)))
 	if n.begins_with("player.") or ("." in n and not " " in n):
 		var v = value(n)
 		return str(v) if v != null else ""
@@ -1108,6 +1132,8 @@ func apply(e: Dictionary) -> void:
 				PregnancySystem.birth(self)
 		"record_child":
 			PregnancySystem.record_child(self)
+		"each_child":
+			PregnancySystem.each_child(self, e.home, e.scene)
 		"end_pregnancy":
 			PregnancySystem.end(self)
 		"vore":

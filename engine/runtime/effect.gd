@@ -24,6 +24,7 @@ static var _rules: Array = [
 	# Pregnancy (PregnancySystem): "~ impregnation chance", "~ impregnate female by wolf with eggs".
 	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
 	["pregnancy_step", RegEx.create_from_string("^(accept pregnancy|give birth|record child)$")],
+	["each_child", RegEx.create_from_string("^for each child(?: at (\\w+))? play (\\w[\\w.]*)$")],
 	["end_heat", RegEx.create_from_string("^end heat$")],
 	["reset_heat", RegEx.create_from_string("^reset heat$")],
 	["continue_moving", RegEx.create_from_string("^continue moving$")],
@@ -144,6 +145,8 @@ static func _match(s: String) -> Dictionary:
 					"father": m.get_string(3).replace("random creature", "random"), "eggs": m.get_string(4) != ""}
 			"pregnancy_step":
 				return {"op": m.get_string(1).replace(" ", "_")}
+			"each_child":
+				return {"op": "each_child", "home": m.get_string(1), "scene": m.get_string(2)}
 			"vore":
 				return {"op": "vore", "kind": m.get_string(1)}
 			"vore_step":

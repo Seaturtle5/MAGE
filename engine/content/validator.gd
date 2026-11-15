@@ -1285,7 +1285,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
-			"impregnate", "accept_pregnancy", "give_birth", "record_child", "end_pregnancy", "pregnancy_faster",
+			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
@@ -1314,6 +1314,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_err(line, "'%s' is neither a creature nor a form to father a child." % e.father)
 			if e.kind == "self" and e.father != "":
 				_err(line, "A self-impregnation has no father: leave out 'by %s'." % e.father)
+		"each_child":
+			_need(e.scene, "scene", line)
 		"form_sex":
 			_need(e.form, "form", line)
 		"pick":
@@ -1479,6 +1481,8 @@ func _check_path(path: String, line: int) -> void:
 		return
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
 		return  # a fight's own scratch numbers
+	if path == "play.index" or path == "play.count":
+		return  # the repetition of `play X N times` running
 	if parts[0] == "enemy" and parts.size() == 2:
 		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido", "form"]):
 			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido", "form"])])
@@ -1641,7 +1645,10 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in _location_flags()):
 					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(_location_flags()))
 				return
-			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
+			if c.adjective == "ready" and not db.has(c.who, "event"):
+				_err(line, "'%s is ready' tests an event's requirements, but %s is not an event." % [c.who, c.who])
+				return
+			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "ready", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
 					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
 				_check_path("%s.%s" % [c.who, c.adjective.replace(" ", "_")], line)
 		"lives_at", "is_at":
@@ -1816,6 +1823,12 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			n = n.substr(2)
 		if n.ends_with(" in words"):
 			n = n.trim_suffix(" in words")
+		var calc := Expr.text_expression(n)
+		if not calc.is_empty():
+			# "[people.bunker + people.library]": arithmetic on values.
+			for p in Expr.paths(calc):
+				_check_path(p, line)
+			continue
 		if "." in n and not " " in n:
 			_check_path(n, line)
 			continue

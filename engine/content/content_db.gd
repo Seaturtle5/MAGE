@@ -580,7 +580,12 @@ func _finish() -> void:
 				FscParser._read_fields(inner, r)
 				var menu_id := "%s.%s" % [d.id, name]
 				if not menus.has(menu_id):
-					error(d.path, f.line, "%s has no %s menu to add to." % [d.id, name])
+					# The place has no such menu yet (scenery another pack puts there): the extension makes it.
+					inner.type = "menu"
+					inner.id = menu_id
+					inner.path = d.path
+					inner.line = f.line
+					menus[menu_id] = {"def": inner, "options": inner.options.duplicate(), "settings": _menu_settings(inner)}
 					continue
 				menus[menu_id].options.append_array(inner.options)
 			elif kind == "list":

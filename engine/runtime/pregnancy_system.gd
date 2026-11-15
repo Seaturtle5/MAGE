@@ -403,8 +403,10 @@ static func _gender(game, torso: String) -> String:
 
 ## `~ record child`: the child being born joins the record (pregnancy.offspring).
 static func record_child(game) -> void:
+	# A birth sets child.number; a story child (the original's "choose a blank row in the
+	# Table of PlayerChildren") sets the child.* values it needs, then records it.
 	var v: Dictionary = game.state.values
-	if not v.has("child.number"):
+	if not CHILD_VALUES.any(func(k): return v.has("child." + k)):
 		return
 	var entry := {"turn": game.state.turn}
 	for key in CHILD_VALUES:
@@ -445,6 +447,49 @@ static func describe_children(game, home: String, snippet: String) -> String:
 	for key in saved:
 		v[key] = saved[key]
 	return " ".join(out)
+
+
+## `~ for each child [at <home>] play <scene>`: the scene once for each recorded
+## child (living at `home`, or all), with that child's values as `child.*`;
+## changes the scene makes to `child.*` are kept in the record. The scene runs at
+## once, like a fight's script: text, conditions and effects (the original's
+## "repeat through Table of PlayerChildren").
+static func each_child(game, home: String, scene: String) -> void:
+	var prog: Program = game.content.program(scene)
+	if prog == null:
+		game.warn("No scene '%s' to play for each child." % scene)
+		return
+	var v: Dictionary = game.state.values
+	var saved := {}
+	for key in v.keys():
+		if str(key).begins_with("child."):
+			saved[key] = v[key]
+	var count := Array(v.get("pregnancy.offspring", [])).size()
+	for i in count:
+		var live: Array = Array(v.get("pregnancy.offspring", [])).duplicate()
+		var child = live[i]
+		if not child is Dictionary or (home != "" and str(child.get("home", "")) != home):
+			continue
+		for key in v.keys():
+			if str(key).begins_with("child."):
+				v.erase(key)
+		for key in child:
+			v["child." + str(key)] = child[key]
+		v["child.age_turns"] = game.state.turn - int(child.get("turn", game.state.turn))
+		v["child.age_days"] = v["child.age_turns"] / Game.TIME_SLOTS.size()
+		CombatSystem._play(game, prog)
+		var updated: Dictionary = child.duplicate()
+		for key in CHILD_VALUES:
+			if key != "number" and v.has("child." + key):
+				updated[key] = v["child." + key]
+		live = Array(v.get("pregnancy.offspring", [])).duplicate()  # the scene may have recorded more
+		live[i] = updated
+		v["pregnancy.offspring"] = live
+	for key in v.keys():
+		if str(key).begins_with("child."):
+			v.erase(key)
+	for key in saved:
+		v[key] = saved[key]
 
 
 ## `~ end pregnancy`: the pregnancy ends without a birth.

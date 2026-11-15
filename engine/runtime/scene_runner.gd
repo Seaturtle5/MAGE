@@ -83,6 +83,14 @@ func _push(target: String, extra: Dictionary) -> void:
 	frames.append(f)
 
 
+## [index, count] of the innermost `play X N times` repetition running, or [].
+func play_loop() -> Array:
+	for i in range(frames.size() - 1, -1, -1):
+		if frames[i].has("play_index"):
+			return [frames[i].play_index, frames[i].play_count]
+	return []
+
+
 func _push_if(pid: String) -> void:
 	if game.content.program(pid) != null:
 		frames.append({"kind": "script", "pid": pid, "pc": 0})
@@ -393,8 +401,10 @@ func run() -> void:
 					if picked == "" or game.content.program(picked + target.substr(7)) == null:
 						continue
 					target = picked + target.substr(7)
-				for _i in (Effect.resolve_amount(ins.times, game) if ins.has("times") else 1):
-					_push(target, {})
+				var times: int = Effect.resolve_amount(ins.times, game) if ins.has("times") else 1
+				# Frames run last pushed first: push the last repetition first so they run 1, 2, 3 ...
+				for i in range(times, 0, -1):
+					_push(target, {"play_index": i, "play_count": times} if ins.has("times") else {})
 			"fight":
 				if f.has("encountering"):
 					# Second pass, after the creature's encounter scene: start the fight.

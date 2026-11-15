@@ -173,6 +173,28 @@ static func _num(v: Variant) -> int:
 	return 0
 
 
+## Whether an expression uses a bare word (not a path, number or text).
+static func has_words(node: Dictionary) -> bool:
+	match node.get("op", ""):
+		"word":
+			return true
+		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt":
+			return has_words(node.a) or (node.has("b") and has_words(node.b))
+	return false
+
+
+## A text substitution that is arithmetic ("[player.cunts * 2]", "[max(a.x, 3)]"):
+## its compiled expression, or {} when the text is something else (a descriptor,
+## a snippet, a plain path). All names in it must be value paths.
+static func text_expression(text: String) -> Dictionary:
+	if not RegEx.create_from_string("[-+*/%]|\\b(min|max|sqrt)\\s*\\(").search(text):
+		return {}
+	var e := parse(text)
+	if e.has("error") or is_simple(e) or has_words(e):
+		return {}
+	return e
+
+
 ## All value paths an expression refers to (for validation).
 static func paths(node: Dictionary, out: Array = []) -> Array:
 	match node.get("op", ""):
