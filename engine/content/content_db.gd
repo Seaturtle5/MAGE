@@ -617,6 +617,12 @@ func _finish() -> void:
 						tf.children.append(l)
 				for l: FscParser.Line in f.children:
 					line_paths[l] = d.path
+			elif not target.fields.has(name):
+				# A field the definition does not have yet (an art pack's `image:` for a place without one).
+				target.fields[name] = f
+				target.field_order.append(name)
+			elif name == "image":
+				pass  # the definition's own picture wins: an art pack's picture is only a fallback
 			else:
 				error(d.path, f.line, "Field '%s' cannot be extended; use '== replace %s %s' to change it." % [name, d.type, d.id])
 		for o in d.options:

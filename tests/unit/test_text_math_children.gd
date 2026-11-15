@@ -19,6 +19,10 @@ name: Wild
 name: Camp
 description: A camp.
 zone: wild
+image: camp_photo
+
+== image camp_photo
+artist: Someone
 
 == location hut
 name: Hut
@@ -57,6 +61,18 @@ const EXTRA := """== extend location hut
 observe:
     * The old stove
         Cold iron, rusted shut.
+
+== extend location hut
+image: hut_art
+
+== extend location camp
+image: camp_art
+
+== image hut_art
+artist: ChatGPT (placeholder)
+
+== image camp_art
+artist: ChatGPT (placeholder)
 """
 
 var game: Game
@@ -115,6 +131,11 @@ func test_play_times_counts_inside_a_fight_script() -> void:
 func test_another_pack_can_add_scenery_to_a_place_without_any() -> void:
 	assert_true(game.content.menus.has("hut.observe"), "the extension makes the observe menu")
 	assert_eq(game.content.menus["hut.observe"].options.size(), 1)
+
+
+func test_an_art_pack_adds_pictures_only_where_there_are_none() -> void:
+	assert_eq(game.content.typed_value("location", "hut", "image"), "hut_art", "a place without a picture gets the art pack's")
+	assert_eq(game.content.typed_value("location", "camp", "image"), "camp_photo", "a place's own picture wins")
 
 
 func test_an_event_is_ready_when_its_requirements_hold() -> void:
