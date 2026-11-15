@@ -1275,7 +1275,7 @@ func _combat_effect(ins: Dictionary) -> bool:
 ## numbers, feats and conditions; nothing that moves the player or starts a scene.
 func _simple_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"set", "set_time", "change", "survival", "feat", "condition", "meter", "infect",
+		"set", "set_time", "shift_time", "change", "survival", "feat", "condition", "meter", "infect",
 		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "child_random", "new_child"]
 
 
@@ -1325,7 +1325,7 @@ func _check_target(target: String, line: int) -> void:
 
 
 func _check_effect(e: Dictionary, line: int, owner: String) -> void:
-	if e.op not in ["set", "set_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
+	if e.op not in ["set", "set_time", "shift_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
 			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
@@ -1533,7 +1533,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"extend_game":
 			for p in Expr.paths(e.by):
 				_check_path(p, line)
-		"set_time":
+		"set_time", "shift_time":
 			_check_path(e.path, line)
 			if db.values.get(e.path, {}).get("kind", "") != "time":
 				_err(line, "'%s' is not a time value; only time values can be set to some turns ago or in some turns." % e.path)

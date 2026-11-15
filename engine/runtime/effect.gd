@@ -140,6 +140,8 @@ static var _rules: Array = [
 	# "~ hunger + 5", "~ humanity - 3": a player value by its short name (any the engine or a pack declares).
 	["stat", RegEx.create_from_string("^([a-z_]+) ([+-]) (.+)$")],
 	["extend_game", RegEx.create_from_string("^extend game by (.+?) turns?$")],
+	# A time value moved: "~ leonard.last_sex earlier by 2 turns" (the original's "increase lastfuck of X by 2").
+	["shift_time", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) (earlier|later) by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
 ]
@@ -442,6 +444,11 @@ static func _match(s: String) -> Dictionary:
 				if by.has("error"):
 					return {"error": "cannot read the turns in '%s': %s" % [m.get_string(1), by.error]}
 				return {"op": "extend_game", "by": by}
+			"shift_time":
+				var shift := Expr.parse(m.get_string(3))
+				if shift.has("error"):
+					return {"error": "cannot read the turns in '%s': %s" % [m.get_string(3), shift.error]}
+				return {"op": "shift_time", "path": m.get_string(1), "by": shift, "sign": -1 if m.get_string(2) == "earlier" else 1}
 			"set":
 				# A time value: "~ x.last_sex = 8 turns ago" or "= in 8 turns" (plain "= now" also works).
 				var shifted := RegEx.create_from_string("^(?:(.+) turns? ago|in (.+) turns?)$").search(m.get_string(2))

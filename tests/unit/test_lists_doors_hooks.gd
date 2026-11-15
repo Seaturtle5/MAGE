@@ -405,6 +405,17 @@ func test_an_extension_can_give_a_character_stats_and_a_companion_block() -> voi
 	assert_eq(game.value("nermine.tamed"), false)
 
 
+func test_a_time_value_moves_earlier_or_later() -> void:
+	game.apply(Effect.compile("nermine.last_sex earlier by 2 turns"))
+	assert_false(game.state.stamps.has("nermine.last_sex"), "never set: stays never")
+	game.apply(Effect.compile("nermine.last_sex = now"))
+	var t := int(game.state.stamps["nermine.last_sex"])
+	game.apply(Effect.compile("nermine.last_sex earlier by 2 turns"))
+	assert_eq(int(game.state.stamps["nermine.last_sex"]), t - 2)
+	game.apply(Effect.compile("nermine.last_sex later by 5 turns"))
+	assert_eq(int(game.state.stamps["nermine.last_sex"]), t + 3)
+
+
 func test_known_places_are_counted() -> void:
 	var before := int(game.value("places.known"))
 	game.apply(Effect.compile("discover cell"))

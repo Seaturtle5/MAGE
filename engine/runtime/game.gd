@@ -945,6 +945,10 @@ func apply(e: Dictionary) -> void:
 		"extend_game":
 			# The rescue comes later (the original's "extend game by N").
 			state.values["game.extended"] = int(state.values.get("game.extended", 0)) + int(Expr._num(Expr.evaluate(e.by, self)))
+		"shift_time":
+			# An earlier or later stamp; a time never set stays unset ("never").
+			if state.stamps.has(e.path):
+				state.stamps[e.path] = int(state.stamps[e.path]) + e.sign * int(Expr._num(Expr.evaluate(e.by, self)))
 		"set_time":
 			# A turn stamp N turns in the past or the future (the original's "turns + 8").
 			state.stamps[e.path] = state.turn + e.sign * int(Expr._num(Expr.evaluate(e.by, self)))
