@@ -493,6 +493,12 @@ func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Res
 			continue
 		# Only lines at the first level declare values; deeper lines are metadata (from:, role:).
 		if l.indent > _min_indent(f.children):
+			# "when raised: <text>" / "when lowered: <text>": said when a change raises or lowers it.
+			var wm := RegEx.create_from_string("^when (raised|lowered): *(.+)$").search(l.text.strip_edges())
+			if wm != null and last != "":
+				values[last][wm.get_string(1)] = wm.get_string(2)
+				values[last][wm.get_string(1) + "_line"] = l.number
+				continue
 			var rm := RegEx.create_from_string("^role: *(\\w+)$").search(l.text.strip_edges())
 			if rm != null and last != "":
 				var role := rm.get_string(1)
@@ -567,6 +573,13 @@ func _extend(d: FscParser.Definition, r: FscParser.Result) -> void:
 
 
 func _finish() -> void:
+	# `== values character`: values every character has, unless it declares its own.
+	for path: String in values.keys():
+		if path.begins_with("character.") and path.count(".") == 1:
+			for c: String in definitions.get("character", {}):
+				var own := "%s.%s" % [c, path.substr(10)]
+				if not values.has(own):
+					values[own] = values[path].duplicate()
 	for pair in definitions.get("_extend", []):
 		var d: FscParser.Definition = pair[0]
 		var r: FscParser.Result = pair[1]

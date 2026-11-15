@@ -880,12 +880,25 @@ func _page_input(e: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	var field := LineEdit.new()
-	field.text = str(e.get("value", ""))
-	field.max_length = int(e.get("max", 40))
-	field.size_flags_horizontal = SIZE_EXPAND_FILL
-	field.custom_minimum_size = Vector2(0, 44)
+	var spin: SpinBox = null
+	if e.get("number", false):
+		# A number question: a number field within its bounds (the engine checks the answer too).
+		spin = SpinBox.new()
+		spin.step = 1
+		spin.rounded = true
+		spin.min_value = float(e.low) if e.get("low") != null else -1000000.0
+		spin.max_value = float(e.high) if e.get("high") != null else 1000000.0
+		spin.value = spin.min_value if e.get("low") != null else 0.0
+		spin.custom_minimum_size = Vector2(200, 44)
+		field = spin.get_line_edit()
+		row.add_child(spin)
+	else:
+		field.text = str(e.get("value", ""))
+		field.max_length = int(e.get("max", 40))
+		field.size_flags_horizontal = SIZE_EXPAND_FILL
+		field.custom_minimum_size = Vector2(0, 44)
+		row.add_child(field)
 	field.add_theme_font_size_override("font_size", 17)
-	row.add_child(field)
 	var ok := Button.new()
 	ok.text = "OK"
 	ok.custom_minimum_size = Vector2(110, 44)
@@ -894,7 +907,9 @@ func _page_input(e: Dictionary) -> void:
 	row.add_child(ok)
 	choices_box.add_child(row)
 	var submit := func(_t = ""):
-		if game.runner.enter_text(field.text):
+		if spin != null:
+			spin.apply()  # the typed number, kept within the bounds
+		if game.runner.enter_text(str(int(spin.value)) if spin != null else field.text):
 			_drain()
 	field.text_submitted.connect(submit)
 	ok.pressed.connect(submit)

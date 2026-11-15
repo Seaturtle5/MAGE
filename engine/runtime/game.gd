@@ -161,6 +161,13 @@ func value(path: String) -> Variant:
 	return null
 
 
+## A character's portrait: the one set in play (`~ character X image Y`), else its `image:`.
+func character_image(id: String) -> String:
+	if state.values.has("character.%s.image" % id):
+		return str(state.values["character.%s.image" % id])
+	return content.typed_value("character", id, "image")
+
+
 ## A creature field that play can change (`~ creature X found in Z`), else its definition's.
 func creature_field(id: String, field: String, fallback: String = "") -> String:
 	var key := "creature.%s.%s" % [id, field]
@@ -924,7 +931,13 @@ func apply(e: Dictionary) -> void:
 				var lim: int = e.amount.limit_value
 				nv = mini(nv, maxi(cur, lim)) if e.amount.limit == "up" else maxi(nv, mini(cur, lim))
 			change_value(e.path, nv - cur)
-			notice("%s %+d" % [_label(e.path), int(value(e.path)) - cur], quiet or int(value(e.path)) == cur)
+			var said: String = content.values.get(e.path, {}).get("raised" if e.sign > 0 else "lowered", "")
+			if said != "" and amount != 0 and not quiet:
+				# The value's own text for a change ("when raised:"), with change.owner, change.amount
+				# (as asked) and change.value (now), even when a limit kept the value where it was.
+				_say_change(said, e.path, absi(amount))
+			else:
+				notice("%s %+d" % [_label(e.path), int(value(e.path)) - cur], quiet or int(value(e.path)) == cur)
 		"survival":
 			var amount: int = Effect.resolve_amount(e.amount, self)
 			match e.kind:
@@ -1097,6 +1110,11 @@ func apply(e: Dictionary) -> void:
 				go_to(e.place)
 			else:
 				state.char_location[e.who] = e.place
+		"character_image":
+			if e.image == "default":
+				state.values.erase("character.%s.image" % e.who)
+			else:
+				state.values["character.%s.image" % e.who] = e.image
 		"lives_at":
 			state.residence[e.who] = e.place
 			state.char_location.erase(e.who)
@@ -1183,7 +1201,7 @@ func apply(e: Dictionary) -> void:
 		"infect_enemy":
 			VoreSystem.infect_enemy(self)
 		"unbirth_pregnancy":
-			PregnancySystem.unbirth(self, current_creature())
+			PregnancySystem.unbirth(self, e.get("creature", "") if e.get("creature", "") != "" else current_creature())
 		"continue_moving":
 			continue_moving = true
 		"end_captivity":
@@ -1287,6 +1305,22 @@ func _change_stat(key: String, delta: int, label: String, quiet: bool) -> void:
 	set_value(path, cur + delta)
 	var diff := int(value(path)) - cur
 	notice("%s %+d" % [label, diff], quiet or diff == 0)
+
+
+func _say_change(text: String, path: String, amount: int) -> void:
+	var owner := path.get_slice(".", 0)
+	var saved := {}
+	for k in ["owner", "amount", "value"]:
+		if state.values.has("change." + k):
+			saved[k] = state.values["change." + k]
+	state.values["change.owner"] = owner
+	state.values["change.amount"] = amount
+	state.values["change.value"] = value(path)
+	emit({"type": "paragraph", "spans": render(TextTemplate.compile(text))})
+	for k in ["owner", "amount", "value"]:
+		state.values.erase("change." + k)
+		if saved.has(k):
+			state.values["change." + k] = saved[k]
 
 
 func _label(path: String) -> String:

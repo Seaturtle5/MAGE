@@ -63,7 +63,7 @@ func start_event(event_id: String, preface: Array = []) -> void:
 
 func emit_title(text: String, character: String = "", image: String = "") -> void:
 	game.emit({"type": "title", "text": text, "character": character,
-		"image": image if image != "" else game.content.typed_value("character", character, "image")})
+		"image": image if image != "" else game.character_image(character)})
 
 
 func _push(target: String, extra: Dictionary) -> void:
@@ -969,7 +969,7 @@ func show_location() -> void:
 		if game.where(c) == loc:
 			var fields: Dictionary = db.get_def("character", c).fields
 			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
-				"image": db.typed_value("character", c, "image"),
+				"image": game.character_image(c),
 				# Talk and sex added by an "instead of" hook count only while the hook applies.
 				"talk": fields.has("talk") or (game.has_hook("instead of talking to " + c) and game.hook_instead("instead of talking to " + c) != ""),
 				"sex": fields.has("sex") or (game.has_hook("instead of sex with " + c) and game.hook_instead("instead of sex with " + c) != ""),

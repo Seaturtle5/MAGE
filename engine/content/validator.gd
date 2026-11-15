@@ -407,6 +407,7 @@ func _check_world() -> void:
 			elif d.fields["replaces trip"].value == "yes" and found.travelling.is_empty():
 				_err(d.fields["replaces trip"].line, "'replaces trip: yes' needs 'found by: travelling to <places>'.")
 	_check_shops()
+	_check_value_texts()
 	for id in db.all_of("hook"):
 		var d: FscParser.Definition = db.get_def("hook", id)
 		_path = d.path
@@ -427,6 +428,30 @@ func _check_world() -> void:
 			_err(d.fields["while incapacitated"].line, "'while incapacitated' is 'skip' or 'run'.")
 		if not d.fields.has("do"):
 			_err(d.line, "A hook needs a 'do:' script.")
+
+
+## A value's own change texts (`when raised:` / `when lowered:` under its declaration).
+func _check_value_texts() -> void:
+	var seen := {}  # values every character has: their copies are checked once
+	for path: String in db.values:
+		var decl: Dictionary = db.values[path]
+		var key := "%s:%s" % [decl.get("path", ""), decl.get("line", 0)]
+		if not (decl.has("raised") or decl.has("lowered")) or seen.has(key):
+			continue
+		seen[key] = true
+		_path = str(decl.get("path", ""))
+		for k in ["raised", "lowered"]:
+			if not decl.has(k):
+				continue
+			var line := int(decl.get(k + "_line", decl.get("line", 0)))
+			if decl.get("kind", "") != "number":
+				_err(line, "Only a number value has 'when %s:' texts." % k)
+				continue
+			var t := TextTemplate.compile(str(decl[k]))
+			if t.has("error"):
+				_err(line, str(t.error))
+			else:
+				_check_template(t, line, "")
 
 
 ## Shops (ShopSystem): places, keeper, currency, stock and trade settings.
@@ -1305,7 +1330,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
-			"unresolve", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
+			"unresolve", "character_image", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
@@ -1329,6 +1354,13 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_check_expr(item, line)
 		"lock":
 			_need(e.door, "door", line)
+		"unbirth_pregnancy" when e.get("creature", "") != "":
+			if not db.has(e.creature, "creature") and not db.has(e.creature, "form"):
+				_err(line, "'%s' is neither a creature nor a form to carry.%s" % [e.creature, _suggest(e.creature, _ids("creature"))])
+		"character_image":
+			_need(e.who, "character", line)
+			if e.image != "default" and not _images.has(e.image):
+				_warn(line, "Image '%s' was not found in any pack's images folder; a placeholder is shown." % e.image)
 		"choose_feat":
 			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
 				_err(line, "No feat has group '%s'." % e.group)
@@ -1549,6 +1581,8 @@ func _check_path(path: String, line: int) -> void:
 		if parts[1] not in BodySystem.PARTS and not BodySystem.ALIASES.has(parts[1]):
 			_err(line, "'%s' is not a body part. Parts: %s." % [parts[1], ", ".join(BodySystem.PARTS)])
 		return
+	if parts[0] == "change" and parts.size() == 2 and parts[1] in ["owner", "amount", "value"]:
+		return  # a value's own change text ("when raised:"): whose value, by how much, now
 	if parts[0] == "sex" and parts.size() == 2 and parts[1] in ["taker", "giver", "act", "with"]:
 		return  # the last sex record (SexSystem), for `after sex` hooks
 	if db.has(parts[0], "character") and parts.size() == 2 and parts[1] in ["last_partner", "last_sex", "first_anal_partner",

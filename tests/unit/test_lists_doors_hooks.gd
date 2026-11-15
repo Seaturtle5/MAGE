@@ -3,7 +3,9 @@ extends GutTest
 ## doors locked and unlocked in play, typed numbers (`~ ask x.n as number from 0
 ## to 13: ...`), story children with a random gender and personality (`~ new
 ## child`), hooks instead of resting, talking or sex and after resting, and a
-## sex change that keeps the cock's strain, and an event made unresolved again.
+## sex change that keeps the cock's strain, an event made unresolved again, a
+## character's portrait changed in play, values every character has with their
+## own change texts (`when raised:`), and a story's unbirth pregnancy.
 
 const ROOT := "user://lists_doors_hooks_test_packs"
 
@@ -50,6 +52,7 @@ locked text: The cell door is locked.
 
 == character angie
 name: Angie
+image: angie_plain
 lives at: bunker
 talk:
     Angie purrs hello.
@@ -112,6 +115,16 @@ Length [log.length].
 ~ child.personality = random
 ~ child.name = "Kit" quietly
 ~ record child
+
+== values character
+values:
+    affection: number 0
+        when raised: **[name of change.owner]'s affection for you increased by [change.amount]!**
+        when lowered: **[name of change.owner] cools by [change.amount], now [change.value].**
+
+== creature margay
+name: Margay
+form: vixen
 
 == event canning
 name: Canning facility
@@ -328,6 +341,39 @@ func test_an_event_is_made_unresolved_again() -> void:
 	other.dispose()
 
 
+func test_a_portrait_changes_in_play() -> void:
+	game.apply(Effect.compile("character angie image angie_rubber"))
+	game.runner.act("talk", "angie")
+	var title: Dictionary = game.take_output().filter(func(e): return e.type == "title")[0]
+	assert_eq(title.image, "angie_rubber")
+	var other := _saved()
+	other.runner.show_location()
+	var view: Dictionary = other.take_output().filter(func(e): return e.type == "location")[0]
+	assert_eq(view.people.filter(func(p): return p.id == "angie")[0].image, "angie_rubber", "kept in a save")
+	other.dispose()
+	game.apply(Effect.compile("character angie image default"))
+	assert_eq(game.character_image("angie"), "angie_plain")
+
+
+func test_values_every_character_has_and_their_change_texts() -> void:
+	assert_eq(int(game.value("nermine.affection")), 0, "every character has it")
+	game.apply(Effect.compile("nermine.affection + 3 up to 100"))
+	assert_eq(_text(), "**Nermine's affection for you increased by 3!**".replace("**", ""))
+	assert_eq(int(game.value("nermine.affection")), 3)
+	game.apply(Effect.compile("angie.affection - 2"))
+	assert_eq(_text(), "Angie cools by 2, now -2.")
+	game.apply(Effect.compile("angie.affection + 1 quietly"))
+	assert_eq(_text(), "", "quietly says nothing")
+	assert_null(game.value("change.owner"), "the change values are gone afterwards")
+
+
+func test_a_story_unbirth_pregnancy_of_a_named_creature() -> void:
+	game.apply(Effect.compile("unbirth pregnancy of margay"))
+	assert_true(game.adjective("player", "pregnant"))
+	assert_eq(game.value("pregnancy.unbirth"), "margay")
+	assert_eq(game.value("pregnancy.father"), "vixen", "the creature's strain")
+
+
 func test_the_new_forms_are_validated() -> void:
 	var bad := """== values log
 values:
@@ -342,6 +388,8 @@ name: Gate
 ~ ask log.words as number from 1 to 3: How many?
 ~ unlock nowhere_door
 ~ unresolve nowhere_event
+~ character nobody_here image x
+~ unbirth pregnancy of nothing_at_all
 if gate is open:
     Hm.
 if log.count is empty:
@@ -356,5 +404,5 @@ do:
 	var db := _load(ROOT + "_bad", {"pack.fsc": "== pack p\nname: Test\n", "bad.fsc": bad, "values.fsc": TestPlayerValues.TEXT})
 	var text := str(db.errors())
 	for part in ["log.count is not a list", "log.mood is not a list", "must be a number value", "nowhere_door",
-			"A door is", "not a number", "log.words is not a list", "nobody", "nowhere_event"]:
+			"A door is", "not a number", "log.words is not a list", "nobody", "nowhere_event", "nobody_here", "nothing_at_all"]:
 		assert_string_contains(text, part)

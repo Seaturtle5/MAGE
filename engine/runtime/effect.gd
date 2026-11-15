@@ -22,6 +22,9 @@ static var _rules: Array = [
 	["end_pregnancy", RegEx.create_from_string("^end pregnancy$")],
 	# Vore (VoreSystem): "~ vore enemy", "~ unbirth enemy", and what the vore scripts do.
 	["vore", RegEx.create_from_string("^(vore|unbirth) enemy$")],
+	# A story's unbirth pregnancy of a named creature or form (the original's "now ubpreg is X;
+	# now pregtype is 1" with the child's parts set to it).
+	["unbirth_of", RegEx.create_from_string("^unbirth pregnancy (?:of|with) (\\w+)$")],
 	["vore_step", RegEx.create_from_string("^(absorb enemy stat|infect enemy|unbirth pregnancy)$")],
 	# Pregnancy (PregnancySystem): "~ impregnation chance", "~ impregnate female by wolf with eggs".
 	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
@@ -104,6 +107,9 @@ static var _rules: Array = [
 	["change_exit", RegEx.create_from_string("^change (\\w+) exit of (\\w+) to (\\w+)$")],
 	["form_sex", RegEx.create_from_string("^form (\\w+) sex (male|female|herm|neuter|unchanged)$")],
 	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with) ([a-z0-9_,% ]+)$")],
+	# A character's portrait changed in play: "~ character jay image jay_rubber" (the original's
+	# "now the icon of Jay is Figure of X"); "default" goes back to its own `image:`.
+	["character_image", RegEx.create_from_string("^character (\\w+) image (\\w+)$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) lives at (\\w+)$")],
 	["discover", RegEx.create_from_string("^discover (\\w+)$")],
 	["forget", RegEx.create_from_string("^forget (\\w+)$")],
@@ -212,6 +218,8 @@ static func _match(s: String) -> Dictionary:
 				return node
 			"vore":
 				return {"op": "vore", "kind": m.get_string(1)}
+			"unbirth_of":
+				return {"op": "unbirth_pregnancy", "creature": m.get_string(1)}
 			"vore_step":
 				return {"op": m.get_string(1).replace(" ", "_")}
 			"outcome":
@@ -323,6 +331,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "creature_number", "creature": m.get_string(1), "field": m.get_string(2), "how": m.get_string(3), "amount": amt}
 			"creature_change":
 				return {"op": "creature_change", "creature": m.get_string(1), "field": m.get_string(2), "value": m.get_string(3).strip_edges()}
+			"character_image":
+				return {"op": "character_image", "who": m.get_string(1), "image": m.get_string(2)}
 			"lives_at":
 				return {"op": "lives_at", "who": m.get_string(1), "place": m.get_string(2)}
 			"discover":
