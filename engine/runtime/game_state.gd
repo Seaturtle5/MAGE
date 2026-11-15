@@ -36,6 +36,8 @@ var runner: Array = []  ## scene runner frames, when saved mid-scene
 var combat: Dictionary = {}
 var settings: Dictionary = {}
 var encountered: Array = []  ## creature ids the player has fought, in order met
+## Ways out changed in play: location id -> {direction -> exit ("" when removed)}.
+var exits: Dictionary = {}
 
 
 func to_dict() -> Dictionary:
@@ -47,6 +49,7 @@ func to_dict() -> Dictionary:
 		"stamps": stamps, "ending": ending, "rng": rng_state, "runner": runner,
 		"combat": combat, "settings": settings,
 		"actions": actions, "action_pending": action_pending, "scheduled": scheduled, "encountered": encountered,
+		"exits": exits,
 	}
 
 
@@ -89,6 +92,7 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.combat = _whole(d.get("combat", {}))  # nested per-fight numbers included
 	s.settings = d.get("settings", {})
 	s.encountered = d.get("encountered", [])
+	s.exits = d.get("exits", {})
 	# JSON turns whole numbers into floats; restore them.
 	for k in s.values:
 		var v = s.values[k]

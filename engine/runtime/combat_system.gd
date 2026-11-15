@@ -64,11 +64,16 @@ static func begin(game, id: String) -> void:
 		game.state.combat.result = "won by seduction"
 		return
 	_weapon_values(game)
+	BodySystem.remember_strain(game, game.creature_field(id, "form", id))
 	# The rules' `fight starts`: the fight's bonuses (the original's start-of-fight
-	# plhitbonus, pldodgebonus ...); `fight.no_surprise` stops a first strike.
+	# plhitbonus, pldodgebonus ...) and numbers that follow the game's mode (Hard
+	# Mode's level boost); `fight.no_surprise` stops a first strike. Then the
+	# creature's own `fight starts` (the original's PrepCombat): its numbers for
+	# this fight, which may replace the rules' changes.
 	var rules := rules_id(game)
 	if rules != "":
 		_play(game, game.content.program("combat_rules:%s#fight starts" % rules))
+	_play(game, game.content.program(id + "#fight starts", "creature"))
 	if game.state.combat.result != "":
 		return
 	# Fighting.i7x:73-88: an alert, agile creature can strike first.
@@ -475,6 +480,27 @@ static func _has_special(game, id: String, name: String) -> bool:
 	return _special_chance(game, id, name) > 0
 
 
+## The words after a special's chance ("grapple 20% with strength ignoring armor"
+## gives "with strength ignoring armor"), "" when it has none.
+static func _special_options(game, id: String, name: String) -> String:
+	for part in game.creature_field(id, "special").split(","):
+		var words: PackedStringArray = part.strip_edges().split(" ", false)
+		if words.size() >= 1 and words[0] == name:
+			return " ".join(words.slice(2))
+	return ""
+
+
+## The attribute a hold is broken with (`grapple N% with strength`; dexterity by
+## default), rolled with level on both sides, and whether its squeeze ignores armor.
+static func hold_attribute(game, id: String) -> String:
+	var m := RegEx.create_from_string("\\bwith (\\w+)").search(_special_options(game, id, "grapple"))
+	return m.get_string(1) if m != null else "dexterity"
+
+
+static func _hold_armor(game, id: String) -> String:
+	return "no armor" if "ignoring armor" in _special_options(game, id, "grapple") else "normal"
+
+
 ## Plays one of the creature's combat scripts, if it has it.
 static func _script(game, id: String, field: String) -> void:
 	_play(game, game.content.program("%s#%s" % [id, field], "creature"))
@@ -557,13 +583,17 @@ static func _check_end(game) -> bool:
 static func _grapple_damage(game) -> void:
 	var id: String = game.state.combat.creature
 	var damage: int = number(game, id, "damage", 3) * spread(game, id) / 125
-	strike(game, damage)
+	strike(game, damage, _hold_armor(game, id))
 
 
+## Struggling in a hold: the player's attribute and level against the creature's
+## (Alt Combat.i7x latexhug and bearhug rules: dexterity to slip free, strength to
+## break a bear hug).
 static func _grapple(game) -> void:
 	var c: Dictionary = game.state.combat
-	var dex := int(game.value("player.dexterity")) + int(game.value("player.level"))
-	var enemy := stat(game, c.creature, "dexterity") + number(game, c.creature, "level", 1)
+	var attribute := hold_attribute(game, c.creature)
+	var dex := int(game.value("player." + attribute)) + int(game.value("player.level"))
+	var enemy := stat(game, c.creature, attribute) + number(game, c.creature, "level", 1)
 	if game.rng.range_int(0, dex) > game.rng.range_int(1, enemy):
 		c.grappled = false
 		_grapple_text(game, c.creature, "escape", "You slip free.")
@@ -593,7 +623,9 @@ static func aftermath(game, id: String, result: String) -> void:
 	var level := number(game, id, "level", 1)
 	if result.begins_with("won"):
 		game.set_value("player.xp", int(game.value("player.xp")) + level * 2)
-		drop_loot(game, id)
+		# A creature with trophies offers them instead (SceneRunner, after the fight).
+		if game.creature_field(id, "trophies") == "":
+			drop_loot(game, id)
 	elif result.begins_with("lost"):
 		# Alt Combat.i7x:1448-1489: one infection with the creature's form, or
 		# its cross infection unless that is banned; none for non-infectious ones.
@@ -695,6 +727,26 @@ static func drop_loot(game, id: String) -> void:
 	var chance := int(loot[1].trim_suffix("%"))
 	if chance <= 0:
 		return
-	var bonus: int = game.feat_bonus("loot bonus") + mini(10, (int(game.value("player.perception")) - 10) / 2)
-	if chance > 99 or game.rng.chance(chance + bonus, 100):
+	if chance > 99 or game.rng.chance(chance + loot_bonus(game), 100):
 		game.apply(Effect.compile("give " + loot[0]))
+
+
+## The loot bonus: the feats' `loot bonus` (Magpie Eyes, Mugger) and up to +10
+## from perception (the original's RefreshLootBonus).
+static func loot_bonus(game) -> int:
+	return game.feat_bonus("loot bonus") + mini(10, (int(game.value("player.perception")) - 10) / 2)
+
+
+## The creature's `trophies:` ("wolf_fur 80%, food 25%"): each item rolls its chance
+## plus the loot bonus, and the ones that come up are offered after a win, the
+## player taking one (Alt Combat.i7x:1501-1550, TrophyLootFunction).
+static func roll_trophies(game, id: String) -> Array:
+	var out: Array = []
+	for entry in game.creature_field(id, "trophies").split(",", false):
+		var parts: PackedStringArray = entry.strip_edges().split(" ", false)
+		if parts.size() != 2 or not game.content.has(parts[0], "item") or parts[0] in out:
+			continue
+		var chance := int(parts[1].trim_suffix("%"))
+		if chance > 99 or (chance > 0 and game.rng.chance(chance + loot_bonus(game), 100)):
+			out.append(parts[0])
+	return out

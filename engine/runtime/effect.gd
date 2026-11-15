@@ -76,6 +76,13 @@ static var _rules: Array = [
 	# A creature's zones or infection change in play: "creature centaur found in plains",
 	# "creature centaur found in nowhere", "creature centaur infectious yes", "creature rabbit gender female".
 	["grow", RegEx.create_from_string("^grow (cock|balls|breasts) by (.+)$")],
+	# The infection's sex or breast change run again ("follow the sex change rule"), toward
+	# the strain met or infected with last, or a named creature or form.
+	["sex_change", RegEx.create_from_string("^(sex|breast) change(?: toward (\\w+))?$")],
+	# A form's genital and breast targets changed in play ("now Cock Length entry is 10").
+	["form_number", RegEx.create_from_string("^form (\\w+) (cock count|cock length|ball size|cunt count|cunt depth|cunt tightness|breast size|male breast size|nipple count) = (.+)$")],
+	# The map changed in play: "~ change north exit of park_trail to picnic_area" (or "to nothing").
+	["change_exit", RegEx.create_from_string("^change (\\w+) exit of (\\w+) to (\\w+)$")],
 	["form_sex", RegEx.create_from_string("^form (\\w+) sex (male|female|herm|neuter|unchanged)$")],
 	["creature_change", RegEx.create_from_string("^creature (\\w+) (found in|infectious|gender|variant|loot|special|image|title|strike with) ([a-z0-9_,% ]+)$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) lives at (\\w+)$")],
@@ -321,6 +328,17 @@ static func _match(s: String) -> Dictionary:
 				if by.has("error"):
 					return {"error": by.error}
 				return {"op": "grow", "part": m.get_string(1), "amount": by}
+			"sex_change":
+				return {"op": "sex_change", "what": m.get_string(1), "form": m.get_string(2)}
+			"form_number":
+				var to := Expr.parse(m.get_string(3))
+				if to.has("error"):
+					return {"error": "cannot read the number in '%s': %s" % [m.get_string(3), to.error]}
+				var pair: Array = BodySystem.FORM_NUMBERS[m.get_string(2)]
+				return {"op": "form_number", "form": m.get_string(1), "part": pair[0], "key": pair[1], "value": to}
+			"change_exit":
+				return {"op": "change_exit", "direction": m.get_string(1), "place": m.get_string(2),
+					"to": "" if m.get_string(3) == "nothing" else m.get_string(3)}
 			"form_sex":
 				return {"op": "form_sex", "form": m.get_string(1), "sex": "" if m.get_string(2) == "unchanged" else m.get_string(2)}
 			"drive_heat":

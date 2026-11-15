@@ -5,16 +5,66 @@ extends RefCounted
 const PARTS := ["head", "torso", "back", "arms", "legs", "ass", "tail", "cock", "cunt", "skin"]
 const ALIASES := {"face": "head", "body": "torso"}
 
+## A form's genital and breast targets that play can change (`~ form X cock length = 10`),
+## by the original's column names: part and field of the form.
+const FORM_NUMBERS := {"cock count": ["cock", "count"], "cock length": ["cock", "length"], "ball size": ["balls", "size"],
+	"cunt count": ["cunt", "count"], "cunt depth": ["cunt", "depth"], "cunt tightness": ["cunt", "tightness"],
+	"breast size": ["breasts", "size"], "male breast size": ["breasts", "male size"], "nipple count": ["breasts", "nipples"]}
+const _CHANGEABLE := {"cock": ["count", "length"], "balls": ["size"], "cunt": ["count", "depth", "tightness"],
+	"breasts": ["size", "male size", "nipples"]}
+
+
 static func fields(game, form: String, part: String) -> Dictionary:
 	var d: FscParser.Definition = game.content.get_def("form", form)
 	var out := {}
-	if d == null or not d.fields.has(part):
+	if d == null:
 		return out
-	for line in d.fields[part].children:
-		if not line.is_blank() and ":" in line.text:
-			var pair: PackedStringArray = line.text.split(":", true, 1)
-			out[pair[0].strip_edges()] = pair[1].strip_edges()
+	if d.fields.has(part):
+		for line in d.fields[part].children:
+			if not line.is_blank() and ":" in line.text:
+				var pair: PackedStringArray = line.text.split(":", true, 1)
+				out[pair[0].strip_edges()] = pair[1].strip_edges()
+	# Numbers changed during play stand in for the form's own.
+	for key: String in _CHANGEABLE.get(part, []):
+		var changed: Variant = game.state.values.get("form.%s.%s.%s" % [form, part, key])
+		if changed != null:
+			out[key] = str(changed)
 	return out
+
+
+## The strain the infection's sex and breast changes follow when no form is named
+## (the original's MonsterID): the latest of the creature met, fought or picked and
+## the form that infected or transformed the player; else the creature met last.
+static func strain(game) -> String:
+	var last := str(game.state.values.get("infection.strain", ""))
+	if last != "":
+		return last
+	var met: String = game.current_creature()
+	return game.creature_field(met, "form", met) if met != "" else ""
+
+
+## Remembers the strain a scene's sex change follows (infection, transformation, a fight, a pick).
+static func remember_strain(game, form: String) -> void:
+	if form != "":
+		game.state.values["infection.strain"] = form
+
+
+## "~ sex change" / "~ breast change" (the original's sex change rule and breast change
+## rule, run again by a scene): the player's sex or breasts move once toward the strain's.
+## `toward` names a creature (its form) or a form; "" uses strain().
+static func change_again(game, what: String, toward: String = "") -> void:
+	var form := toward
+	if form == "":
+		form = strain(game)
+	elif game.content.has(form, "creature"):
+		form = game.creature_field(form, "form", form)
+	if form == "" or game.content.get_def("form", form) == null:
+		game.warn("No form for the %s change to follow%s." % [what, (" ('%s')" % form) if form != "" else ""])
+		return
+	if what == "breast":
+		_breasts(game, form)
+	else:
+		_sex(game, form)
 
 
 ## Infection with a form, following the original's OldInfectionRoll
@@ -27,6 +77,7 @@ static func infect(game, form: String, all: bool = false, keep_sex: bool = false
 	if game.content.get_def("form", form) == null:
 		game.warn("No form '%s' to infect with." % form)
 		return
+	remember_strain(game, form)
 	# Infection rules can block infection altogether (Flexible Survival's Researcher start);
 	# `infection.bypass` says the infecting creature gets through anyway (research bypass).
 	if not all and rule(game, "blocked when"):

@@ -260,6 +260,7 @@ func run() -> void:
 			if f.pc == 0:
 				f.pc = 2
 				VariantSystem.pick(game, f.creature, f.get("hunted", false))
+				BodySystem.remember_strain(game, game.creature_field(f.creature, "form", f.creature))
 				if f.get("title", false):
 					_encounter_title(f.creature)
 				# A random meeting (not a hunt, not inside an event) can be avoided:
@@ -325,6 +326,9 @@ func run() -> void:
 			if _feat_choice_step(f):
 				return
 			continue
+		if f.kind == "trophy_choice":
+			_trophy_step(f)
+			return
 		if f.kind == "ask":
 			if not f.shown:
 				f.shown = true
@@ -783,7 +787,13 @@ func choose(index: int) -> bool:
 	var p: Dictionary = pending[index]
 	pending = []
 	var f: Dictionary = frames[-1]
-	if p.has("feat"):
+	if p.has("trophy"):
+		frames.erase(f)
+		if str(p.trophy) != "":
+			game.apply(Effect.compile("give " + str(p.trophy)))
+		elif CombatSystem.rule(game, "no trophy", "") != "":
+			game.emit({"type": "paragraph", "spans": game.render(TextTemplate.compile(CombatSystem.rule(game, "no trophy", "")))})
+	elif p.has("feat"):
 		frames.erase(f)
 		if str(p.feat) != "":
 			game.apply(Effect.compile("feat + %s" % p.feat))
@@ -843,6 +853,8 @@ func _finish_fight() -> void:
 	f.pc = ins.outcomes.get(result, ins.outcomes.get(fallback, ins.after))
 	f.erase("fight")
 	frames.append({"kind": "combat_end", "creature": ins.creature, "result": result})
+	# Trophies the player may take one of, offered first (the original's trophy list).
+	var trophies: Array = CombatSystem.roll_trophies(game, ins.creature) if fallback == "won" else []
 	if fallback == "won":
 		# A beaten creature may be consumed or unbirthed instead (VoreSystem): the
 		# offer comes before the creature's `defeated` scene, which it may replace.
@@ -850,10 +862,29 @@ func _finish_fight() -> void:
 		if offer.vore or offer.unbirth:
 			frames.append({"kind": "vore_offer", "creature": ins.creature, "vore": offer.vore, "unbirth": offer.unbirth,
 				"step": "start"})
+			if not trophies.is_empty():
+				frames.append({"kind": "trophy_choice", "items": trophies})
 			return
 	var field := "defeated" if fallback == "won" else "victory" if fallback == "lost" else ""
 	if field != "" and game.content.program(ins.creature + "#" + field) != null:
 		_push(ins.creature + "#" + field, {})
+	if not trophies.is_empty():
+		frames.append({"kind": "trophy_choice", "items": trophies})
+
+
+## The trophies rolled after a win: one to take, or none (the combat rules'
+## `trophy prompt`, `no trophy label` and `no trophy` give the words).
+func _trophy_step(f: Dictionary) -> bool:
+	var shown: Array = []
+	pending = []
+	for id: String in f.items:
+		shown.append({"text": game.content.typed_value("item", id, "name", id), "enabled": true})
+		pending.append({"trophy": id, "enabled": true})
+	shown.append({"text": CombatSystem.rule(game, "no trophy label", "Take nothing"), "enabled": true, "leave": true})
+	pending.append({"trophy": "", "enabled": true})
+	game.emit({"type": "choices", "title": CombatSystem.rule_text(game, "trophy prompt", "Take one item as a trophy."), "options": shown})
+	status = "choice"
+	return true
 
 
 # --- Idle actions -----------------------------------------------------------
@@ -889,23 +920,18 @@ func show_location() -> void:
 		var prog: Program = db.program("%s#%s" % [loc, key])
 		if prog != null:
 			view.description.append_array(render_paragraphs(prog))
-	var exits: FscParser.Field = db.get_def("location", loc).fields.get("exits", null)
 	var shown_doors: Array = []
-	if exits != null:
-		for l in exits.children:
-			if l.is_blank():
-				continue
-			var parts := l.text.split(":", true, 1)
-			var target := exit_target(parts[1]) if parts.size() > 1 else ""
-			var door := _exit_door(parts[1]) if parts.size() > 1 else ""
-			var danger := db.typed_value("door", door, "leads to zone") if door != "" else ""
-			# A dangerous door shows as the door ("Skyscrapers"), explored rather than entered.
-			var exit_name: String = db.field_value(door, "name", door) if danger != "" or target == "" else db.field_value(target, "name", target)
-			view.exits.append({"direction": parts[0].strip_edges(), "to": "" if danger != "" else target, "name": exit_name,
-				"explore": danger != "", "enabled": not _door_locked(door)})
-			if door != "" and door not in shown_doors:
-				view.description.append_array(render_paragraphs(db.program(door + "#shown in room")))
-				shown_doors.append(door)
+	for pair: Array in game.exits_of(loc):
+		var target := exit_target(pair[1])
+		var door := _exit_door(pair[1])
+		var danger := db.typed_value("door", door, "leads to zone") if door != "" else ""
+		# A dangerous door shows as the door ("Skyscrapers"), explored rather than entered.
+		var exit_name: String = db.field_value(door, "name", door) if danger != "" or target == "" else db.field_value(target, "name", target)
+		view.exits.append({"direction": pair[0], "to": "" if danger != "" else target, "name": exit_name,
+			"explore": danger != "", "enabled": not _door_locked(door)})
+		if door != "" and door not in shown_doors:
+			view.description.append_array(render_paragraphs(db.program(door + "#shown in room")))
+			shown_doors.append(door)
 	for c in db.all_of("character"):
 		if game.where(c) == loc:
 			var fields: Dictionary = db.get_def("character", c).fields
@@ -1249,15 +1275,10 @@ static func exit_target(exit: String) -> String:
 ## The doors on a place's exits.
 func exit_doors(loc: String) -> Array:
 	var out: Array = []
-	var d: FscParser.Definition = game.content.get_def("location", loc)
-	var exits: FscParser.Field = d.fields.get("exits", null) if d != null else null
-	if exits == null:
-		return out
-	for l in exits.children:
-		if not l.is_blank() and ":" in l.text:
-			var door := _exit_door(l.text.split(":", true, 1)[1])
-			if door != "" and door not in out:
-				out.append(door)
+	for pair: Array in game.exits_of(loc):
+		var door := _exit_door(pair[1])
+		if door != "" and door not in out:
+			out.append(door)
 	return out
 
 
@@ -1316,18 +1337,15 @@ func scavenge_events(zone: String) -> Array:
 func _walk(arg: String) -> bool:
 	var db: ContentDB = game.content
 	var loc: String = game.state.location
-	var exits: FscParser.Field = db.get_def("location", loc).fields.get("exits", null)
-	if exits == null:
+	var ways: Array = game.exits_of(loc)
+	if ways.is_empty():
 		return false
 	if ItemSystem.overburdened(game):
 		# Inventory.i7x:308-309; fast travel is not blocked.
 		game.notice("You are too overburdened to move. Drop some of that junk!", false)
 		return false
-	for l in exits.children:
-		if l.is_blank():
-			continue
-		var parts := l.text.split(":", true, 1)
-		if parts[0].strip_edges() == arg and parts.size() > 1:
+	for parts: Array in ways:
+		if parts[0] == arg:
 			var door := _exit_door(parts[1])
 			var danger := db.typed_value("door", door, "leads to zone") if door != "" else ""
 			if danger != "" and not _door_locked(door):

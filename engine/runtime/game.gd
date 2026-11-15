@@ -1011,6 +1011,16 @@ func apply(e: Dictionary) -> void:
 			_event(e.event).active = e.op == "activate"
 		"form_sex":
 			state.values["form.%s.sex" % e.form] = e.sex
+		"form_number":
+			state.values["form.%s.%s.%s" % [e.form, e.part, e.key]] = int(Expr._num(Expr.evaluate(e.value, self)))
+		"sex_change":
+			BodySystem.change_again(self, e.what, e.form)
+		"change_exit":
+			# "change the north exit of X to Y" (the original's map changes): saved, and
+			# shown on the map and the place's ways out from now on.
+			var changed: Dictionary = state.exits.get(e.place, {})
+			changed[e.direction] = e.to
+			state.exits[e.place] = changed
 		"grow":
 			BodySystem.grow(self, e.part, Effect.resolve_amount(e.amount, self))
 		"creature_change":
@@ -1096,6 +1106,9 @@ func apply(e: Dictionary) -> void:
 				state.combat["infects_as"] = e.creature
 		"pick":
 			runner.pick_creature(e.tag, e.zone, e.favoring, e.get("with_outside", false))
+			var picked := str(state.values.get("picked.creature", ""))
+			if picked != "":
+				BodySystem.remember_strain(self, creature_field(picked, "form", picked))
 		"infect":
 			var form: String = e.form if e.get("part", "") == "" else part_form("player", e.part)
 			if form == "@picked":
@@ -1625,6 +1638,31 @@ func travel_destinations() -> Array:
 	return out
 
 
+## A place's ways out as [direction, exit] pairs ("north", "plaza, door gate"): its
+## `exits:` with the changes made in play (`~ change north exit of X to Y`).
+func exits_of(loc: String) -> Array:
+	var out: Array = []
+	var changed: Dictionary = state.exits.get(loc, {})
+	var d: FscParser.Definition = content.get_def("location", loc)
+	var f: FscParser.Field = d.fields.get("exits", null) if d != null else null
+	var seen: Array = []
+	if f != null:
+		for l in f.children:
+			if l.is_blank() or ":" not in l.text:
+				continue
+			var parts := l.text.split(":", true, 1)
+			var dir := parts[0].strip_edges()
+			seen.append(dir)
+			if not changed.has(dir):
+				out.append([dir, parts[1].strip_edges()])
+			elif str(changed[dir]) != "":
+				out.append([dir, str(changed[dir])])
+	for dir: String in changed:
+		if dir not in seen and str(changed[dir]) != "":
+			out.append([dir, str(changed[dir])])
+	return out
+
+
 ## Locations of a region with map positions, for the map and mini map.
 func map_data(region: String = "") -> Dictionary:
 	if region == "":
@@ -1637,13 +1675,10 @@ func map_data(region: String = "") -> Dictionary:
 		if pos.size() < 2:
 			continue
 		var exits: Array = []
-		var f: FscParser.Field = content.get_def("location", id).fields.get("exits", null)
-		if f != null:
-			for l in f.children:
-				if not l.is_blank() and ":" in l.text:
-					var to := SceneRunner.exit_target(l.text.split(":", true, 1)[1])
-					if to != "":
-						exits.append(to)
+		for pair: Array in exits_of(id):
+			var to := SceneRunner.exit_target(pair[1])
+			if to != "":
+				exits.append(to)
 		places.append({"id": id, "name": content.field_value(id, "name", id), "x": int(pos[0]), "y": int(pos[1]),
 			"known": state.known.has(id), "current": id == state.location, "exits": exits,
 			"fast_travel": "fast travel" in content.list_field(id, "flags")})

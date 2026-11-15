@@ -153,6 +153,13 @@ func _check_slice_types() -> void:
 				_err(d.fields.loot.line, "Loot is written 'item_id N%'.")
 			else:
 				_need(loot[0], "item", d.fields.loot.line)
+		if d.fields.has("trophies"):
+			for entry in d.fields.trophies.value.split(",", false):
+				var trophy: PackedStringArray = entry.strip_edges().split(" ", false)
+				if trophy.size() != 2 or not trophy[1].ends_with("%") or not trophy[1].trim_suffix("%").is_valid_int():
+					_err(d.fields.trophies.line, "Trophies are written 'item_id N%%, item_id N%%' ('%s' is not)." % entry.strip_edges())
+				else:
+					_need(trophy[0], "item", d.fields.trophies.line)
 		if d.fields.has("form"):
 			_need(d.fields.form.value, "form", d.fields.form.line)
 		if d.fields.has("active") and d.fields.active.value not in ["always", "day", "night"]:
@@ -1206,7 +1213,7 @@ func _check_programs() -> void:
 
 ## A creature's scripts that run during its turn in a fight.
 const COMBAT_SCRIPTS := ["attack", "grapple", "escape", "struggle", "each round", "before attack", "after attack", "miss",
-	"hump", "pounce", "breath warning", "breath direct", "breath partial", "breath miss"]
+	"hump", "pounce", "breath warning", "breath direct", "breath partial", "breath miss", "fight starts"]
 
 
 ## Why a scene played from a fight's script cannot run there, or "" when it can.
@@ -1289,7 +1296,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
-			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy"]:
+			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
@@ -1318,6 +1325,17 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_need(e.scene, "scene", line)
 		"form_sex":
 			_need(e.form, "form", line)
+		"form_number":
+			_need(e.form, "form", line)
+			for p in Expr.paths(e.value):
+				_check_path(p, line)
+		"sex_change":
+			if e.form != "" and not db.has(e.form, "creature") and not db.has(e.form, "form"):
+				_err(line, "'%s' is neither a creature nor a form for the %s change to follow.%s" % [e.form, e.what, _suggest(e.form, _ids("form"))])
+		"change_exit":
+			_need(e.place, "location", line)
+			if e.to != "":
+				_need(e.to, "location", line)
 		"pick":
 			if e.tag != "":
 				_need(e.tag, "tag", line)
@@ -1700,6 +1718,15 @@ func _special_problem(text: String) -> String:
 		if words.is_empty() or words[0] not in CombatSystem.SPECIALS:
 			return "Unknown combat behaviour '%s'. Built in: grapple N%%, hump N%%, pounce N%%, firebreath; anything else goes in the creature's attacks." % part.strip_edges()
 		var needs_chance: bool = words[0] != "firebreath"
+		if words[0] == "grapple" and words.size() > 2:
+			# A hold's options: the attribute that breaks it, and a squeeze that ignores armor.
+			var rest := " ".join(words.slice(2))
+			var m := RegEx.create_from_string("^(?:with (\\w+))? ?(ignoring armor)?$").search(rest)
+			if m == null or rest == "":
+				return "Write 'grapple N%', optionally followed by 'with <attribute>' and 'ignoring armor'."
+			if m.get_string(1) != "" and m.get_string(1) not in CombatSystem.ATTRIBUTES:
+				return "A hold is broken with an attribute: %s." % ", ".join(CombatSystem.ATTRIBUTES)
+			words = words.slice(0, 2)
 		if words.size() != (2 if needs_chance else 1):
 			return "Write '%s'." % ("%s N%%" % words[0] if needs_chance else words[0])
 		if needs_chance and (not words[1].ends_with("%") or not words[1].trim_suffix("%").is_valid_int() \
