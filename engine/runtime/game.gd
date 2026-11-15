@@ -123,6 +123,8 @@ func value(path: String) -> Variant:
 	if content.values.has(path):
 		if content.values[path].get("kind", "") == "time":
 			return state.stamps.get(path)  # the turn it was set (null before that)
+		if content.values[path].get("kind", "") == "list":
+			return content.values[path].default.duplicate()  # never the declaration's own list
 		return content.values[path].get("default")
 	if path.begins_with("pregnancy."):
 		var key := path.substr(10)
@@ -443,6 +445,9 @@ func adjective(who: String, adj: String) -> bool:
 		var cock := g in ["male", "herm", "shemale", "male herm"]
 		var cunt := g in ["female", "herm", "male herm", "cuntboy"]
 		return {"male": cock, "female": cunt, "herm": cock and cunt, "neuter": not cock and not cunt}[adj]
+	if adj in ["locked", "unlocked"] and content.has(who, "door"):
+		# "cell_door is locked": its state in play, else its `locked:` field.
+		return runner._door_locked(who) == (adj == "locked")
 	if who == "player" and adj.begins_with("interested in "):
 		return interest(adj.substr(14).strip_edges())
 	match adj:
@@ -602,9 +607,13 @@ func describe(name: String) -> String:
 	# "[people.bunker + people.library]": arithmetic on values.
 	var calc := Expr.text_expression(n)
 	if not calc.is_empty():
-		return str(Expr._num(Expr.evaluate(calc, self)))
+		var result = Expr.evaluate(calc, self)
+		# A list's entry may be a text ("[entry 1 of x.names]"); a missing entry is nothing.
+		return result if result is String else "" if result == null else str(Expr._num(result))
 	if n.begins_with("player.") or ("." in n and not " " in n):
 		var v = value(n)
+		if v is Array:
+			return ", ".join(v.map(func(x): return str(x)))  # a list: its entries
 		return str(v) if v != null else ""
 	var parts := n.split(" of ", true, 1)
 	var what := parts[0]
@@ -987,7 +996,13 @@ func apply(e: Dictionary) -> void:
 		"choose_feat":
 			runner.choose_feat(e.group)
 		"ask":
-			runner.ask_text(e.path, e.prompt, e.max)
+			if e.get("number", false):
+				# A typed number, within its bounds when it has them (worked out now).
+				var low = Expr._num(Expr.evaluate(e.low, self)) if e.has("low") else null
+				var high = Expr._num(Expr.evaluate(e.high, self)) if e.has("high") else null
+				runner.ask_number(e.path, e.prompt, low, high)
+			else:
+				runner.ask_text(e.path, e.prompt, e.max)
 		"send_children":
 			CompanionSystem.move_children(self, e.from, e.to)
 		"quest":
@@ -1007,6 +1022,9 @@ func apply(e: Dictionary) -> void:
 				ev = runner.current_event()
 			if ev != "":
 				_event(ev).resolved = true
+		"unresolve":
+			# Found again from now on; its outcome and resolution number stay, as in the original.
+			_event(e.event).resolved = false
 		"activate", "deactivate":
 			_event(e.event).active = e.op == "activate"
 		"form_sex":
@@ -1014,7 +1032,12 @@ func apply(e: Dictionary) -> void:
 		"form_number":
 			state.values["form.%s.%s.%s" % [e.form, e.part, e.key]] = int(Expr._num(Expr.evaluate(e.value, self)))
 		"sex_change":
-			BodySystem.change_again(self, e.what, e.form)
+			BodySystem.change_again(self, e.what, e.form, e.get("keep_cock", false))
+		"lock":
+			# A door locked or unlocked in play; it stays so (saved), whatever its `locked:` says.
+			state.values["door.%s.locked" % e.door] = e.locked
+		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort":
+			_change_list(e)
 		"change_exit":
 			# "change the north exit of X to Y" (the original's map changes): saved, and
 			# shown on the map and the place's ways out from now on.
@@ -1145,6 +1168,10 @@ func apply(e: Dictionary) -> void:
 				PregnancySystem.birth(self)
 		"record_child":
 			PregnancySystem.record_child(self)
+		"new_child":
+			PregnancySystem.new_child(self)
+		"child_random":
+			PregnancySystem.random_child_value(self, e.what)
 		"each_child":
 			PregnancySystem.each_child(self, e.home, e.scene)
 		"end_pregnancy":
@@ -1206,6 +1233,52 @@ func apply(e: Dictionary) -> void:
 		_:
 			warn("Effect '%s' is not supported yet." % e.op)
 			emit({"type": "notice", "text": "[effect '%s' not implemented yet]" % e.op})
+
+
+## The list effects: a changed copy of the list is stored (lists are saved with the game).
+func _change_list(e: Dictionary) -> void:
+	var current = value(e.path)
+	var list: Array = (current as Array).duplicate() if current is Array else []
+	match e.op:
+		"list_add":
+			for item: Dictionary in e.items:
+				var v = Expr.evaluate(item, self)
+				if not (e.if_absent and Condition.list_has(list, v)):
+					list.append(v)
+		"list_remove":
+			# Every entry equal to the value goes, as the original's "remove X from L".
+			for item: Dictionary in e.items:
+				var v = Expr.evaluate(item, self)
+				list = list.filter(func(x): return not Condition.compare(x, "=", v, {}, self))
+		"list_remove_entry":
+			var at := Expr._num(Expr.evaluate(e.items[0], self))
+			if at >= 1 and at <= list.size():
+				list.remove_at(at - 1)
+		"list_clear":
+			list = []
+		"list_sort":
+			match e.order:
+				"random":
+					# Shuffled with the game's own random numbers, so a seed replays the same.
+					for i in range(list.size() - 1, 0, -1):
+						var j: int = rng.range_int(0, i)
+						var t = list[i]
+						list[i] = list[j]
+						list[j] = t
+				"reverse":
+					list.sort_custom(func(a, b): return _list_before(b, a))
+				_:
+					list.sort_custom(func(a, b): return _list_before(a, b))
+	set_value(e.path, list)
+
+
+## The order of list entries: numbers by size, then texts alphabetically.
+static func _list_before(a: Variant, b: Variant) -> bool:
+	if a is String or b is String:
+		if (a is String) != (b is String):
+			return not a is String  # numbers first
+		return str(a) < str(b)
+	return Expr._num(a) < Expr._num(b)
 
 
 func _change_stat(key: String, delta: int, label: String, quiet: bool) -> void:
@@ -1470,7 +1543,10 @@ func pass_turn() -> void:
 
 
 ## The moments hooks can run at (`on:` of a hook).
-const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits"]
+const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
+	"after resting", "instead of resting"]
+## Moments about one character: "instead of talking to adam", "instead of sex with adam".
+const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`
@@ -1482,16 +1558,33 @@ func run_hooks(moment: String) -> void:
 		if each != null:
 			runner.play_now(each.id)
 	for id: String in content.all_of("hook"):
-		if content.typed_value("hook", id, "on") != moment:
-			continue
-		if content.typed_value("hook", id, "while incapacitated") == "skip" and not state.combat.is_empty():
-			continue
-		var when := content.typed_value("hook", id, "when")
-		if when != "" and not Condition.evaluate(Condition.compile(when), self):
-			continue
-		var prog := content.program("%s#do" % id, "hook")
-		if prog != null:
-			runner.play_now(prog.id)
+		if _hook_applies(id, moment):
+			runner.play_now(content.program("%s#do" % id, "hook").id)
+
+
+## An "instead of" moment: the script of the first hook (in pack load order) for
+## it whose `when:` holds, which plays instead of the action; "" when none does.
+func hook_instead(moment: String) -> String:
+	for id: String in content.all_of("hook"):
+		if _hook_applies(id, moment):
+			return content.program("%s#do" % id, "hook").id
+	return ""
+
+
+## Whether a hook for `moment` exists at all (without checking its `when:`).
+func has_hook(moment: String) -> bool:
+	return content.all_of("hook").keys().any(func(id): return content.typed_value("hook", id, "on") == moment)
+
+
+func _hook_applies(id: String, moment: String) -> bool:
+	if content.typed_value("hook", id, "on") != moment:
+		return false
+	if content.typed_value("hook", id, "while incapacitated") == "skip" and not state.combat.is_empty():
+		return false
+	var when := content.typed_value("hook", id, "when")
+	if when != "" and not Condition.evaluate(Condition.compile(when), self):
+		return false
+	return content.program("%s#do" % id, "hook") != null
 
 
 # --- Views for the interface (read-only) -----------------------------------

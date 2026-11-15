@@ -51,8 +51,10 @@ static func remember_strain(game, form: String) -> void:
 
 ## "~ sex change" / "~ breast change" (the original's sex change rule and breast change
 ## rule, run again by a scene): the player's sex or breasts move once toward the strain's.
-## `toward` names a creature (its form) or a form; "" uses strain().
-static func change_again(game, what: String, toward: String = "") -> void:
+## `toward` names a creature (its form) or a form; "" uses strain(). A cock that
+## appears where there was none takes the strain, as in the original, unless
+## `keep_cock` ("~ sex change keeping cock", the original's skipcockchange).
+static func change_again(game, what: String, toward: String = "", keep_cock: bool = false) -> void:
 	var form := toward
 	if form == "":
 		form = strain(game)
@@ -64,7 +66,7 @@ static func change_again(game, what: String, toward: String = "") -> void:
 	if what == "breast":
 		_breasts(game, form)
 	else:
-		_sex(game, form)
+		_sex(game, form, not keep_cock)
 
 
 ## Infection with a form, following the original's OldInfectionRoll
@@ -268,8 +270,9 @@ static func _target(game, form: String, part: String, key: String) -> int:
 	return int(fields(game, form, part).get(key, "0"))
 
 
-## The original's sex change rule (Infections.i7x:10-224).
-static func _sex(game, form: String) -> void:
+## The original's sex change rule (Infections.i7x:10-224). With `cock_strain`, a cock
+## that appears where there was none takes the form's strain (Infections.i7x:78-80).
+static func _sex(game, form: String, cock_strain: bool = false) -> void:
 	var sex: String = target_sex(game, form)
 	var maleish := sex in ["male", "herm"]
 	var femaleish := sex in ["female", "herm"]
@@ -328,6 +331,8 @@ static func _sex(game, form: String) -> void:
 					_setn(game, "cocks", before + 1)
 				_setn(game, "cock.length", 1 + target / 3)
 				_setn(game, "balls.size", 1)
+				if cock_strain and not fields(game, form, "cock").is_empty():
+					_change_part(game, form, "cock", false)
 				if modest:
 					_setn(game, "cock.length", mini(_num(game, "cock.length"), cap_cock))
 			elif game.rng.chance(2, 3) and not rule(game, "just one when"):

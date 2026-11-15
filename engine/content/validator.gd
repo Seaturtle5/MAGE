@@ -411,8 +411,15 @@ func _check_world() -> void:
 		var d: FscParser.Definition = db.get_def("hook", id)
 		_path = d.path
 		var on := db.typed_value("hook", id, "on")
-		if on not in Game.HOOK_MOMENTS:
-			_err(d.fields["on"].line if d.fields.has("on") else d.line, "A hook needs 'on:' with one of: %s." % ", ".join(Game.HOOK_MOMENTS))
+		var about := ""  # the character of "instead of talking to adam"
+		for prefix: String in Game.HOOK_CHARACTER_MOMENTS:
+			if on.begins_with(prefix):
+				about = on.substr(prefix.length()).strip_edges()
+		if about != "":
+			_need(about, "character", d.fields["on"].line)
+		elif on not in Game.HOOK_MOMENTS:
+			_err(d.fields["on"].line if d.fields.has("on") else d.line, "A hook needs 'on:' with one of: %s, or %s." % [", ".join(Game.HOOK_MOMENTS),
+				" or ".join(Game.HOOK_CHARACTER_MOMENTS.map(func(m): return "'%s<character>'" % m))])
 		if d.fields.has("when"):
 			_check_condition_text(d.fields["when"].value, d.fields["when"].line, id)
 		var inc := db.typed_value("hook", id, "while incapacitated", "run")
@@ -1243,7 +1250,8 @@ func _combat_effect(ins: Dictionary) -> bool:
 ## numbers, feats and conditions; nothing that moves the player or starts a scene.
 func _simple_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"set", "set_time", "change", "survival", "feat", "condition", "meter", "infect"]
+		"set", "set_time", "change", "survival", "feat", "condition", "meter", "infect",
+		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "child_random", "new_child"]
 
 
 func _check_instruction(ins: Dictionary, owner: String) -> void:
@@ -1296,15 +1304,31 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
-			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit"]:
+			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
+			"unresolve", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
+		"ask" when e.get("number", false):
+			_check_path(e.path, line)
+			var kind: String = db.values.get(e.path, {}).get("kind", "")
+			if kind != "number" and not (kind == "" and e.path.begins_with("player.")):
+				_err(line, "~ ask ... as number stores a number: '%s' must be a number value." % e.path)
+			for bound in ["low", "high"]:
+				if e.has(bound):
+					_check_expr(e[bound], line)
+			_check_template(e.prompt, line, "")
 		"ask":
 			_check_path(e.path, line)
 			if e.path.begins_with("player.") and not db.values.has(e.path):
 				_err(line, "~ ask stores text: give it a declared text value, not the player value '%s'." % e.path)
 			_check_template(e.prompt, line, "")
+		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort":
+			_check_list(e.path, line)
+			for item: Dictionary in e.get("items", []):
+				_check_expr(item, line)
+		"lock":
+			_need(e.door, "door", line)
 		"choose_feat":
 			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
 				_err(line, "No feat has group '%s'." % e.group)
@@ -1453,7 +1477,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_need(e.who, "character", line)
 		"condition":
 			_need(e.condition, "condition", line)
-		"activate", "deactivate":
+		"activate", "deactivate", "unresolve":
 			_need(e.event, "event", line)
 		"resolve":
 			if e.event != "":
@@ -1469,18 +1493,34 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_check_path(p, line)
 		"set", "change":
 			_check_path(e.path, line)
+			if db.values.get(e.path, {}).get("kind", "") == "list":
+				_err(line, "%s is a list: change it with ~ add, ~ remove, ~ clear or ~ sort." % e.path)
 			if e.op == "set":
 				_check_set_value(e.path, e.value, line)
+				_check_expr(e.value, line)
 				for bound in e.get("range", []):
-					for p in Expr.paths(bound):
-						_check_path(p, line)
+					_check_expr(bound, line)
 			elif e.amount.has("value"):
-				for p in Expr.paths(e.amount.value):
-					_check_path(p, line)
+				_check_expr(e.amount.value, line)
 		"survival":
 			if e.amount.has("value"):
 				for p in Expr.paths(e.amount.value):
 					_check_path(p, line)
+
+
+## The value paths in an expression exist, and those read as lists (`entry 1 of x.list`) are lists.
+func _check_expr(node: Dictionary, line: int) -> void:
+	for p in Expr.paths(node):
+		_check_path(p, line)
+	for p in Expr.list_paths(node):
+		_check_list(p, line)
+
+
+## A value declared as a list (`name: list`).
+func _check_list(path: String, line: int) -> void:
+	_check_path(path, line)
+	if db.values.has(path) and db.values[path].get("kind", "") != "list":
+		_err(line, "%s is not a list. Declare it as 'name: list' to add entries to it." % path)
 
 
 func _need(id: String, type: String, line: int) -> void:
@@ -1599,8 +1639,8 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			if c.slot not in Game.TIME_SLOTS + ["day", "night"]:
 				_err(line, "Unknown time '%s'. Times: day, %s." % [c.slot, ", ".join(Game.TIME_SLOTS)])
 		"cmp":
-			for p in Expr.paths(c.left) + Expr.paths(c.right):
-				_check_path(p, line)
+			_check_expr(c.left, line)
+			_check_expr(c.right, line)
 			# A state name compared with a state value must be one of its states.
 			if c.left.get("op", "") == "path" and c.right.get("op", "") == "word":
 				var decl: Dictionary = db.values.get(c.left.v, {})
@@ -1608,6 +1648,16 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 					_err(line, "'%s' is not a state of %s. States: %s." % [c.right.v, c.left.v, ", ".join(decl.states)])
 		"truthy":
 			_check_path(c.path, line)
+		"listed":
+			_check_list(c.path, line)
+			_check_expr(c.item, line)
+		"empty":
+			_check_path(c.path, line)
+			var decl: Dictionary = db.values.get(c.path, {})
+			if decl.get("kind", "") == "states" and "empty" not in decl.states:
+				_err(line, "'%s is empty' tests a list or a text; %s is a list of states without 'empty'." % [c.path, c.path])
+			elif decl.get("kind", "") in ["number", "flag", "time"]:
+				_err(line, "'%s is empty' tests a list or a text, not a %s." % [c.path, decl.kind])
 		"order":
 			_check_path(c.path, line)
 			var decl: Dictionary = db.values.get(c.path, {})
@@ -1662,6 +1712,10 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 			if c.who == "here":
 				if c.adjective != "explorable" and not (c.adjective.begins_with("flagged ") and c.adjective.substr(8) in _location_flags()):
 					_err(line, "Use 'here is explorable' or 'here is flagged <flag>' with one of: %s." % ", ".join(_location_flags()))
+				return
+			if db.has(c.who, "door") and not db.has(c.who, "character"):
+				if c.adjective not in ["locked", "unlocked"]:
+					_err(line, "A door is 'locked' or 'unlocked': '%s is %s'." % [c.who, c.adjective])
 				return
 			if c.adjective == "ready" and not db.has(c.who, "event"):
 				_err(line, "'%s is ready' tests an event's requirements, but %s is not an event." % [c.who, c.who])
@@ -1852,9 +1906,8 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			n = n.trim_suffix(" in words")
 		var calc := Expr.text_expression(n)
 		if not calc.is_empty():
-			# "[people.bunker + people.library]": arithmetic on values.
-			for p in Expr.paths(calc):
-				_check_path(p, line)
+			# "[people.bunker + people.library]": arithmetic on values; "[entry 1 of x.list]".
+			_check_expr(calc, line)
 			continue
 		if "." in n and not " " in n:
 			_check_path(n, line)

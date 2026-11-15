@@ -98,6 +98,8 @@ static func from_dict(d: Dictionary) -> GameState:
 		var v = s.values[k]
 		if v is float and v == floor(v):
 			s.values[k] = int(v)
+		elif v is Array:
+			s.values[k] = _whole(v)  # list values: their numbers too
 	return s
 
 

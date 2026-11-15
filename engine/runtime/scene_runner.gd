@@ -332,8 +332,13 @@ func run() -> void:
 		if f.kind == "ask":
 			if not f.shown:
 				f.shown = true
-				game.emit({"type": "input", "prompt": TextTemplate.plain(game.render(f.prompt)),
-					"value": str(game.value(f.path)) if game.value(f.path) != null else "", "max": f.max})
+				var asked := {"type": "input", "prompt": TextTemplate.plain(game.render(f.prompt)),
+					"value": str(game.value(f.path)) if game.value(f.path) != null else "", "max": f.max}
+				if f.get("number", false):
+					# A number: the interface may offer a number field within these bounds.
+					asked.merge({"number": true, "value": "", "low": int(f.low) if f.get("low") != null else null,
+						"high": int(f.high) if f.get("high") != null else null}, true)
+				game.emit(asked)
 				status = "input"
 				return
 			frames.erase(f)
@@ -732,13 +737,41 @@ func ask_text(path: String, prompt: Dictionary, max_length: int = 40) -> void:
 		run()
 
 
+## `~ ask <value> as number from A to B: <prompt>`: the player types a whole number
+## (the original's "get a number"); `low` and `high` are null when unbounded.
+func ask_number(path: String, prompt: Dictionary, low: Variant, high: Variant) -> void:
+	frames.append({"kind": "ask", "path": path, "prompt": prompt, "max": 12, "shown": false,
+		"number": true, "low": low, "high": high})
+	if status == "idle":
+		run()
+
+
 ## The player's typed answer: stored in the value, then the scene goes on.
+## A number question that gets no whole number in its range says so and asks
+## again (still true: the answer was taken; the runner waits for input again).
 func enter_text(text: String) -> bool:
 	if status != "input" or frames.is_empty() or frames[-1].kind != "ask":
 		return false
 	var f: Dictionary = frames[-1]
 	var clean := text.strip_edges().replace("\n", " ").replace("[", "(").replace("]", ")")
-	game.set_value(str(f.path), clean.left(int(f.max)))
+	if f.get("number", false):
+		var low = f.get("low")
+		var high = f.get("high")
+		if not clean.is_valid_int() or (low != null and int(clean) < int(low)) or (high != null and int(clean) > int(high)):
+			var wanted := "a whole number"
+			if low != null and high != null:
+				wanted = "a number from %d to %d" % [int(low), int(high)]
+			elif low != null:
+				wanted = "a number of at least %d" % int(low)
+			elif high != null:
+				wanted = "a number of at most %d" % int(high)
+			game.notice("Please enter %s." % wanted, false)
+			f.shown = false
+			run()
+			return true
+		game.set_value(str(f.path), int(clean))
+	else:
+		game.set_value(str(f.path), clean.left(int(f.max)))
 	frames.pop_back()
 	run()
 	return true
@@ -936,7 +969,10 @@ func show_location() -> void:
 		if game.where(c) == loc:
 			var fields: Dictionary = db.get_def("character", c).fields
 			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
-				"image": db.typed_value("character", c, "image"), "talk": fields.has("talk"), "sex": fields.has("sex"),
+				"image": db.typed_value("character", c, "image"),
+				# Talk and sex added by an "instead of" hook count only while the hook applies.
+				"talk": fields.has("talk") or (game.has_hook("instead of talking to " + c) and game.hook_instead("instead of talking to " + c) != ""),
+				"sex": fields.has("sex") or (game.has_hook("instead of sex with " + c) and game.hook_instead("instead of sex with " + c) != ""),
 				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
 				"companion": c in game.state.companions,
 				"tamed": CompanionSystem.is_companion(game, c) and Condition._truthy(game.value("%s.tamed" % c))})
@@ -1075,21 +1111,29 @@ func _act(action: String, arg: String) -> bool:
 				return true
 			return _walk(arg)
 		"talk":
-			if game.where(arg) != loc or not db.get_def("character", arg).fields.has("talk"):
+			if not db.has(arg, "character") or game.where(arg) != loc:
+				return false
+			# A hook "instead of talking to <character>" (often from another pack) plays
+			# instead of the character's own talk while its `when:` holds.
+			var talk_instead: String = game.hook_instead("instead of talking to " + arg)
+			if talk_instead == "" and not db.get_def("character", arg).fields.has("talk"):
 				return false
 			game.set_value("%s.met" % arg, true)
 			emit_title("Talking with %s" % db.typed_value("character", arg, "name", arg), arg)
-			start("%s#talk" % arg)
+			start(talk_instead if talk_instead != "" else "%s#talk" % arg)
 			return true
 		"sex", "smell", "look":
 			# A character here: its sex scene, scent or description.
 			var field: String = {"sex": "sex", "smell": "scent", "look": "description"}[action]
-			if not db.has(arg, "character") or game.where(arg) != loc or db.program("%s#%s" % [arg, field], "character") == null:
+			if not db.has(arg, "character") or game.where(arg) != loc:
+				return false
+			var sex_instead: String = game.hook_instead("instead of sex with " + arg) if action == "sex" else ""
+			if sex_instead == "" and db.program("%s#%s" % [arg, field], "character") == null:
 				return false
 			if action == "sex":
 				game.set_value("%s.met" % arg, true)
 				emit_title(db.typed_value("character", arg, "name", arg), arg)
-			start("%s#%s" % [arg, field])
+			start(sex_instead if sex_instead != "" else "%s#%s" % [arg, field])
 			return true
 		"shop":
 			# A shop here: its menu when open, else what it says about being closed.
@@ -1234,6 +1278,12 @@ func _act(action: String, arg: String) -> bool:
 				return false
 			if not can_rest():
 				return false
+			# A hook "instead of resting" plays instead of the rest (no rest, no time passes
+			# unless its script says so; the original's "instead of resting while ...").
+			var rest_instead: String = game.hook_instead("instead of resting")
+			if rest_instead != "":
+				start(rest_instead)
+				return true
 			# A rest where it is not safe can be interrupted by a creature (rest rules).
 			var pool := encounter_pool(game.zone_here(loc))
 			var exposed := not pool.is_empty() and RestSystem.can_be_interrupted(game)
@@ -1249,6 +1299,8 @@ func _act(action: String, arg: String) -> bool:
 			RestSystem.recover(game, bedding.quality)
 			game.pass_turn()
 			game.pass_turn()
+			# Hooks "after resting" (a rest that was not interrupted), in pack load order.
+			game.run_hooks("after resting")
 			show_location()
 			return true
 	return false
@@ -1283,6 +1335,9 @@ func exit_doors(loc: String) -> Array:
 
 
 func _door_locked(id: String) -> bool:
+	# Locked or unlocked in play (`~ lock X`, `~ unlock X`): that wins over the door's `locked:`.
+	if game.state.values.has("door.%s.locked" % id):
+		return bool(game.state.values["door.%s.locked" % id])
 	var locked: String = game.content.typed_value("door", id, "locked", "no")
 	if locked in ["yes", "no"]:
 		return locked == "yes"

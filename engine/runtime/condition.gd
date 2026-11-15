@@ -31,6 +31,9 @@ static var _rules: Array = [
 	["fight_result", RegEx.create_from_string("^(won by seduction|won by fighting|won by vore|won by unbirth|lost by submitting|lost by injury|lost by lust|won|lost|fled)$")],
 	["can_vore", RegEx.create_from_string("^player (can|cannot) (vore|unbirth)$")],
 	["enemy_tagged", RegEx.create_from_string("^(?:the )?enemy is (not )?tagged (\\w+)$")],
+	# Lists: "3 is listed in x.list", "\"Bob\" is not listed in x.names", "x.list is empty".
+	["listed", RegEx.create_from_string("^(.+?) is (not )?listed in ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	["empty", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?empty$")],
 	["since", RegEx.create_from_string("^since ([a-z0-9_.]+) (>=|<=|>|<|=) (\\d+) turns?$")],
 	["has_condition", RegEx.create_from_string("^player (has|does not have) condition (\\w+)$")],
 	["feat", RegEx.create_from_string("^(\\w+) (has|does not have) feat (\\w+)$")],
@@ -231,6 +234,13 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "can_vore", "kind": m.get_string(2), "neg": m.get_string(1) == "cannot"}
 			"enemy_tagged":
 				return {"op": "enemy_tagged", "tag": m.get_string(2), "neg": m.get_string(1) != ""}
+			"listed":
+				var item := Expr.parse(m.get_string(1))
+				if item.has("error"):
+					return {"error": "cannot read '%s': %s" % [m.get_string(1), item.error]}
+				return {"op": "listed", "item": item, "path": m.get_string(3), "neg": m.get_string(2) != ""}
+			"empty":
+				return {"op": "empty", "path": m.get_string(1), "neg": m.get_string(2) != ""}
 			"since":
 				return {"op": "since", "path": m.get_string(1), "cmp": m.get_string(2), "n": int(m.get_string(3))}
 			"has_condition":
@@ -331,6 +341,14 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 			return idx >= target if node.rel == "at least" else idx <= target
 		"since":
 			return compare(ctx.turns_since(node.path), node.cmp, node.n, {}, ctx)
+		"listed":
+			var list = ctx.value(node.path)
+			return (list is Array and list_has(list, Expr.evaluate(node.item, ctx))) != node.neg
+		"empty":
+			# A list with no entries, or a text with nothing in it (or a state named empty).
+			var v = ctx.value(node.path)
+			var empty: bool = v.is_empty() if v is Array else v == null or str(v) in ["", "empty"]
+			return empty != node.neg
 		"chance_expr":
 			return ctx.ask({"op": "chance", "n": int(Expr._num(Expr.evaluate(node.n, ctx))), "d": int(Expr._num(Expr.evaluate(node.d, ctx)))})
 		"parity":
@@ -359,6 +377,11 @@ static func compare(a: Variant, cmp: String, b: Variant, left: Dictionary, ctx) 
 		"<=":
 			return x <= y
 	return false
+
+
+## Whether a list holds a value (a number and its text count as the same).
+static func list_has(list: Array, v: Variant) -> bool:
+	return list.any(func(x): return compare(x, "=", v, {}, null))
 
 
 static func _truthy(v: Variant) -> bool:

@@ -348,8 +348,7 @@ static func make_child(game, n: int) -> void:
 	v["child.number"] = n
 	v["child.pureblood"] = CHILD_PARTS.all(func(p): return forms[p] == forms.head)
 	v["child.gender"] = _gender(game, forms.torso)
-	var personalities := Array(_rule(game, "personalities", "friendly").split(",", false)).map(func(s): return s.strip_edges())
-	v["child.personality"] = personalities[game.rng.range_int(0, personalities.size() - 1)]
+	v["child.personality"] = random_personality(game)
 	v["child.feral"] = _holds(game, "feral when")
 	var albino := _odds(game, _rule(game, "albino", "3 in 100"))
 	var melanism := _odds(game, _rule(game, "melanism", "2 in 100"))
@@ -389,6 +388,11 @@ static func _gender(game, torso: String) -> String:
 		var m := RegEx.create_from_string("^(\\w+(?: \\w+)?) (\\d+) in (\\d+)$").search(bias)
 		if m != null and game.rng.chance(int(m.get_string(2)), int(m.get_string(3))):
 			return m.get_string(1)
+	return random_gender(game)
+
+
+## A gender from the weighted lines of `child genders` (the original's random child gender).
+static func random_gender(game) -> String:
 	var pool: Array = []
 	for p in _pairs(game, "child genders"):
 		var m := RegEx.create_from_string("^(\\d+)(?: if (.+))?$").search(p[1])
@@ -399,6 +403,23 @@ static func _gender(game, torso: String) -> String:
 	if pool.is_empty():
 		return "male" if game.rng.chance(1, 2) else "female"
 	return pool[game.rng.range_int(0, pool.size() - 1)]
+
+
+## A personality from `personalities` (the original's random child personality).
+static func random_personality(game) -> String:
+	var personalities := Array(_rule(game, "personalities", "friendly").split(",", false)).map(func(s): return s.strip_edges())
+	return personalities[game.rng.range_int(0, personalities.size() - 1)]
+
+
+## `~ new child`: a story child starts blank; the last child's child.* values are gone.
+static func new_child(game) -> void:
+	for key in CHILD_VALUES + ["age_turns", "age_days", "turn"]:
+		game.state.values.erase("child." + key)
+
+
+## `~ child.gender = random`, `~ child.personality = random`: drawn as for a birth.
+static func random_child_value(game, what: String) -> void:
+	game.state.values["child." + what] = random_gender(game) if what == "gender" else random_personality(game)
 
 
 ## `~ record child`: the child being born joins the record (pregnancy.offspring).

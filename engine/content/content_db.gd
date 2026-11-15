@@ -527,6 +527,16 @@ func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Res
 		elif spec == "time":
 			decl.kind = "time"
 			decl.default = null
+		elif spec == "list" or spec.begins_with("list "):
+			# "list" (empty at the start) or "list 1, 2, 3": numbers or texts, in order.
+			decl.kind = "list"
+			decl.default = []
+			for entry in spec.substr(4).split(",", false):
+				var e := entry.strip_edges()
+				if e.is_valid_int():
+					decl.default.append(int(e))
+				elif e != "":
+					decl.default.append(e.trim_prefix("\"").trim_suffix("\""))
 		elif spec.begins_with("text"):
 			decl.kind = "text"
 			decl.default = spec.substr(4).strip_edges()

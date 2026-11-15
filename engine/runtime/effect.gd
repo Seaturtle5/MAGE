@@ -17,6 +17,8 @@ static var _rules: Array = [
 	# In a creature's encounter: the meeting ends without a fight (the original's combat abort).
 	["no_fight", RegEx.create_from_string("^no fight$")],
 	["resolve", RegEx.create_from_string("^resolve(?: (\\w+))?$")],
+	# "~ unresolve other_event": it can be found again (the original's "now X is unresolved").
+	["unresolve", RegEx.create_from_string("^unresolve (\\w+)$")],
 	["end_pregnancy", RegEx.create_from_string("^end pregnancy$")],
 	# Vore (VoreSystem): "~ vore enemy", "~ unbirth enemy", and what the vore scripts do.
 	["vore", RegEx.create_from_string("^(vore|unbirth) enemy$")],
@@ -25,6 +27,20 @@ static var _rules: Array = [
 	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
 	["pregnancy_step", RegEx.create_from_string("^(accept pregnancy|give birth|record child)$")],
 	["each_child", RegEx.create_from_string("^for each child(?: at (\\w+))? play (\\w[\\w.]*)$")],
+	# A story child: "~ new child" clears the last child's values; "~ child.gender = random" and
+	# "~ child.personality = random" draw them as a birth does (the pregnancy rules' lists).
+	["new_child", RegEx.create_from_string("^new child$")],
+	["child_random", RegEx.create_from_string("^child\\.(gender|personality) = random$")],
+	# Lists (a value declared `list`): "~ add 1 to x.list", "~ add 1, 2 to x.list if absent",
+	# "~ remove 3 from x.list", "~ remove entry 1 from x.list", "~ clear x.list",
+	# "~ sort x.list", "~ sort x.list in random order" (or "in reverse order").
+	["list_add", RegEx.create_from_string("^add (.+) to ([a-z0-9_]+\\.[a-z0-9_.]+)(,? if absent)?$")],
+	["list_remove_entry", RegEx.create_from_string("^remove entry (.+) from ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	["list_remove", RegEx.create_from_string("^remove (.+) from ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	["list_clear", RegEx.create_from_string("^clear ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	["list_sort", RegEx.create_from_string("^sort ([a-z0-9_]+\\.[a-z0-9_.]+)(?: in (random|reverse) order)?$")],
+	# Doors locked or unlocked in play (saved): "~ unlock cell_door", "~ lock cell_door".
+	["lock", RegEx.create_from_string("^(lock|unlock) (\\w+)$")],
 	["end_heat", RegEx.create_from_string("^end heat$")],
 	["reset_heat", RegEx.create_from_string("^reset heat$")],
 	["continue_moving", RegEx.create_from_string("^continue moving$")],
@@ -47,6 +63,8 @@ static var _rules: Array = [
 	["check_level", RegEx.create_from_string("^check level$")],
 	["choose_feat", RegEx.create_from_string("^choose feat (\\w+)$")],
 	# Typed text into a value: "~ ask child.name: Please name your child".
+	# A typed number: "~ ask x.n as number from 0 to 13: How long?" (asked again until it fits).
+	["ask_number", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:a )?number(?: from (.+?) to (.+?))?:\\s*(.+)$")],
 	["ask", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+)(?: up to (\\d+) letters)?:\\s*(.+)$")],
 	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
 	["send_children", RegEx.create_from_string("^send children from (\\w+) to (\\w+)$")],
@@ -78,7 +96,8 @@ static var _rules: Array = [
 	["grow", RegEx.create_from_string("^grow (cock|balls|breasts) by (.+)$")],
 	# The infection's sex or breast change run again ("follow the sex change rule"), toward
 	# the strain met or infected with last, or a named creature or form.
-	["sex_change", RegEx.create_from_string("^(sex|breast) change(?: toward (\\w+))?$")],
+	# "keeping cock": a cock that appears keeps the strain the player's cock had (the original's skipcockchange).
+	["sex_change", RegEx.create_from_string("^(sex|breast) change(?: toward (\\w+))?( keeping cock)?$")],
 	# A form's genital and breast targets changed in play ("now Cock Length entry is 10").
 	["form_number", RegEx.create_from_string("^form (\\w+) (cock count|cock length|ball size|cunt count|cunt depth|cunt tightness|breast size|male breast size|nipple count) = (.+)$")],
 	# The map changed in play: "~ change north exit of park_trail to picnic_area" (or "to nothing").
@@ -145,6 +164,8 @@ static func _match(s: String) -> Dictionary:
 			"resolve":
 				# "resolve" ends this event; "resolve other_event" ends another one.
 				return {"op": "resolve", "event": m.get_string(1)}
+			"unresolve":
+				return {"op": "unresolve", "event": m.get_string(1)}
 			"cancel_use", "no_fight", "end_pregnancy", "end_heat", "reset_heat", "reset_human", "continue_moving":
 				return {"op": rule[0]}
 			"impregnate":
@@ -154,6 +175,41 @@ static func _match(s: String) -> Dictionary:
 				return {"op": m.get_string(1).replace(" ", "_")}
 			"each_child":
 				return {"op": "each_child", "home": m.get_string(1), "scene": m.get_string(2)}
+			"new_child":
+				return {"op": "new_child"}
+			"child_random":
+				return {"op": "child_random", "what": m.get_string(1)}
+			"list_add", "list_remove", "list_remove_entry":
+				var items: Array = []
+				for part in _split_top(m.get_string(1)):
+					var item := Expr.parse(part)
+					if item.has("error"):
+						return {"error": "cannot read '%s': %s" % [part, item.error]}
+					items.append(item)
+				if rule[0] == "list_remove_entry" and items.size() != 1:
+					return {"error": "Remove one entry at a time: ~ remove entry 1 from x.list"}
+				var node := {"op": rule[0], "path": m.get_string(2), "items": items}
+				if rule[0] == "list_add":
+					node["if_absent"] = m.get_string(3) != ""
+				return node
+			"list_clear":
+				return {"op": "list_clear", "path": m.get_string(1)}
+			"list_sort":
+				return {"op": "list_sort", "path": m.get_string(1), "order": m.get_string(2)}
+			"lock":
+				return {"op": "lock", "door": m.get_string(2), "locked": m.get_string(1) == "lock"}
+			"ask_number":
+				var prompt := TextTemplate.compile(m.get_string(4))
+				if prompt.has("error"):
+					return {"error": prompt.error}
+				var node := {"op": "ask", "path": m.get_string(1), "prompt": prompt, "max": 12, "number": true}
+				for k in [["low", 2], ["high", 3]]:
+					if m.get_string(k[1]) != "":
+						var bound := Expr.parse(m.get_string(k[1]))
+						if bound.has("error"):
+							return {"error": "cannot read the number '%s': %s" % [m.get_string(k[1]), bound.error]}
+						node[k[0]] = bound
+				return node
 			"vore":
 				return {"op": "vore", "kind": m.get_string(1)}
 			"vore_step":
@@ -329,7 +385,9 @@ static func _match(s: String) -> Dictionary:
 					return {"error": by.error}
 				return {"op": "grow", "part": m.get_string(1), "amount": by}
 			"sex_change":
-				return {"op": "sex_change", "what": m.get_string(1), "form": m.get_string(2)}
+				if m.get_string(3) != "" and m.get_string(1) != "sex":
+					return {"error": "Only a sex change can keep the cock's strain: ~ sex change keeping cock"}
+				return {"op": "sex_change", "what": m.get_string(1), "form": m.get_string(2), "keep_cock": m.get_string(3) != ""}
 			"form_number":
 				var to := Expr.parse(m.get_string(3))
 				if to.has("error"):
@@ -386,6 +444,27 @@ static func _match(s: String) -> Dictionary:
 					return {"error": amt.error}
 				return {"op": "change", "path": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
 	return {"error": "unknown effect '%s'" % s}
+
+
+## Splits "1, min(a, b), \"x, y\"" at the commas outside brackets and quotes.
+static func _split_top(text: String) -> Array:
+	var out: Array = []
+	var depth := 0
+	var quoted := false
+	var start := 0
+	for i in text.length():
+		var c := text[i]
+		if c == "\"":
+			quoted = not quoted
+		elif not quoted and c == "(":
+			depth += 1
+		elif not quoted and c == ")":
+			depth -= 1
+		elif not quoted and depth == 0 and c == ",":
+			out.append(text.substr(start, i - start).strip_edges())
+			start = i + 1
+	out.append(text.substr(start).strip_edges())
+	return out
 
 
 ## Compiles an amount: {"value": expr} | {"min": a, "max": b} | {"percent": n},
