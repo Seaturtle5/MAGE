@@ -111,8 +111,6 @@ var inv_bag_scroll: ScrollContainer
 
 
 func _ready() -> void:
-	theme = FsTheme.build()
-	_build()
 	var args := OS.get_cmdline_user_args()
 	var start := ""
 	var test_content := false
@@ -131,12 +129,17 @@ func _ready() -> void:
 				shot_steps = Array(args[i + 1].split(";"))
 			"--packs":
 				extra_packs.append(args[i + 1])
+			"--light":
+				prefs.set_value("display", "light", true)  # screenshots of the light theme
 	# Automated screenshots use default preferences and their own save folder.
 	if shot_path == "":
 		prefs.load(PREFS)
 		_apply_display_prefs()
 	else:
 		store = SaveStore.new("user://screenshot_saves")
+	FsTheme.use_palette(bool(prefs.get_value("display", "light", false)))
+	theme = FsTheme.build()
+	_build()
 	db = ContentDB.new()
 	db.load_folders(["res://tests/packs"] if test_content else _content_folders(extra_packs))
 	if not db.errors().is_empty():
@@ -183,7 +186,7 @@ func _build() -> void:
 	bg.color = FsTheme.BG
 	bg.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	add_child(bg)
-	if ResourceLoader.exists(BACKDROP):
+	if ResourceLoader.exists(BACKDROP) and not FsTheme.light:  # a dark grain: on paper it would only muddy
 		var grain := TextureRect.new()
 		grain.texture = load(BACKDROP) as Texture2D
 		grain.stretch_mode = TextureRect.STRETCH_TILE
@@ -570,7 +573,7 @@ func _banner(image_id: String, heading: String, subtitle: String) -> Control:
 	holder.add_child(tex)
 	var shade := TextureRect.new()
 	var g := Gradient.new()
-	g.set_color(0, Color(0, 0, 0, 0))
+	g.set_color(0, Color(FsTheme.SURFACE, 0.0))
 	g.set_color(1, Color(FsTheme.SURFACE, 1.0))
 	var gt := GradientTexture2D.new()
 	gt.gradient = g
@@ -776,7 +779,7 @@ func _scene_plate() -> Control:
 	var mat := FsTheme.box(FsTheme.BG, 3, FsTheme.BORDER, 7)
 	mat.content_margin_top = 7
 	mat.content_margin_bottom = 7
-	mat.shadow_color = Color(0, 0, 0, 0.45)
+	mat.shadow_color = Color(0, 0, 0, 0.18 if FsTheme.light else 0.45)
 	mat.shadow_size = 14
 	mat.shadow_offset = Vector2(0, 4)
 	frame.add_theme_stylebox_override("panel", mat)
@@ -909,7 +912,7 @@ func _page_continue(callback: Callable) -> void:
 	row.add_child(FsTheme.title("Continue", 17))
 	row.add_child(FsTheme.keycap("Space"))
 	var b := _face_button(choices_box, row, callback, false, 14, 12)
-	b.add_theme_stylebox_override("normal", FsTheme.box(FsTheme.ACCENT_DIM.darkened(0.25)))
+	b.add_theme_stylebox_override("normal", FsTheme.box(FsTheme.recede(FsTheme.ACCENT_DIM, 0.25)))
 	b.add_theme_stylebox_override("hover", FsTheme.edged(FsTheme.ACCENT_DIM, FsTheme.ACCENT))
 	b.grab_focus.call_deferred()
 	page_new = true
@@ -1106,8 +1109,12 @@ func _image_or_placeholder(id: String, name: String) -> Texture2D:
 	# A soft gradient derived from the name, until real art exists.
 	var h := float(abs(hash(name)) % 360) / 360.0
 	var g := Gradient.new()
-	g.set_color(0, Color.from_hsv(h, 0.45, 0.34))
-	g.set_color(1, Color.from_hsv(fmod(h + 0.12, 1.0), 0.55, 0.12))
+	if FsTheme.light:  # pale washes on paper
+		g.set_color(0, Color.from_hsv(h, 0.22, 0.86))
+		g.set_color(1, Color.from_hsv(fmod(h + 0.12, 1.0), 0.30, 0.70))
+	else:
+		g.set_color(0, Color.from_hsv(h, 0.45, 0.34))
+		g.set_color(1, Color.from_hsv(fmod(h + 0.12, 1.0), 0.55, 0.12))
 	var t := GradientTexture2D.new()
 	t.gradient = g
 	t.fill_from = Vector2(0, 0)
@@ -2008,6 +2015,9 @@ func _open_settings() -> void:
 	box.add_child(_choice_row("Window", "How the game window is shown.", ["Windowed", "Full screen"],
 		1 if prefs.get_value("display", "fullscreen", false) else 0,
 		func(i: int): _set_pref("fullscreen", i == 1)))
+	box.add_child(_choice_row("Theme", "Dark ink or light paper. Also the sun and moon on the main menu.", ["Dark", "Light"],
+		1 if prefs.get_value("display", "light", false) else 0,
+		func(i: int): _set_theme.call_deferred(i == 1)))
 	var scales: Array = UI_SCALES.map(func(f): return "%d%%" % roundi(f * 100))
 	box.add_child(_choice_row("Interface size", "Text and controls grow with the window; this scales them further.", scales,
 		maxi(0, UI_SCALES.find(float(prefs.get_value("display", "ui_scale", 1.0)))),
@@ -2065,6 +2075,50 @@ func _set_pref(key: String, value: Variant) -> void:
 	if shot_path == "":
 		prefs.save(PREFS)
 	_apply_display_prefs()
+
+
+## Light or dark interface (Settings, and the sun and moon on the main menu).
+## Screens are built with the palette's colors, so they are built again; in a
+## game that only happens while nothing is going on (as when loading a save),
+## otherwise on the way back to the main menu.
+func _set_theme(use_light: bool) -> void:
+	if use_light == bool(prefs.get_value("display", "light", false)) and use_light == FsTheme.light:
+		return
+	_set_pref("light", use_light)
+	if title != null and title.visible:
+		_rebuild_ui(overlay != null)
+	elif not _in_game() or _can_save():
+		_rebuild_ui(overlay != null)
+		if _in_game():
+			game.runner.show_location()
+			_drain()
+	else:
+		_toast("The %s theme applies when you return to the main menu." % ("light" if use_light else "dark"))
+
+
+## Builds every screen again with the chosen palette; reopens Settings if it was open.
+func _rebuild_ui(reopen_settings: bool = false) -> void:
+	var on_title := title != null and title.visible
+	FsTheme.use_palette(bool(prefs.get_value("display", "light", false)))
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	title = null
+	overlay = null
+	overlay_scroll = null
+	overlay_footer = null
+	meters = {}
+	meters_keys = []
+	location_view = {}
+	mode = ""
+	theme = FsTheme.build()
+	_build()
+	if on_title:
+		_show_title()
+	elif _in_game():
+		_hide_title()
+	if reopen_settings:
+		_open_settings()
 
 
 func _apply_display_prefs() -> void:
@@ -2164,7 +2218,7 @@ func _filter_row(panel: VBoxContainer, f: Dictionary) -> Control:
 		b.disabled = not spec[2]
 		b.custom_minimum_size = Vector2(96, 0)
 		if to == "banned":
-			b.add_theme_stylebox_override("pressed", FsTheme.box(FsTheme.BAD.darkened(0.6), 8, FsTheme.BAD, 12))
+			b.add_theme_stylebox_override("pressed", FsTheme.box(FsTheme.recede(FsTheme.BAD, 0.6 if not FsTheme.light else 0.75), 8, FsTheme.BAD, 12))
 		var id: String = f.id
 		b.pressed.connect(func():
 			game.set_filter(id, to)
@@ -2361,6 +2415,8 @@ func _ensure_game() -> bool:
 
 
 func _show_title() -> void:
+	if FsTheme.light != bool(prefs.get_value("display", "light", false)):
+		_rebuild_ui()  # a theme chosen during a scene
 	_close_overlay()
 	if title == null:
 		title = TitleScreen.new()
@@ -2396,6 +2452,8 @@ func _on_title(action: String) -> void:
 			_open_saves(false)
 		"settings":
 			_open_settings()
+		"light", "dark":
+			_set_theme.call_deferred(action == "light")
 		"credits":
 			_open_credits()
 		"quit":
@@ -2712,6 +2770,9 @@ func _take_screenshot() -> void:
 				_quicksave()
 			"title":
 				_show_title()
+			"theme":
+				# "theme light" / "theme dark", as the sun and moon on the main menu.
+				_set_theme(arg == "light")
 			"scroll":
 				# "scroll end" shows the bottom of the open overlay.
 				if arg == "actions" and sidebar_scroll != null:

@@ -22,6 +22,7 @@ var _menu_art: Array = []  ## pictures that pop up beside the hovered entry (pac
 var _hover_art: TextureRect
 var _art_tween: Tween
 var _last_art := -1
+var _credit: Label  ## the engine's credit, lower right
 
 
 func _init() -> void:
@@ -100,7 +101,7 @@ func _init() -> void:
 	var credit := FsTheme.label("Modular Adventure Game Engine by Seaturtle5 · %s" % engine_version(), 13, FsTheme.TEXT_FAINT)
 	credit.autowrap_mode = TextServer.AUTOWRAP_OFF
 	credit.add_theme_color_override("font_color", FsTheme.TEXT_DIM)
-	credit.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	credit.add_theme_color_override("font_shadow_color", FsTheme.SHADOW)
 	credit.add_theme_constant_override("shadow_offset_x", 1)
 	credit.add_theme_constant_override("shadow_offset_y", 1)
 	credit.add_theme_constant_override("shadow_outline_size", 4)
@@ -111,6 +112,47 @@ func _init() -> void:
 	credit.offset_right = -24
 	credit.offset_bottom = -16
 	add_child(credit)
+	_credit = credit
+	# Light or dark: a sun and a moon in the upper right corner; the one in use is lit.
+	var modes := PanelContainer.new()
+	modes.add_theme_stylebox_override("panel", FsTheme.box(Color(FsTheme.SURFACE, 0.82), 20, FsTheme.BORDER, 4))
+	modes.set_anchors_and_offsets_preset(PRESET_TOP_RIGHT)
+	modes.grow_horizontal = GROW_DIRECTION_BEGIN
+	modes.offset_right = -24
+	modes.offset_top = 20
+	add_child(modes)
+	var pair := HBoxContainer.new()
+	pair.add_theme_constant_override("separation", 2)
+	modes.add_child(pair)
+	pair.add_child(_theme_button("sun", "light", "Light theme", FsTheme.light))
+	pair.add_child(_theme_button("moon", "dark", "Dark theme", not FsTheme.light))
+
+
+## A round icon button for the light or dark theme.
+func _theme_button(icon: String, action: String, tip: String, active: bool) -> Button:
+	var b := Button.new()
+	var path := "res://ui/icons/%s.svg" % icon
+	if ResourceLoader.exists(path):
+		b.icon = load(path) as Texture2D
+	else:
+		b.text = tip.substr(0, 1)
+	b.tooltip_text = tip
+	b.custom_minimum_size = Vector2(38, 38)
+	b.expand_icon = true
+	b.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var rest := FsTheme.box(Color(FsTheme.ACCENT_DIM, 0.9) if active else Color.TRANSPARENT, 17, Color.TRANSPARENT, 8)
+	var hover := FsTheme.box(FsTheme.SURFACE_3, 17, Color.TRANSPARENT, 8)
+	var ring := FsTheme.box(Color.TRANSPARENT, 17, FsTheme.ACCENT, 8)
+	for state in ["normal", "disabled"]:
+		b.add_theme_stylebox_override(state, rest)
+	for state in ["hover", "pressed", "hover_pressed"]:
+		b.add_theme_stylebox_override(state, hover)
+	b.add_theme_stylebox_override("focus", ring)
+	var tint := FsTheme.ACCENT if active else FsTheme.TEXT_DIM
+	for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		b.add_theme_color_override("icon_%s_color" % state, FsTheme.ACCENT if state != "normal" else tint)
+	b.pressed.connect(func(): chosen.emit(action))
+	return b
 
 
 ## The engine's version (project setting application/config/version).
@@ -128,6 +170,10 @@ func set_branding(title: String, subtitle: String, logo: Texture2D, background: 
 	_subtitle.text = subtitle.to_upper()
 	_subtitle.visible = subtitle != ""
 	_background.texture = background
+	# The credit sits on the picture where there is one: light text with a dark shadow, as on the dark theme.
+	var on_art := background != null
+	_credit.add_theme_color_override("font_color", FsTheme.DARK.TEXT_DIM if on_art else FsTheme.TEXT_DIM)
+	_credit.add_theme_color_override("font_shadow_color", FsTheme.DARK.SHADOW if on_art else FsTheme.SHADOW)
 	_logo.texture = logo
 	_logo.visible = logo != null
 	_title.visible = logo == null
