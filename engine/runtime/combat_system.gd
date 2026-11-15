@@ -97,7 +97,8 @@ static func show(game) -> void:
 
 ## `penalty` is subtracted after capping, as the weapon size penalty is.
 static func _roll(game, label: String, bonus: int, enemy: bool = false, flee: bool = false, penalty: int = 0) -> bool:
-	var hard: bool = "hard" in game.settings.mode
+	# `harder rolls when` (combat rules): the player's roll caps drop and the enemy's rise.
+	var hard: bool = holds(game, "harder rolls when")
 	var lower := -22 if hard == enemy else -25
 	var upper := 19 if hard == enemy else 16
 	bonus = maxi(lower, bonus) if flee else clampi(bonus, lower, upper)
@@ -648,6 +649,22 @@ static func strain_damage(game, form: String) -> int:
 static func rules_id(game) -> String:
 	var defs: Dictionary = game.content.all_of("combat_rules")
 	return "" if defs.is_empty() else str(defs.keys()[0])
+
+
+## Whether a combat rules condition holds (false without the field or the rules).
+static func holds(game, field: String) -> bool:
+	var text := rule(game, field, "")
+	return text != "" and Condition.evaluate(Condition.compile(text), game)
+
+
+## The highest creature level met at random, or -1 for no limit (`level limit`,
+## lifted while `level limit off when` holds).
+static func level_limit(game) -> int:
+	var text := rule(game, "level limit", "")
+	if text == "" or holds(game, "level limit off when"):
+		return -1
+	var e := Expr.parse(text)
+	return -1 if e.has("error") else int(Expr._num(Expr.evaluate(e, game)))
 
 
 static func rule(game, field: String, fallback: String) -> String:

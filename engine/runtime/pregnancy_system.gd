@@ -40,7 +40,7 @@ const COMPUTED := ["fpreg_ok", "mpreg_ok", "impreg_ok", "fpreg_able", "mpreg_abl
 	"mpreg_now", "impreg_now", "fem_vacant", "male_vacant", "partial_vacant", "total_vacant", "sire_bonus", "father_name",
 	"sired_name"]
 const CHILD_VALUES := ["number", "gender", "personality", "feral", "pureblood", "albino", "melanism", "show_tail",
-	"show_legs", "name", "home", "head", "torso", "back", "arms", "legs", "ass", "tail", "head_form", "torso_form",
+	"show_legs", "name", "home", "relationship", "head", "torso", "back", "arms", "legs", "ass", "tail", "head_form", "torso_form",
 	"back_form", "arms_form", "legs_form", "ass_form", "tail_form"]
 const FLAGS := ["ovi", "hijack", "male_hijack", "self", "rolled"]
 
@@ -413,6 +413,38 @@ static func record_child(game) -> void:
 	var list: Array = Array(v.get("pregnancy.offspring", [])).duplicate()
 	list.append(entry)
 	v["pregnancy.offspring"] = list
+
+
+## The text snippet `snippet` rendered once for each recorded child whose home is
+## `home` (or every child for "any"), with that child's values as `child.*` and
+## `child.age_turns` and `child.age_days` (since birth); the values in play are restored after.
+static func describe_children(game, home: String, snippet: String) -> String:
+	var prog: Program = game.content.program(snippet, "text")
+	if prog == null:
+		return ""
+	var v: Dictionary = game.state.values
+	var saved := {}
+	for key in v.keys():
+		if str(key).begins_with("child."):
+			saved[key] = v[key]
+	var out: PackedStringArray = []
+	for child in Array(v.get("pregnancy.offspring", [])):
+		if not child is Dictionary or (home != "any" and str(child.get("home", "")) != home):
+			continue
+		for key in v.keys():
+			if str(key).begins_with("child."):
+				v.erase(key)
+		for key in child:
+			v["child." + str(key)] = child[key]
+		v["child.age_turns"] = game.state.turn - int(child.get("turn", game.state.turn))
+		v["child.age_days"] = v["child.age_turns"] / Game.TIME_SLOTS.size()
+		out.append(game.runner.render_inline(prog))
+	for key in v.keys():
+		if str(key).begins_with("child."):
+			v.erase(key)
+	for key in saved:
+		v[key] = saved[key]
+	return " ".join(out)
 
 
 ## `~ end pregnancy`: the pregnancy ends without a birth.

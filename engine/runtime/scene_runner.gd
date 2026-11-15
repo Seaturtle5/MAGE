@@ -913,7 +913,7 @@ func show_location() -> void:
 		view.items.append({"id": it, "name": db.typed_value("item", it, "name", it), "count": int(here[it])})
 	if game.zone_here(loc) != "":
 		view.actions.append({"id": "explore", "label": "Explore"})
-		if not encounter_pool(game.zone_here(loc), true).is_empty():
+		if HuntSystem.allowed(game) and not encounter_pool(game.zone_here(loc), true).is_empty():
 			view.actions.append({"id": "hunt", "label": "Hunt"})
 	if "fast travel" in db.list_field(loc, "flags") and not db.all_of("scavenge_rules").is_empty():
 		view.actions.append({"id": "scavenge", "label": "Scavenge"})
@@ -927,7 +927,22 @@ func show_location() -> void:
 		view.actions.append({"id": "actions", "label": str(settings.get("title", "Actions"))})
 	for shop in ShopSystem.here(game):
 		view.actions.append({"id": "shop", "arg": shop, "label": ShopSystem.field(game, shop, "name", shop)})
+	# The player's own commands (`== command`), wherever they are, while their `when` holds.
+	for cmd in available_commands():
+		view.actions.append({"id": "command", "arg": cmd, "label": db.typed_value("command", cmd, "name", cmd),
+			"description": db.typed_value("command", cmd, "description")})
 	game.emit(view)
+
+
+## Commands the player can use now (`== command` whose `when` holds), sorted by ID.
+func available_commands() -> Array:
+	var out: Array = []
+	for cmd in game.content.all_of("command"):
+		var when: String = game.content.typed_value("command", cmd, "when")
+		if when == "" or Condition.evaluate(Condition.compile(when), game):
+			out.append(cmd)
+	out.sort()
+	return out
 
 
 ## Renders a text-only program into paragraphs of spans (descriptions).
@@ -979,7 +994,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
 		return false
 	game.state.action_pending = true
@@ -1114,6 +1129,12 @@ func _act(action: String, arg: String) -> bool:
 			if status == "idle" and frames.is_empty():
 				show_location()
 			return joined
+		"command":
+			if arg not in available_commands() or db.program("%s#play" % arg, "command") == null:
+				return false
+			frames.append({"kind": "script", "pid": db.program("%s#play" % arg, "command").id, "pc": 0})
+			run()
+			return true
 		"observe":
 			if not db.menus.has("%s.observe" % loc):
 				return false
@@ -1124,6 +1145,8 @@ func _act(action: String, arg: String) -> bool:
 		"scavenge":
 			return _scavenge(loc)
 		"hunt":
+			if not HuntSystem.allowed(game):
+				return false
 			var hunt_zone: String = game.zone_here(loc)
 			if arg not in encounter_pool(hunt_zone, true):
 				return false
@@ -1175,13 +1198,18 @@ func _act(action: String, arg: String) -> bool:
 				return false
 			if not can_rest():
 				return false
+			# A rest where it is not safe can be interrupted by a creature (rest rules).
 			var pool := encounter_pool(game.zone_here(loc))
-			if "safe rest" not in db.list_field(loc, "flags") and not pool.is_empty() and game.rng.chance(3, 20):
-				game.notice("...but your nap is interrupted by the arrival of a creature.", false)
+			var exposed := not pool.is_empty() and RestSystem.can_be_interrupted(game)
+			if exposed and RestSystem.interrupted(game):
+				if not RestSystem.play(game, "interrupted"):
+					game.notice("Your rest is interrupted by the arrival of a creature.", false)
 				start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
 				return true
 			var bedding := RestSystem.bedding(game)
 			game.emit({"type": "paragraph", "spans": game.render(TextTemplate.compile(bedding.text))})
+			if exposed:
+				RestSystem.play(game, "undisturbed")
 			RestSystem.recover(game, bedding.quality)
 			game.pass_turn()
 			game.pass_turn()
@@ -1600,6 +1628,7 @@ func pick_creature(tag: String, zone: String, favoring: Array, with_outside: boo
 ## warded ones only when `hunted` (the player hunts for that creature).
 func encounter_pool(zone: String, hunted: bool = false) -> Array:
 	var out: Array = []
+	var limit := CombatSystem.level_limit(game)  # combat rules' `level limit`
 	for id in game.content.all_of("creature"):
 		var d: FscParser.Definition = game.content.get_def("creature", id)
 		if zone not in Array(game.creature_field(id, "found in").split(",")).map(func(z): return z.strip_edges()):
@@ -1613,7 +1642,7 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 		var active: String = game.content.typed_value("creature", id, "active", "always")
 		if (active == "day" and not game.is_day()) or (active == "night" and game.is_day()):
 			continue
-		if CombatSystem.number(game, id, "level", 1) > int(game.value("player.level")) + 1 and "hard" not in game.settings.mode:
+		if limit >= 0 and CombatSystem.number(game, id, "level", 1) > limit:
 			continue
 		out.append(id)
 	out.sort()

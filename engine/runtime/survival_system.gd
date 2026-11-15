@@ -18,6 +18,12 @@ static func _script(game, field: String) -> void:
 		game.runner.play_now("survival_rules:%s#%s" % [r.id, field])
 
 
+## Healing every turn, unless `natural healing when` fails (a no-heal mode).
+static func _natural_healing(game) -> bool:
+	var t := text(game, "natural healing when")
+	return t == "" or Condition.evaluate(Condition.compile(t), game)
+
+
 static func rules(game) -> FscParser.Definition:
 	var definitions: Dictionary = game.content.all_of("survival_rules")
 	return null if definitions.is_empty() else definitions.values()[0]
@@ -62,7 +68,7 @@ static func say(game, template: String) -> void:
 
 static func tick(game) -> void:
 	var stamina := int(game.value("player.stamina"))
-	if "no_heal" not in game.settings.mode:
+	if _natural_healing(game):
 		game.set_value("player.hp", int(game.value("player.hp")) + stamina / 2)
 	_script(game, "healing")  # the rules' extra healing (feats that heal each turn)
 	if int(game.value("player.hp")) < 0:

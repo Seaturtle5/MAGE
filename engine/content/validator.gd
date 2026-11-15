@@ -600,6 +600,8 @@ func _check_survival_rules() -> void:
 		for field in ["starving hint at", "journal hint below", "anticipation within"]:
 			if d.fields.has(field) and not d.fields[field].value.is_valid_int():
 				_err(d.fields[field].line, "%s must be a whole number." % field.capitalize())
+		if d.fields.has("natural healing when"):
+			_check_condition_text(d.fields["natural healing when"].value, d.fields["natural healing when"].line, "survival_rules:" + id)
 		if d.fields.has("sanity floor when"):
 			_check_condition_text(d.fields["sanity floor when"].value, d.fields["sanity floor when"].line, "survival_rules:" + id)
 		for field in ["starving hint", "morale normalized", "humanity loss", "journal hint", "rescue anticipation",
@@ -825,9 +827,22 @@ func _check_levels() -> void:
 				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
 				if amount.has("error"):
 					_err(l.number, "Target weight modifier: %s." % amount.error)
-		for f in ["others when", "other skipped when"]:
+		for f in ["others when", "other skipped when", "hunt when"]:
 			if d.fields.has(f):
 				_check_condition_text(d.fields[f].value, d.fields[f].line, "hunt_rules:" + id)
+	for id in db.all_of("command"):
+		var cd := db.get_def("command", id)
+		_path = cd.path
+		if not cd.fields.has("play"):
+			_err(cd.line, "A command needs 'play:', the scene it runs.")
+		if cd.fields.has("when"):
+			_check_condition_text(cd.fields.when.value, cd.fields.when.line, "command:" + id)
+	for id in db.all_of("game_mode"):
+		var gm := db.get_def("game_mode", id)
+		_path = gm.path
+		for f in ["exploration bonus", "encounter bonus", "scavenge bonus", "carry bonus", "loot bonus"]:
+			if gm.fields.has(f) and not gm.fields[f].value.is_valid_int():
+				_err(gm.fields[f].line, "%s must be a whole number." % f.capitalize())
 	for id in db.all_of("level_rules"):
 		var d := db.get_def("level_rules", id)
 		_path = d.path
@@ -871,6 +886,16 @@ func _check_levels() -> void:
 	for id in db.all_of("combat_rules"):
 		var d := db.get_def("combat_rules", id)
 		_path = d.path
+		for f in ["harder rolls when", "level limit off when"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, "combat_rules:" + id)
+		if d.fields.has("level limit"):
+			var le := Expr.parse(d.fields["level limit"].value)
+			if le.has("error"):
+				_err(d.fields["level limit"].line, "Level limit: %s." % le.error)
+			else:
+				for p in Expr.paths(le):
+					_check_path(p, d.fields["level limit"].line)
 		if d.fields.has("unarmed damage") and (not d.fields["unarmed damage"].value.is_valid_int() or int(d.fields["unarmed damage"].value) < 0):
 			_err(d.fields["unarmed damage"].line, "Unarmed damage must be a whole number of 0 or more.")
 		for f in ["unarmed attack", "player hits", "flee", "flee fails"]:
@@ -1004,6 +1029,21 @@ func _check_rest_rules() -> void:
 		if definitions.size() > 1:
 			_err(d.line, "Only one rest_rules definition may be active across loaded packs.")
 		_need(db.typed_value("rest_rules", id, "condition"), "condition", d.fields.get("condition", d).line)
+		if d.fields.has("off when"):
+			_check_condition_text(d.fields["off when"].value, d.fields["off when"].line, "rest_rules:" + id)
+		if d.fields.has("interruption when"):
+			_check_condition_text(d.fields["interruption when"].value, d.fields["interruption when"].line, "rest_rules:" + id)
+		if d.fields.has("interruption chance") and not RegEx.create_from_string("^\\d+ in \\d+$").search(d.fields["interruption chance"].value):
+			_err(d.fields["interruption chance"].line, "Interruption chance is written 'N in M'.")
+		if d.fields.has("interruption chance modifiers"):
+			for l: FscParser.Line in d.fields["interruption chance modifiers"].children:
+				if l.is_blank():
+					continue
+				var mp := l.text.rsplit(":", true, 1)
+				if mp.size() != 2 or not mp[1].replace(" ", "").is_valid_int():
+					_err(l.number, "Interruption chance modifiers are 'condition: + n' lines.")
+				else:
+					_check_condition_text(mp[0].strip_edges(), l.number, "rest_rules:" + id)
 		for field in ["duration", "fresh below", "fresh fatigue", "exhausted recovery", "hammock fresh fatigue", "hammock recovery", "collapse at", "collapse fatigue", "collapse turns"]:
 			if d.fields.has(field):
 				var f: FscParser.Field = d.fields[field]
@@ -1454,7 +1494,7 @@ func _check_path(path: String, line: int) -> void:
 		return
 	if parts[0] == "pregnancy" and parts.size() == 2 and (parts[1] in PregnancySystem.STORED or parts[1] in PregnancySystem.COMPUTED):
 		return
-	if parts[0] == "child" and parts.size() == 2 and parts[1] in PregnancySystem.CHILD_VALUES:
+	if parts[0] == "child" and parts.size() == 2 and (parts[1] in PregnancySystem.CHILD_VALUES or parts[1] in ["age_turns", "age_days", "turn"]):
 		return
 	if parts[0] == "people" and parts.size() == 2:
 		if parts[1].replace("_", " ") not in _location_flags():
@@ -1783,6 +1823,12 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			for slot in n.substr(5).split(","):
 				if slot.strip_edges() not in ItemSystem.SLOTS:
 					_err(line, "[%s]: '%s' is not a slot. Slots: %s." % [n, slot.strip_edges(), ", ".join(ItemSystem.SLOTS)])
+			continue
+		var cm := RegEx.create_from_string("^children at (\\w+) as (\\w+)$").search(n)
+		if cm != null:
+			# "[children at bunker as offspring_line]": a snippet once per child living there.
+			if not db.has(cm.get_string(2), "text"):
+				_err(line, "[%s]: '%s' is not a text snippet." % [n, cm.get_string(2)])
 			continue
 		var halves := n.split(" of ", true, 1)
 		var what := halves[0]

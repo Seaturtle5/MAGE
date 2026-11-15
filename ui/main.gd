@@ -969,7 +969,7 @@ func _refresh_panels() -> void:
 		t.tooltip_text = "Travel to a place you have found (%d)." % travel.size()
 	_link_button(nav_links, "Map", "map", "M", _open_map, false)
 	for a in e.get("actions", []):
-		_action_tile(a.id, busy, str(a.get("label", "")), str(a.get("arg", "")))
+		_action_tile(a.id, busy, str(a.get("label", "")), str(a.get("arg", "")), str(a.get("description", "")))
 	if e.get("actions", []).is_empty():
 		actions_box.add_child(FsTheme.label("Nothing to do here right now.", 15, FsTheme.TEXT_FAINT))
 	nav_panel.modulate.a = 0.45 if busy else 1.0
@@ -1014,10 +1014,12 @@ func _dir_short(dir: String) -> String:
 		"outside": "Out"}.get(dir, dir.capitalize())
 
 
-func _action_tile(id: String, busy: bool, label: String = "", arg: String = "") -> Button:
+func _action_tile(id: String, busy: bool, label: String = "", arg: String = "", description: String = "") -> Button:
 	var info: Array = ACTION_INFO.get(id, [id.capitalize(), "", ""]).duplicate()
-	if id in ["actions", "shop"] and label != "":
-		info[0] = label  # the menu's own title
+	if id in ["actions", "shop", "command"] and label != "":
+		info[0] = label  # the menu's own title, or the command's name
+	if id == "command":
+		info[1] = description
 	var icon_name := id if _icon(id) != null else "use"
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)

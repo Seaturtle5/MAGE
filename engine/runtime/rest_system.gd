@@ -5,6 +5,14 @@ extends RefCounted
 const QUALITY := {"none": 0, "rough": 1, "bed": 2, "cot": 2, "hammock": 3}
 
 
+## Fatigue and the rest buff switched off (`off when`, such as an insomniac mode).
+static func off(game) -> bool:
+	var config := rules(game)
+	if config == null or not config.fields.has("off when"):
+		return false
+	return Condition.evaluate(Condition.compile(config.fields["off when"].value), game)
+
+
 static func rules(game) -> FscParser.Definition:
 	var definitions: Dictionary = game.content.all_of("rest_rules")
 	return null if definitions.is_empty() else definitions.values()[0]
@@ -47,7 +55,7 @@ static func recover(game, quality: String) -> void:
 	var recovery := (quarter + stamina) / 2 if quality == "rough" else maxi(quarter, stamina)
 	game.apply({"op": "survival", "kind": "heal", "amount": {"value": {"op": "num", "v": recovery}}, "quiet": true})
 	var config := rules(game)
-	if config == null or "insomniac" in game.settings.mode:
+	if config == null or off(game):
 		return
 	if int(game.value("player.fatigue")) >= number(game, "fresh below", 10):
 		var amount := number(game, "hammock recovery", 6) if quality == "hammock" else number(game, "exhausted recovery", 5)
@@ -63,7 +71,7 @@ static func recover(game, quality: String) -> void:
 
 static func tick(game) -> void:
 	var config := rules(game)
-	if config == null or game.state.ending != "" or "insomniac" in game.settings.mode:
+	if config == null or game.state.ending != "" or off(game):
 		return
 	# The original tests the feat before expiring it and freezes fatigue while active.
 	if game.state.conditions.has(config.fields.condition.value):
@@ -90,7 +98,7 @@ static func status(game) -> String:
 	var thresholds: Array = statuses.keys()
 	thresholds.sort()
 	var label := ""
-	var fatigue: int = 0 if "insomniac" in game.settings.mode else int(game.value("player.fatigue"))
+	var fatigue: int = 0 if off(game) else int(game.value("player.fatigue"))
 	for threshold: int in thresholds:
 		if label == "" or threshold <= fatigue:
 			label = statuses[threshold]
@@ -106,6 +114,43 @@ static func _pairs(config: FscParser.Definition, field: String) -> Dictionary:
 			var pair: PackedStringArray = line.text.split(":", true, 1)
 			result[int(pair[0].strip_edges())] = pair[1].strip_edges()
 	return result
+
+
+## Whether a rest here can be interrupted at all: `interruption chance` is set and
+## `interruption when` holds (a place that is not safe to sleep in).
+static func can_be_interrupted(game) -> bool:
+	var config := rules(game)
+	if config == null or not config.fields.has("interruption chance"):
+		return false
+	if config.fields.has("interruption when"):
+		return Condition.evaluate(Condition.compile(config.fields["interruption when"].value), game)
+	return true
+
+
+## Rolls `interruption chance` (N in M) plus its modifiers (`condition: + n` lines).
+static func interrupted(game) -> bool:
+	var config := rules(game)
+	var parts: PackedStringArray = config.fields["interruption chance"].value.split(" in ")
+	if parts.size() != 2:
+		return false
+	var n := int(parts[0])
+	if config.fields.has("interruption chance modifiers"):
+		for l: FscParser.Line in config.fields["interruption chance modifiers"].children:
+			if l.is_blank() or not ":" in l.text:
+				continue
+			var p := l.text.rsplit(":", true, 1)
+			if Condition.evaluate(Condition.compile(p[0].strip_edges()), game):
+				n += int(p[1].replace(" ", ""))
+	return game.rng.chance(n, int(parts[1]))
+
+
+## Plays a rest rules script (`interrupted`, `undisturbed` ...); false when there is none.
+static func play(game, field: String) -> bool:
+	var config := rules(game)
+	if config == null or game.content.program(config.id + "#" + field, "rest_rules") == null:
+		return false
+	_emit(game, field)
+	return true
 
 
 static func _emit(game, field: String) -> void:

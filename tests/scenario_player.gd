@@ -72,7 +72,7 @@ static func _step(game: Game, line: String) -> bool:
 			return game.runner.proceed()
 		"type":
 			return game.runner.enter_text(arg)
-		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss":
+		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss", "command":
 			return game.runner.act(cmd, arg)
 		"save":
 			var f := FileAccess.open(arg, FileAccess.WRITE)

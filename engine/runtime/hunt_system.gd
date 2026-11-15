@@ -34,6 +34,11 @@ static func _holds(game, field: String, fallback: bool) -> bool:
 	return Condition.evaluate(Condition.compile(text), game)
 
 
+## Whether hunting is possible now (`hunt when`; true without it).
+static func allowed(game) -> bool:
+	return _holds(game, "hunt when", true)
+
+
 ## The target's entries in the pool: `target weight` plus its modifiers.
 static func target_weight(game) -> int:
 	var e := Expr.parse(_field(game, "target weight", "1"))

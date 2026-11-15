@@ -555,6 +555,10 @@ func roll_check(label: String, bonus: int, target: int, stat: String = "") -> bo
 # --- Text -------------------------------------------------------------------
 
 func describe(name: String) -> String:
+	# "[children at bunker as offspring_line]": a text snippet once per recorded child living there.
+	var cm := RegEx.create_from_string("^children at (\\w+) as (\\w+)$").search(name)
+	if cm != null:
+		return PregnancySystem.describe_children(self, cm.get_string(1), cm.get_string(2))
 	var n := name.strip_edges()
 	# "[a cock_size_desc]": the text with "a" or "an" in front.
 	if n.begins_with("a ") or n.begins_with("A "):
@@ -1382,6 +1386,10 @@ func feat_bonus(field: String) -> int:
 	var bonus := 0
 	for id in state.feats:
 		bonus += int(content.typed_value("feat", id, field, "0"))
+	# Game modes chosen at the start carry the same bonuses (Blind Mode's better exploring).
+	for id in settings.mode:
+		if content.has(id, "game_mode"):
+			bonus += int(content.typed_value("game_mode", id, field, "0"))
 	return bonus
 
 
@@ -1400,6 +1408,7 @@ func end_game(cause: String, ending: String) -> void:
 func pass_turn() -> void:
 	if state.ending != "":
 		return
+	var was_day := is_day()
 	state.turn += 1
 	SurvivalSystem.tick(self)
 	RestSystem.tick(self)
@@ -1417,10 +1426,12 @@ func pass_turn() -> void:
 		else:
 			end_condition(c)
 	run_hooks("each turn")
+	if is_day() != was_day:
+		run_hooks("day starts" if is_day() else "night starts")  # sunrise and sunset
 
 
 ## The moments hooks can run at (`on:` of a hook).
-const HOOK_MOMENTS := ["each turn", "captivity starts", "captivity round", "after sex", "player hits"]
+const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits"]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`

@@ -8,16 +8,16 @@ extends RefCounted
 ## inside a field), fields (nested fields), list (comma separated), menu
 ## (options), values (value declarations), stages (quest stages), meta.
 const SCHEMA := {
-	"rest_rules": {"condition": "text", "duration": "text", "fresh below": "text", "fresh fatigue": "text",
+	"rest_rules": {"off when": "text", "interruption when": "text", "interruption chance": "text", "interruption chance modifiers": "fields", "interrupted": "script", "undisturbed": "script", "condition": "text", "duration": "text", "fresh below": "text", "fresh fatigue": "text",
 		"exhausted recovery": "text", "hammock fresh fatigue": "text", "hammock recovery": "text",
 		"collapse at": "text", "collapse fatigue": "text", "collapse turns": "text",
 		"statuses": "fields", "warnings": "fields", "refreshed": "script", "collapse": "script", "wake": "script", "source": "meta"},
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
 		"menu icons": "list"},
-	"hunt_rules": {"target weight": "text", "target weight modifiers": "fields", "others when": "text",
+	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "not found": "script", "source": "meta"},
-	"survival_rules": {"sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
+	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
 		"lust descriptions": "fields", "humanity ending": "text", "rescue ending": "text", "anticipation within": "text",
@@ -25,7 +25,8 @@ const SCHEMA := {
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	# Character creation (CreationSystem): the new-game choices and the scripts around them.
 	"creation_rules": {"choices": "list", "feats": "fields", "before": "script", "after": "script", "source": "meta"},
-	"game_mode": {"name": "text", "description": "text", "source": "meta"},
+	"command": {"name": "text", "description": "text", "when": "text", "play": "script", "source": "meta"},
+	"game_mode": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text", "scavenge bonus": "text", "carry bonus": "text", "loot bonus": "text", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
 		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "body text": "text", "group": "text", "available when": "text",
 		"gained": "script", "source": "meta"},
@@ -42,7 +43,7 @@ const SCHEMA := {
 		"nipples stay when": "text", "nipples keep when": "text", "breasts grow when": "text",
 		"male breasts when": "text", "male flat when": "text", "flat chest when": "text",
 		"food infection blocked when": "text", "source": "meta"},
-	"combat_rules": {"unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text", "hump lust": "text",
+	"combat_rules": {"harder rolls when": "text", "level limit": "text", "level limit off when": "text", "unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text", "hump lust": "text",
 		"flee fails": "text", "won": "script", "lost": "script", "each round": "script", "before flee": "script",
 		"fight starts": "script", "player damage": "script", "avoid": "script", "enemy damage": "script",
 		"before random fight": "script", "creature chance": "text", "creature chance modifiers": "fields",
