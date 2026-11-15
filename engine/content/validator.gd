@@ -39,25 +39,17 @@ var _path := ""
 static func run(content: ContentDB) -> void:
 	var v := Validator.new()
 	v.db = content
-	v._collect_images()
-	v._check_images()
-	v._check_slice_types()
-	v._check_items()
-	v._check_rest_rules()
-	v._check_survival_rules()
-	v._check_creation_rules()
-	v._check_heat()
-	v._check_pregnancy()
-	v._check_captivity()
-	v._check_endings()
-	v._check_status_bar()
-	v._check_companions()
-	v._check_levels()
-	v._check_vore()
-	v._check_scavenge_rules()
-	v._check_world()
-	v._check_filters()
-	v._check_conditions()
+	# Each step says what it checks, for a loading screen (ContentDB.progress()).
+	var steps := [["Pictures", v._collect_images], ["Pictures", v._check_images], ["Content types", v._check_slice_types],
+		["Items", v._check_items], ["Rules", v._check_rest_rules], ["Rules", v._check_survival_rules],
+		["Character creation", v._check_creation_rules], ["Heat and pregnancy", v._check_heat],
+		["Heat and pregnancy", v._check_pregnancy], ["Captivity", v._check_captivity], ["Endings", v._check_endings],
+		["Status bar", v._check_status_bar], ["Companions", v._check_companions], ["Levels", v._check_levels],
+		["Vore", v._check_vore], ["Scavenging", v._check_scavenge_rules], ["World", v._check_world],
+		["Filters", v._check_filters], ["Conditions", v._check_conditions]]
+	for i in steps.size():
+		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
+		(steps[i][1] as Callable).call()
 	v._check_programs()
 
 
@@ -1196,8 +1188,11 @@ func _check_programs() -> void:
 			for name in d.field_order:
 				if schema.get(name, "") == "script":
 					pids.append("%s:%s#%s" % [type, id, name])
+	var listed := {}
+	for pid in pids:
+		listed[pid] = true
 	for key in db.extra_scripts:
-		if key not in pids:
+		if not listed.has(key):
 			pids.append(key)
 	for menu_id in db.menus:
 		var menu: Dictionary = db.menus[menu_id]
@@ -1207,7 +1202,10 @@ func _check_programs() -> void:
 			if o.condition != "":
 				_path = menu.def.path
 				_check_condition_text(o.condition, o.line, menu_id)
-	for pid in pids:
+	for k in pids.size():
+		if k % 250 == 0:
+			db._set_progress("Checking content", "Scenes and scripts", k, pids.size())
+		var pid: String = pids[k]
 		var prog := db.program(pid)
 		if prog == null:
 			continue
