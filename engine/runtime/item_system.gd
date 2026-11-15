@@ -98,7 +98,7 @@ static func scale(game) -> int:
 	if game.state.values.has("player.scale"):
 		return int(game.state.values["player.scale"])
 	var form: String = game.part_form("player", "torso")
-	return int(game.content.typed_value("form", form, "scale", "3"))
+	return BodySystem.form_scale(game, form)
 
 
 ## Changes the player's size and adjusts worn gear (Special Merchandize.i7x:
@@ -271,6 +271,22 @@ static func strip_text(game, slots: Array, verb: String, area: String, bare: Str
 	if items.size() == 1:
 		return "%s your %s and bare your %s" % [verb, listed, area]
 	return "%s your %s, baring your %s" % [verb, listed, area]
+
+
+## The player dressing again after a strip (Basic Functions.i7x SelfDressCrotch /
+## SelfDressChest): "collect your jeans and boxers to put them back on".
+static func dress_text(game, slots: Array, bare: String) -> String:
+	var items: Array = []
+	for slot in slots:
+		for id: String in game.state.equipped:
+			if gear(game, id, "slot", "none") == slot and item_name(game, id) not in items:
+				items.append(item_name(game, id))
+				break
+	if items.is_empty():
+		return bare
+	if items.size() == 1:
+		return "collect and put your %s back on" % items[0]
+	return "collect your %s and %s to put them back on" % [", ".join(items.slice(0, -1)), items[-1]]
 
 
 static func worn_description(game) -> String:

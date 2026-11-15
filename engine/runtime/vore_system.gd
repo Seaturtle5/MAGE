@@ -177,4 +177,4 @@ static func scale_of(game, creature: String) -> int:
 	if creature == "":
 		return 0
 	var form: String = game.creature_field(creature, "form", creature)
-	return int(game.content.typed_value("form", form, "scale", "3"))
+	return BodySystem.form_scale(game, form)

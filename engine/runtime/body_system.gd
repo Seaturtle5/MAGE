@@ -186,10 +186,18 @@ static func _change_part(game, form: String, part: String, message: bool = true)
 	game.set_value("player.body_description." + part, _text(game, data.get("description", "")))
 
 
+## A form's size: its `scale` (3, human size, when not written), or as changed
+## in play (`~ creature X scale = 4`).
+static func form_scale(game, form: String) -> int:
+	if game.state.values.has("form.%s.scale" % form):
+		return int(game.state.values["form.%s.scale" % form])
+	return int(game.content.typed_value("form", form, "scale", "3"))
+
+
 ## Size, and gear that no longer fits or suits the body (Infections.i7x:952-994).
 static func _attributes(game, form: String) -> void:
 	game.state.values.erase("player.scale")
-	var target := int(game.content.typed_value("form", form, "scale", "3"))
+	var target := form_scale(game, form)
 	var tags: Array = game.content.form_tags(form)
 	if "taur" in tags or "no_legs" in tags:
 		for id: String in game.state.equipped.duplicate():

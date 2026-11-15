@@ -174,11 +174,25 @@ func carried_tagged(tag: String) -> Array:
 	return out
 
 
+## Carried items with any of these tags (every carried item when there are none), sorted.
+func carried_with_tags(tags: Array) -> Array:
+	var out: Array = []
+	for id: String in state.inventory.keys():
+		var def: FscParser.Definition = content.get_def("item", id)
+		if int(state.inventory[id]) <= 0 or def == null:
+			continue
+		var own: Array = content._list(def, "tags")
+		if tags.is_empty() or tags.any(func(t: String) -> bool: return t in own):
+			out.append(id)
+	out.sort()
+	return out
+
+
 ## A character's portrait: the one set in play (`~ character X image Y`), else its `image:`.
 func character_image(id: String) -> String:
 	if state.values.has("character.%s.image" % id):
 		return str(state.values["character.%s.image" % id])
-	return content.typed_value("character", id, "image")
+	return content.image_of("character", id)
 
 
 ## A creature field that play can change (`~ creature X found in Z`), else its definition's.
@@ -186,9 +200,14 @@ func creature_field(id: String, field: String, fallback: String = "") -> String:
 	var key := "creature.%s.%s" % [id, field]
 	if state.values.has(key):
 		return str(state.values[key])
+	if field == "image" and content.art_image("creature", id, true) != "":
+		return content.art_image("creature", id, true)  # an art pack's picture that replaces
 	var v: Variant = VariantSystem.field(self, id, field)  # the variant met this time
 	if v != null:
 		return str(v)
+	if field == "image":
+		var picture := content.image_of("creature", id)
+		return picture if picture != "" else fallback
 	return content.typed_value("creature", id, field, fallback)
 
 
@@ -399,6 +418,10 @@ func ask(node: Dictionary) -> bool:
 		"has_part":
 			return body_count(node.who, node.part) > 0
 		"has_item":
+			# "bunker has water_bottle", "here has food 2": items lying in a place.
+			var place: String = state.location if node.who == "here" else node.who
+			if node.who != "player" and content.has(place, "location"):
+				return int(ItemSystem.ground(self, place).get(node.item, 0)) >= node.n
 			return int(state.inventory.get(node.item, 0)) >= node.n
 		"has_tagged":
 			return not carried_tagged(node.tag).is_empty()
@@ -690,6 +713,10 @@ func describe(name: String) -> String:
 			return ItemSystem.strip_text(self, ["waist", "legs", "crotch"], "pull down", "crotch", "stroke over your bare crotch")
 		"strip chest":
 			return ItemSystem.strip_text(self, ["body", "back", "chest", "breast"], "pull off", "chest", "casually stroke over your bare chest")
+		"dress crotch":
+			return ItemSystem.dress_text(self, ["waist", "legs", "crotch"], "casually stroke over your bare crotch")
+		"dress chest":
+			return ItemSystem.dress_text(self, ["body", "back", "chest", "breast"], "casually stroke over your bare chest")
 		"companions description":
 			return companions_description()
 		"humanity description":
@@ -1075,6 +1102,10 @@ func apply(e: Dictionary) -> void:
 				ev = runner.current_event()
 			if ev != "":
 				set_value("%s.outcome" % ev, e.outcome)
+				# An outcome with a number also sets the event's resolution number.
+				var numbers: Dictionary = content.outcome_numbers.get(ev, {})
+				if numbers.has(e.outcome):
+					set_value("%s.resolution" % ev, int(numbers[e.outcome]))
 		"resolve":
 			var ev: String = e.get("event", "")
 			if ev == "":
@@ -1107,6 +1138,13 @@ func apply(e: Dictionary) -> void:
 			BodySystem.grow(self, e.part, Effect.resolve_amount(e.amount, self))
 		"creature_change":
 			state.values["creature.%s.%s" % [e.creature, e.field]] = e.value
+		"creature_number" when e.field == "scale":
+			# A creature's size changed in play (the original's "now scale entry is 4"): its
+			# form's scale, so it counts for the creature and for a body of that strain alike.
+			var form := creature_field(e.creature, "form", e.creature)
+			var size := BodySystem.form_scale(self, form)
+			var by: int = Effect.resolve_amount(e.amount, self, size)
+			state.values["form.%s.scale" % form] = by if e.how == "=" else size + (by if e.how == "+" else -by)
 		"creature_number":
 			# A lasting change to a creature's numbers ("increase wdam entry by 2").
 			var cur := CombatSystem.stat(self, e.creature, e.field) if e.field in CombatSystem.ATTRIBUTES \
@@ -1540,6 +1578,7 @@ func start_scenario(id: String, name: String = "Player", pronouns: String = "he"
 	output.clear()  # creation speaks quietly; the game starts with the scenario
 	start(content.typed_value("scenario", id, "start"))
 	runner.start(id + "#setup")
+	run_hooks("game starts")  # once per new game, after the scenario's setup (shuffled lists and the like)
 	runner.emit_title(content.typed_value("scenario", id, "name", id))
 	runner.start(id + "#intro")
 	return true
@@ -1647,7 +1686,7 @@ func pass_turn() -> void:
 
 ## The moments hooks can run at (`on:` of a hook).
 const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
-	"after resting", "instead of resting"]
+	"after resting", "instead of resting", "game starts", "while travelling"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled).
@@ -1665,6 +1704,15 @@ func run_hooks(moment: String) -> void:
 	for id: String in content.all_of("hook"):
 		if _hook_applies(id, moment):
 			runner.play_now(content.program("%s#do" % id, "hook").id)
+
+
+## The scripts of the hooks for `moment` whose `when:` holds, in pack load order.
+func hooks_for(moment: String) -> Array:
+	var out: Array = []
+	for id: String in content.all_of("hook"):
+		if _hook_applies(id, moment):
+			out.append(content.program("%s#do" % id, "hook").id)
+	return out
 
 
 ## An "instead of" moment: the script of the first hook (in pack load order) for
@@ -1703,7 +1751,7 @@ func status_snapshot() -> Dictionary:
 	for k in PLAYER_DEFAULTS:
 		stats[k] = value("player." + k)
 	var loc := state.location
-	return {"location": content.field_value(loc, "name", loc), "region": content.field_value(content.field_value(loc, "region"), "name", ""),
+	return {"location": content.field_value(loc, "name", loc), "region": map_group_name(map_group(loc)),
 		"day": day(), "time": time_slot(), "stats": stats, "conditions": state.conditions.keys(),
 		"sleep": RestSystem.status(self),
 		"companions": state.companions.map(func(c): return content.field_value(c, "name", c))}
@@ -1837,8 +1885,7 @@ func travel_destinations() -> Array:
 		return out
 	for id in content.all_of("location"):
 		if id != state.location and state.known.has(id) and "fast travel" in content.list_field(id, "flags"):
-			out.append({"id": id, "name": content.field_value(id, "name", id),
-				"region": content.field_value(content.field_value(id, "region"), "name", "")})
+			out.append({"id": id, "name": content.field_value(id, "name", id), "region": map_group_name(map_group(id))})
 	out.sort_custom(func(a, b): return a.region + a.name < b.region + b.name)
 	return out
 
@@ -1868,27 +1915,79 @@ func exits_of(loc: String) -> Array:
 	return out
 
 
-## Locations of a region with map positions, for the map and mini map.
-func map_data(region: String = "") -> Dictionary:
-	if region == "":
-		region = content.field_value(state.location, "region")
+## The map group a place belongs to: its region, the nearest region along its
+## exits, its connected places' zone ("zone:<id>"), or "zone:" for the rest
+## (see MapLayout).
+func map_group(loc: String) -> String:
+	return str(content.map_layout().group.get(loc, "zone:"))
+
+
+## A map group's display name: the region's or zone's name ("" for the rest).
+func map_group_name(key: String) -> String:
+	if key == "zone:":
+		return ""
+	if key.begins_with("zone:"):
+		return content.typed_value("zone", key.substr(5), "name", key.substr(5))
+	return content.typed_value("region", key, "name", key)
+
+
+## The places of a map group (the player's own by default) with their
+## positions, for the map and mini map.
+func map_data(key: String = "") -> Dictionary:
+	var layout := content.map_layout()
+	if key == "":
+		key = map_group(state.location)
 	var places: Array = []
-	for id in content.all_of("location"):
-		if content.field_value(id, "region") != region:
-			continue
-		var pos := content.field_value(id, "map").split(",")
-		if pos.size() < 2:
-			continue
+	for id: String in layout.members.get(key, []):
 		var exits: Array = []
 		for pair: Array in exits_of(id):
 			var to := SceneRunner.exit_target(pair[1])
-			if to != "":
+			if to != "" and to not in exits:
 				exits.append(to)
-		places.append({"id": id, "name": content.field_value(id, "name", id), "x": int(pos[0]), "y": int(pos[1]),
+		var at: Vector2i = layout.position.get(id, Vector2i.ZERO)
+		places.append({"id": id, "name": content.field_value(id, "name", id), "x": at.x, "y": at.y,
 			"known": state.known.has(id), "current": id == state.location, "exits": exits,
 			"fast_travel": "fast travel" in content.list_field(id, "flags")})
-	return {"region": region, "name": content.typed_value("region", region, "name", region),
-		"image": content.typed_value("region", region, "image"), "places": places}
+	var region := key if content.has(key, "region") else ""
+	return {"region": key, "name": map_group_name(key),
+		"image": content.image_of("region", region) if region != "" else "", "places": places}
+
+
+## The overview of the map: every group with a place the player knows, in
+## travel order (regions first by `travel order`, then by name; zones and the
+## default group after), with how many places are known and whether the
+## player is there.
+func map_groups() -> Array:
+	var layout := content.map_layout()
+	var here := map_group(state.location)
+	var out: Array = []
+	for key: String in layout.members:
+		var known := 0
+		var travel := 0
+		for id: String in layout.members[key]:
+			if state.known.has(id) or id == state.location:
+				known += 1
+				if "fast travel" in content.list_field(id, "flags"):
+					travel += 1
+		if known == 0:
+			continue
+		var is_region := content.has(key, "region")
+		var order := content.typed_value("region", key, "travel order") if is_region else ""
+		out.append({"id": key, "name": map_group_name(key), "known": known, "fast_travel": travel,
+			"places": layout.members[key].size(), "current": key == here,
+			"image": content.image_of("region", key) if is_region else "",
+			"_rank": 0 if is_region else (1 if key != "zone:" else 2),
+			"_order": int(order) if order.is_valid_int() else 1 << 30})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a._rank != b._rank:
+			return a._rank < b._rank
+		if a._order != b._order:
+			return a._order < b._order
+		return a.name + a.id < b.name + b.id)
+	for g: Dictionary in out:
+		g.erase("_rank")
+		g.erase("_order")
+	return out
 
 
 # --- Timed conditions -------------------------------------------------------
@@ -1971,7 +2070,7 @@ func save_dict() -> Dictionary:
 func save_summary() -> Dictionary:
 	var loc := state.location
 	return {"player": str(value("player.name")), "location": content.typed_value("location", loc, "name", loc),
-		"region": content.typed_value("region", content.typed_value("location", loc, "region"), "name", ""),
+		"region": map_group_name(map_group(loc)),
 		"day": day(), "time": time_slot(), "turn": state.turn, "level": int(value("player.level")),
 		"scenario": content.typed_value("scenario", str(settings.scenario), "name", str(settings.scenario)),
 		"ending": state.ending}

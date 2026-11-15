@@ -10,7 +10,7 @@ extends RefCounted
 ## suggestion where a close match exists.
 
 const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
-	"cock", "cock size", "cup size", "strip crotch", "strip chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
+	"cock", "cock size", "cup size", "strip crotch", "strip chest", "dress crotch", "dress chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
 	"picked creature", "enemy name", "the enemy", "Enemy name", "The enemy", "enemy body type", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
@@ -34,6 +34,9 @@ const SEX_ACTS := ["anal", "anal_toy", "vaginal", "vaginal_toy", "oral_cock", "o
 var db: ContentDB
 var _images: Dictionary = {}
 var _path := ""
+var _reads: Dictionary = {}  ## value path -> [file, line] where it is first used
+var _sets: Dictionary = {}  ## value paths a script sets or changes
+var _item_tag_list: Array = []
 
 
 static func run(content: ContentDB) -> void:
@@ -51,6 +54,7 @@ static func run(content: ContentDB) -> void:
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
 	v._check_programs()
+	v._check_resolutions()
 
 
 func _err(line: int, message: String) -> void:
@@ -98,6 +102,17 @@ func _check_images() -> void:
 				if field.value != "" and not _images.has(field.value):
 					_path = d.path
 					_warn(field.line, "Image '%s' was not found in any pack's images folder; a placeholder is shown." % field.value)
+	# Art packs: `art: replaces` (their pictures win) or `art: fallback` (they fill gaps).
+	for p: Dictionary in db.packs:
+		var d: FscParser.Definition = p.def
+		if d.fields.has("art") and d.fields.art.value not in ["replaces", "fallback"]:
+			_path = d.path
+			_err(d.fields.art.line, "An art pack is 'art: replaces' (its pictures win over the content's own) or 'art: fallback' (they only fill gaps).")
+	for key: String in db.art_images:
+		for e: Dictionary in db.art_images[key]:
+			if not _images.has(e.image):
+				_path = e.path
+				_warn(e.line, "Image '%s' was not found in any pack's images folder." % e.image)
 
 
 func _check_slice_types() -> void:
@@ -147,11 +162,13 @@ func _check_slice_types() -> void:
 				_need(loot[0], "item", d.fields.loot.line)
 		if d.fields.has("trophies"):
 			for entry in d.fields.trophies.value.split(",", false):
-				var trophy: PackedStringArray = entry.strip_edges().split(" ", false)
+				var trophy: PackedStringArray = entry.split(" if ", true, 1)[0].strip_edges().split(" ", false)
 				if trophy.size() != 2 or not trophy[1].ends_with("%") or not trophy[1].trim_suffix("%").is_valid_int():
-					_err(d.fields.trophies.line, "Trophies are written 'item_id N%%, item_id N%%' ('%s' is not)." % entry.strip_edges())
+					_err(d.fields.trophies.line, "Trophies are written 'item_id N%%, item_id N%% if <condition>' ('%s' is not)." % entry.strip_edges())
 				else:
 					_need(trophy[0], "item", d.fields.trophies.line)
+				if CombatSystem.trophy_condition(entry) != "":
+					_check_condition_text(CombatSystem.trophy_condition(entry), d.fields.trophies.line, id)
 		if d.fields.has("form"):
 			_need(d.fields.form.value, "form", d.fields.form.line)
 		if d.fields.has("active") and d.fields.active.value not in ["always", "day", "night"]:
@@ -336,6 +353,8 @@ func _check_world() -> void:
 				continue
 			if not _has_exit_to(target, id):
 				_warn(l.number, "Exit %s leads to %s, but %s has no exit back. Add one, or mark this exit 'one way'." % [parts[0].strip_edges(), target, target])
+			else:
+				_check_way_back(id, parts[0].strip_edges(), target, l.number)
 	_check_map_positions()
 	for id in db.all_of("door"):
 		var d := db.get_def("door", id)
@@ -364,6 +383,7 @@ func _check_world() -> void:
 	for id in db.all_of("event"):
 		var d: FscParser.Definition = db.get_def("event", id)
 		_path = d.path
+		_check_outcome_list(d)
 		var found := ContentDB.found_by(db.typed_value("event", id, "found by"))
 		var found_line: int = d.fields["found by"].line if d.fields.has("found by") else d.line
 		match found.form:
@@ -553,6 +573,7 @@ func _check_conditions() -> void:
 			elif e.op not in ["feat", "set", "change"]:
 				_err(l.number, "'while active' can only change feats or values (so they can be undone); found '%s'." % l.text)
 			elif e.op == "set":
+				_sets[e.path] = true
 				_check_path(e.path, l.number)
 			elif e.op == "change":
 				_check_effect(e, l.number, id)
@@ -1164,6 +1185,26 @@ func _check_map_positions() -> void:
 			taken[key] = id
 
 
+## The map lays places out from their exits: a compass exit whose way back is
+## another compass direction, but not the opposite one, bends the map
+## (reported once, on the first of the two places by ID).
+func _check_way_back(from: String, dir: String, to: String, line: int) -> void:
+	var back := _exits_back(to, from)
+	if not MapLayout.STEPS.has(dir) or to < from or back.is_empty() or back.any(func(b: String) -> bool:
+			return not MapLayout.STEPS.has(b) or MapLayout.STEPS[b] == -MapLayout.STEPS[dir]):
+		return
+	_warn(line, "Exit %s leads to %s, but its way back is %s, not the opposite way, so the map bends here. Make them opposite (north and south), or use up, down, inside or outside." % [dir, to, back[0]])
+
+
+## The directions of `from`'s written exits that lead to `to`.
+func _exits_back(from: String, to: String) -> Array:
+	var out: Array = []
+	for pair: Array in MapLayout.written_exits(db, from):
+		if pair[1] == to:
+			out.append(pair[0])
+	return out
+
+
 func _has_exit_to(from: String, to: String) -> bool:
 	var d := db.get_def("location", from)
 	var exits: FscParser.Field = d.fields.get("exits", null) if d != null else null
@@ -1484,8 +1525,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				# The value must be a state list whose states are all items.
 				_check_path(e.item_path, line)
 				var decl: Dictionary = db.values.get(e.item_path, {})
-				if decl.get("kind", "") == "text":
-					pass  # an item ID put there in play ("~ ask x as item tagged milky: ...")
+				if decl.get("kind", "") == "text" or e.item_path == "gift.item":
+					pass  # an item ID put there in play ("~ ask x as item tagged milky: ...", a gift)
 				elif decl.get("kind", "") != "states":
 					_err(line, "%s must be declared with item names as its states, for example 'item: food, water_bottle'." % e.item_path)
 				else:
@@ -1546,6 +1587,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			for p in Expr.paths(e.by):
 				_check_path(p, line)
 		"set", "change":
+			_sets[e.path] = true
 			_check_path(e.path, line)
 			if db.values.get(e.path, {}).get("kind", "") == "list":
 				_err(line, "%s is a list: change it with ~ add, ~ remove, ~ clear or ~ sort." % e.path)
@@ -1577,13 +1619,42 @@ func _check_list(path: String, line: int) -> void:
 		_err(line, "%s is not a list. Declare it as 'name: list' to add entries to it." % path)
 
 
+## An event's resolution number read somewhere but never set: neither an
+## outcome with a number (`outcomes: fed = 1`, `outcome_2`) nor a script sets it.
+func _check_resolutions() -> void:
+	for id in db.all_of("event"):
+		var path := "%s.resolution" % id
+		if _reads.has(path) and not _sets.has(path) and not db.outcome_numbers.has(id):
+			_path = _reads[path][0]
+			_warn(_reads[path][1], "%s is read here, but nothing sets it. Give the outcomes of %s numbers ('outcomes: fed = 1, chased_off = 2'), so '~ outcome fed' sets it, or set it with '~ %s = 1'." % [path, id, path])
+
+
+## Outcomes are names, each with an optional resolution number: 'fed = 1'.
+func _check_outcome_list(d: FscParser.Definition) -> void:
+	if not d.fields.has("outcomes"):
+		return
+	var seen: Array = []
+	for entry in db.list_field(d.id, "outcomes"):
+		var parts: PackedStringArray = entry.split("=", true, 1)
+		var name := parts[0].strip_edges()
+		if not RegEx.create_from_string("^\\w+$").search(name):
+			_err(d.fields.outcomes.line, "Outcome '%s' is not a name; outcomes are names, optionally with a number: 'fed = 1, chased_off = 2'." % entry)
+		elif parts.size() == 2 and not parts[1].strip_edges().is_valid_int():
+			_err(d.fields.outcomes.line, "Outcome %s's number must be a whole number: '%s = 1'." % [name, name])
+		elif name in seen:
+			_warn(d.fields.outcomes.line, "Outcome %s is listed twice." % name)
+		seen.append(name)
+
+
 func _need(id: String, type: String, line: int) -> void:
 	if not db.has(id, type):
 		_err(line, "%s '%s' does not exist.%s" % [type.capitalize(), id, _suggest(id, _ids(type))])
 
 
 func _check_path(path: String, line: int) -> void:
-	if db.values.has(path) or path in ["game.turn", "places.known", "picked.creature"]:
+	if not _reads.has(path):
+		_reads[path] = [_path, line]
+	if db.values.has(path) or path in ["game.turn", "places.known", "picked.creature", "gift.item", "gift.to"]:
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:
@@ -1709,6 +1780,10 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"listed":
 			_check_list(c.path, line)
 			_check_expr(c.item, line)
+		"value_tagged":
+			_check_path(c.path, line)
+			if c.tag not in _item_tags() and not db.has(c.tag, "filter") and not db.has(c.tag, "tag"):
+				_warn(line, "No item, tag or filter is named '%s', so '%s is tagged %s' is never true." % [c.tag, c.path, c.tag])
 		"empty":
 			_check_path(c.path, line)
 			var decl: Dictionary = db.values.get(c.path, {})
@@ -1737,6 +1812,8 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_need(c.creature, "creature", line)
 		"has_item", "wears":
 			_need(c.item, "item", line)
+			if c.op == "has_item" and c.who not in ["player", "here"] and not db.has(c.who, "location"):
+				_warn(line, "'%s has %s' counts the player's items; only the player, 'here' and places have items ('bunker has %s')." % [c.who, c.item, c.item])
 		"has_condition":
 			_need(c.id, "condition", line)
 		"ending":
@@ -1886,11 +1963,39 @@ func _check_character_fields(d: FscParser.Definition) -> void:
 			_err(p.line, "Stat '%s' can't be used: a stat is a lowercase word or words (the engine's own: %s).%s" % [p.key, ", ".join(CharacterSystem.STATS.keys()), hint])
 		elif not p.value.is_valid_int():
 			_err(p.line, "Stat %s must be a whole number." % p.key)
+	# Giving items (`gift:`): what it takes, when, and the question asked.
+	for key in ["gift tags", "gift when", "gift prompt"]:
+		if d.fields.has(key) and not d.fields.has("gift"):
+			_err(d.fields[key].line, "'%s' needs a 'gift:' script, which runs when the player gives an item to %s." % [key, d.id])
+	if d.fields.has("gift tags"):
+		var tagged := _item_tags()
+		for t in db.list_field(d.id, "gift tags"):
+			if t not in tagged:
+				_warn(d.fields["gift tags"].line, "No item is tagged '%s', so %s is never offered one for it." % [t, d.id])
+	if d.fields.has("gift when"):
+		_check_condition_text(d.fields["gift when"].value, d.fields["gift when"].line, d.id)
+	if d.fields.has("gift prompt"):
+		var prompt := TextTemplate.compile(d.fields["gift prompt"].value)
+		if prompt.has("error"):
+			_err(d.fields["gift prompt"].line, prompt.error)
+		else:
+			_check_template(prompt, d.fields["gift prompt"].line, d.id)
 	for p in CharacterSystem.pairs(d, "relationship"):
 		if not CharacterSystem.RELATIONSHIP.has(p.key):
 			_err(p.line, "Unknown relationship key '%s'. Known: %s." % [p.key, ", ".join(CharacterSystem.RELATIONSHIP.keys())])
 		elif p.value not in ["yes", "no"]:
 			_err(p.line, "Relationship %s must be yes or no." % p.key)
+
+
+## Every tag some item carries (worked out once).
+func _item_tags() -> Array:
+	if _item_tag_list.is_empty():
+		_item_tag_list.append("")  # marks the list as worked out
+		for id in db.all_of("item"):
+			for t in db.list_field(id, "tags"):
+				if t not in _item_tag_list:
+					_item_tag_list.append(t)
+	return _item_tag_list
 
 
 func _variant_list(creature: String) -> String:

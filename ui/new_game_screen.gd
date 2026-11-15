@@ -601,5 +601,5 @@ func _scenario_name(id: String) -> String:
 
 ## A scenario's `image:` for its card, when it has one.
 func _scenario_image(id: String) -> Texture2D:
-	var image := game.content.typed_value("scenario", id, "image")
+	var image := game.content.image_of("scenario", id)
 	return _pack_image.call(image) if image != "" else null

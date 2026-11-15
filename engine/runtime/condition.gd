@@ -34,6 +34,8 @@ static var _rules: Array = [
 	# Lists: "3 is listed in x.list", "\"Bob\" is not listed in x.names", "x.list is empty".
 	["listed", RegEx.create_from_string("^(.+?) is (not )?listed in ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
 	["empty", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?empty$")],
+	# "gift.item is tagged milky": the item (or creature) a value holds carries the tag.
+	["value_tagged", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?tagged (\\w+)$")],
 	["since", RegEx.create_from_string("^since ([a-z0-9_.]+) (>=|<=|>|<|=) (\\d+) turns?$")],
 	["has_condition", RegEx.create_from_string("^player (has|does not have) condition (\\w+)$")],
 	["feat", RegEx.create_from_string("^(\\w+) (has|does not have) feat (\\w+)$")],
@@ -245,6 +247,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "listed", "item": item, "path": m.get_string(3), "neg": m.get_string(2) != ""}
 			"empty":
 				return {"op": "empty", "path": m.get_string(1), "neg": m.get_string(2) != ""}
+			"value_tagged":
+				return {"op": "value_tagged", "path": m.get_string(1), "tag": m.get_string(3), "neg": m.get_string(2) != ""}
 			"since":
 				return {"op": "since", "path": m.get_string(1), "cmp": m.get_string(2), "n": int(m.get_string(3))}
 			"has_condition":
@@ -352,6 +356,15 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 		"listed":
 			var list = ctx.value(node.path)
 			return (list is Array and list_has(list, Expr.evaluate(node.item, ctx))) != node.neg
+		"value_tagged":
+			var held := str(ctx.value(node.path)) if ctx.value(node.path) != null else ""
+			var db: ContentDB = ctx.content
+			var tags: Array = []
+			if db.has(held, "item"):
+				tags = db.list_field(held, "tags")
+			elif db.has(held, "creature"):
+				tags = VoreSystem.tags_of(ctx, held)
+			return (node.tag in tags) != node.neg
 		"empty":
 			# A list with no entries, or a text with nothing in it (or a state named empty).
 			var v = ctx.value(node.path)

@@ -739,11 +739,22 @@ static func loot_bonus(game) -> int:
 
 ## The creature's `trophies:` ("wolf_fur 80%, food 25%"): each item rolls its chance
 ## plus the loot bonus, and the ones that come up are offered after a win, the
-## player taking one (Alt Combat.i7x:1501-1550, TrophyLootFunction).
+## player taking one (Alt Combat.i7x:1501-1550, TrophyLootFunction). An entry
+## with "if <condition>" ("police_whistle 100% if alexandra does not have trait
+## whistle_taken") is offered only while the condition holds.
+## The condition of one `trophies:` entry ("" for none).
+static func trophy_condition(entry: String) -> String:
+	var at := entry.find(" if ")
+	return entry.substr(at + 4).strip_edges() if at >= 0 else ""
+
+
 static func roll_trophies(game, id: String) -> Array:
 	var out: Array = []
 	for entry in game.creature_field(id, "trophies").split(",", false):
-		var parts: PackedStringArray = entry.strip_edges().split(" ", false)
+		var cond := trophy_condition(entry)
+		if cond != "" and not Condition.evaluate(Condition.compile(cond), game):
+			continue
+		var parts: PackedStringArray = entry.split(" if ", true, 1)[0].strip_edges().split(" ", false)
 		if parts.size() != 2 or not game.content.has(parts[0], "item") or parts[0] in out:
 			continue
 		var chance := int(parts[1].trim_suffix("%"))

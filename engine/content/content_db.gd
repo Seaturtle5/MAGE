@@ -14,7 +14,7 @@ const SCHEMA := {
 		"statuses": "fields", "warnings": "fields", "refreshed": "script", "collapse": "script", "wake": "script", "source": "meta"},
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
-		"menu icons": "list", "loading": "text", "loading frames": "text"},
+		"menu icons": "list", "loading": "text", "loading frames": "text", "art": "text"},
 	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "not found": "script", "source": "meta"},
 	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
@@ -69,7 +69,8 @@ const SCHEMA := {
 	"character": {"name": "text", "pronouns": "text", "image": "text", "scent": "script", "description": "script",
 		"lives at": "text", "presence": "script", "body": "fields", "stats": "fields", "relationship": "fields",
 		"values": "values", "talk": "script", "sex": "script", "impregnation": "script", "actions": "menu", "companion": "fields", "summon": "script", "dismiss": "script",
-		"companion attack": "script", "tags": "list", "source": "meta"},
+		"companion attack": "script", "tags": "list", "source": "meta",
+		"gift": "script", "gift tags": "list", "gift when": "text", "gift prompt": "text"},
 	"menu": {"title": "text", "leave": "text", "leave text": "script", "pause after each": "text", "sort": "text",
 		"intro": "script", "source": "meta"},
 	"scene": {"source": "meta", "tags": "list"},
@@ -174,6 +175,15 @@ var line_paths: Dictionary = {}  ## Line -> path, for lines another file added b
 var levels: Dictionary = {}
 var _programs: Dictionary = {}
 var _parse_results: Array = []
+var _map_layout: MapLayout = null
+## Art packs (a pack with `art: replaces` or `art: fallback`): their `image:`
+## extensions, "type:id" -> [{"pack", "image", "replaces"}] in load order.
+var art_images: Dictionary = {}
+## Art packs the player switched off: their pictures and image files are not used.
+var art_off: Array = []
+var _folder_of: Dictionary = {}  ## pack path -> index of the folder it was found in
+## event -> {outcome: resolution number} (`outcomes: fed = 1`, or an outcome named outcome_N)
+var outcome_numbers: Dictionary = {}
 
 
 func error(path: String, line: int, message: String) -> void:
@@ -231,6 +241,7 @@ func load_folders(folders: Array) -> void:
 				error(manifest, 1, "Pack '%s' is also at %s; pack IDs must be unique." % [id, found[id].path])
 				continue
 			found[id] = {"path": pack_path, "requires": info.get("requires", []), "manifest": manifest, "name": info.get("name", id)}
+			_folder_of[pack_path] = folders.find(folder)
 	var order := _load_order(found)
 	for i in order.size():
 		_set_progress("Loading packs", str(found[order[i]].name), i, order.size())
@@ -341,7 +352,8 @@ func load_pack(pack_path: String) -> void:
 		_parse_results.append(r)
 		for d in r.definitions:
 			if d.type == "pack":
-				packs.append({"id": d.id, "path": pack_path, "def": d})
+				packs.append({"id": d.id, "path": pack_path, "def": d, "folder": int(_folder_of.get(pack_path, 0)),
+					"art": d.fields["art"].value if d.fields.has("art") else ""})
 			_add(d, r)
 
 
@@ -440,7 +452,20 @@ func _index(d: FscParser.Definition, r: FscParser.Result) -> void:
 		"level":
 			_index_level(d)
 		"event":
-			var outs: Array = ["none"] + _list(d, "outcomes")
+			# "outcomes: fed = 1, chased_off = 2": names, each with an optional resolution
+			# number (an outcome named outcome_3 has the number 3 without one written).
+			var outs: Array = ["none"]
+			var numbers := {}
+			for entry: String in _list(d, "outcomes"):
+				var parts := entry.split("=", true, 1)
+				var name := parts[0].strip_edges()
+				outs.append(name)
+				if parts.size() == 2 and parts[1].strip_edges().is_valid_int():
+					numbers[name] = int(parts[1].strip_edges())
+				elif name.begins_with("outcome_") and name.substr(8).is_valid_int():
+					numbers[name] = int(name.substr(8))
+			if not numbers.is_empty():
+				outcome_numbers[d.id] = numbers
 			values["%s.outcome" % d.id] = {"kind": "states", "states": outs, "default": "none", "path": d.path, "line": d.line}
 			# A counter per event (the original's Resolution of X used as a number).
 			values["%s.resolution" % d.id] = {"kind": "number", "default": 0, "path": d.path, "line": d.line}
@@ -643,7 +668,14 @@ func _finish() -> void:
 		var d: FscParser.Definition = pair[0]
 		var r: FscParser.Result = pair[1]
 		var target: FscParser.Definition = definitions.get(d.type, {}).get(d.id, null)
+		var art := pack_of(d.path)
+		if str(art.get("art", "")) == "":
+			art = {}
 		if target == null:
+			if not art.is_empty():
+				# An art pack never stops the game from loading: a picture for something gone is skipped.
+				warning(d.path, d.line, "Cannot extend %s %s: it does not exist, so its picture is not used." % [d.type, d.id])
+				continue
 			error(d.path, d.line, "Cannot extend %s %s: it does not exist." % [d.type, d.id])
 			continue
 		var schema: Dictionary = SCHEMA.get(d.type, {})
@@ -651,6 +683,14 @@ func _finish() -> void:
 			var f: FscParser.Field = d.fields[name]
 			var kind: String = schema.get(name, "")
 			if name == "source":
+				continue
+			if name == "image" and not art.is_empty():
+				# An art pack's picture: chosen when shown (see image_of), so it can be switched off.
+				var key := "%s:%s" % [d.type, d.id]
+				if not art_images.has(key):
+					art_images[key] = []
+				art_images[key].append({"pack": art.id, "image": f.value, "replaces": art.art == "replaces",
+					"path": d.path, "line": f.line})
 				continue
 			if kind == "script":
 				var key := "%s:%s#%s" % [d.type, d.id, name]
@@ -857,6 +897,148 @@ func has(id: String, type: String = "") -> bool:
 
 func get_def(type: String, id: String) -> FscParser.Definition:
 	return definitions.get(type, {}).get(id, null)
+
+
+## The pack a content file belongs to ({} if none).
+func pack_of(file: String) -> Dictionary:
+	var best := {}
+	for p: Dictionary in packs:
+		var root := str(p.path).trim_suffix("/") + "/"
+		if file.begins_with(root) and (best.is_empty() or root.length() > str(best.path).length()):
+			best = p
+	return best
+
+
+## The picture of a definition: an art pack's `image:` that replaces wins (the
+## last one loaded, the player's own packs last); else the definition's own
+## `image:`; else an art pack's fallback. Switched-off art packs don't count.
+func image_of(type: String, id: String) -> String:
+	var replacing := art_image(type, id, true)
+	if replacing != "":
+		return replacing
+	var own := typed_value(type, id, "image")
+	return own if own != "" else art_image(type, id, false)
+
+
+## The picture an enabled art pack gives a definition: the winning one that
+## replaces (`replacing`), or the first fallback; "" if none.
+func art_image(type: String, id: String, replacing: bool) -> String:
+	var found := ""
+	var rank := -1
+	for e: Dictionary in art_images.get("%s:%s" % [type, id], []):
+		if e.replaces != replacing or e.pack in art_off:
+			continue
+		var p := _pack(str(e.pack))
+		var r := int(p.get("folder", 0)) * 100000 + packs.find(p)
+		if not replacing:
+			return e.image
+		if r >= rank:
+			rank = r
+			found = e.image
+	return found
+
+
+## The file of a picture by its image ID: from an enabled art pack that
+## replaces (the last loaded wins), else the first other pack that has it,
+## else an art pack's fallback; "" if no pack has it.
+func image_file(image_id: String) -> String:
+	if image_id == "":
+		return ""
+	var replacing := ""
+	var rank := -1
+	var normal := ""
+	var fallback := ""
+	for i in packs.size():
+		var p: Dictionary = packs[i]
+		var mode := str(p.get("art", ""))
+		if mode != "" and p.id in art_off:
+			continue
+		for ext in ["png", "jpg", "jpeg", "webp"]:
+			var path: String = str(p.path).path_join("images/%s.%s" % [image_id, ext])
+			if not FileAccess.file_exists(path):
+				continue
+			var r := int(p.get("folder", 0)) * 100000 + i
+			if mode == "replaces" and r >= rank:
+				rank = r
+				replacing = path
+			elif mode == "" and normal == "":
+				normal = path
+			elif mode == "fallback" and fallback == "":
+				fallback = path
+			break
+	return replacing if replacing != "" else normal if normal != "" else fallback
+
+
+## The art packs, for switching them on and off: {"id", "name", "replaces", "on"}.
+func art_packs() -> Array:
+	var out: Array = []
+	for p: Dictionary in packs:
+		if str(p.get("art", "")) != "":
+			out.append({"id": p.id, "name": field_value(p.id, "name", p.id), "replaces": p.art == "replaces",
+				"on": p.id not in art_off, "path": p.path})
+	return out
+
+
+func _pack(id: String) -> Dictionary:
+	for p: Dictionary in packs:
+		if p.id == id:
+			return p
+	return {}
+
+
+## Reads an art pack's files again after the player changed them in play
+## (PlayerArt): its pictures and credits, adding the pack if it is new.
+func reload_art_pack(pack_path: String) -> void:
+	var files: Array = []
+	_collect_files(pack_path, files)
+	files.sort()
+	var pack := {}
+	var defs: Array = []
+	for f in files:
+		var r := FscParser.parse(FileAccess.get_file_as_string(f), f)
+		for d: FscParser.Definition in r.definitions:
+			if d.type == "pack":
+				var old := _pack(d.id)
+				if old.is_empty():
+					old = {"id": d.id, "path": pack_path, "def": d, "folder": 1 << 10}
+					packs.append(old)
+				old.def = d
+				old.art = d.fields["art"].value if d.fields.has("art") else ""
+				if not definitions.has("pack"):
+					definitions["pack"] = {}
+				definitions["pack"][d.id] = d
+				by_id[d.id] = d
+				pack = old
+			else:
+				defs.append(d)
+	if pack.is_empty():
+		return
+	for key: String in art_images.keys():
+		art_images[key] = art_images[key].filter(func(e: Dictionary) -> bool: return e.pack != pack.id)
+	var root := pack_path.trim_suffix("/") + "/"
+	for id: String in definitions.get("image", {}).keys():
+		if str(definitions.image[id].path).begins_with(root):
+			definitions.image.erase(id)
+	for d: FscParser.Definition in defs:
+		if d.type == "image":
+			if not definitions.has("image"):
+				definitions["image"] = {}
+			definitions["image"][d.id] = d
+			if not by_id.has(d.id) or by_id[d.id].type == "image":
+				by_id[d.id] = d
+		elif d.mode == "extend" and d.fields.has("image") and get_def(d.type, d.id) != null:
+			var key := "%s:%s" % [d.type, d.id]
+			if not art_images.has(key):
+				art_images[key] = []
+			art_images[key].append({"pack": pack.id, "image": d.fields.image.value, "replaces": pack.art == "replaces",
+				"path": d.path, "line": d.fields.image.line})
+
+
+## Where every location sits on the map (worked out on first use, then kept).
+func map_layout() -> MapLayout:
+	if _map_layout == null:
+		_map_layout = MapLayout.build(self)
+	return _map_layout
 
 
 func type_of(id: String) -> String:

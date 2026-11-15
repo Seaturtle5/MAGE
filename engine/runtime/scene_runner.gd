@@ -61,8 +61,8 @@ func start_event(event_id: String, preface: Array = []) -> void:
 	start("%s#play" % event_id, {"event": event_id})
 
 
-func emit_title(text: String, character: String = "", image: String = "") -> void:
-	game.emit({"type": "title", "text": text, "character": character,
+func emit_title(text: String, character: String = "", image: String = "", creature: String = "") -> void:
+	game.emit({"type": "title", "text": text, "character": character, "creature": creature,
 		"image": image if image != "" else game.character_image(character)})
 
 
@@ -230,6 +230,14 @@ func run() -> void:
 			if ev != "":
 				_queue_event(ev)
 			continue
+		if f.kind == "hooks":
+			# The hooks for a moment, each as a scene of its own, in pack load order.
+			frames.pop_back()
+			var ids: Array = game.hooks_for(str(f.moment))
+			ids.reverse()
+			for pid: String in ids:
+				_push(pid, {})
+			continue
 		if f.kind in ["travel", "discover"]:
 			frames.pop_back()
 			if f.kind == "travel":
@@ -329,6 +337,12 @@ func run() -> void:
 		if f.kind == "item_choice":
 			if _item_choice_step(f):
 				return
+			continue
+		if f.kind == "gift":
+			# After the item was picked: the character's own `gift:` script, if anything was.
+			frames.pop_back()
+			if str(game.value("gift.item")) != "":
+				_push("%s#gift" % f.who, {})
 			continue
 		if f.kind == "trophy_choice":
 			_trophy_step(f)
@@ -823,13 +837,47 @@ func choose_item(path: String, tag: String, prompt: Dictionary) -> void:
 		run()
 
 
+## Giving to a character (`gift:`): the player picks a carried item with one of
+## the character's `gift tags:` (any carried item without them); its ID goes into
+## `gift.item` and the character's `gift:` script decides what happens. Nothing
+## picked: nothing happens.
+func give_to(who: String) -> void:
+	var db: ContentDB = game.content
+	game.set_value("gift.to", who)
+	frames.append({"kind": "gift", "who": who})
+	var name := db.typed_value("character", who, "name", who)
+	var prompt := db.typed_value("character", who, "gift prompt", "Give what to %s?" % name)
+	frames.append({"kind": "item_choice", "path": "gift.item", "tags": db.list_field(who, "gift tags"),
+		"prompt": TextTemplate.compile(prompt), "shown": false})
+	run()
+
+
+## The carried items a character takes as gifts (`gift tags:`, or any carried item).
+func gift_items(who: String) -> Array:
+	var db: ContentDB = game.content
+	return game.carried_with_tags(db.list_field(who, "gift tags"))
+
+
+## Whether the player can give to a character here now: it has a `gift:`
+## script, its `gift when:` holds and something carried fits.
+func can_give(who: String) -> bool:
+	var db: ContentDB = game.content
+	var d: FscParser.Definition = db.get_def("character", who)
+	if d == null or not d.fields.has("gift"):
+		return false
+	var when: String = db.typed_value("character", who, "gift when")
+	if when != "" and not Condition.evaluate(Condition.compile(when), game):
+		return false
+	return not gift_items(who).is_empty()
+
+
 func _item_choice_step(f: Dictionary) -> bool:
 	if f.shown:
 		frames.erase(f)
 		return false
 	f.shown = true
 	game.set_value(str(f.path), "")
-	var ids: Array = game.carried_tagged(str(f.tag))
+	var ids: Array = game.carried_with_tags(f.tags) if f.has("tags") else game.carried_tagged(str(f.tag))
 	if ids.is_empty():
 		frames.erase(f)
 		return false
@@ -1024,7 +1072,7 @@ func show_location() -> void:
 		return
 	var db: ContentDB = game.content
 	var view := {"type": "location", "id": loc, "name": db.field_value(loc, "name", loc),
-		"region": db.field_value(loc, "region"), "image": db.field_value(loc, "image"), "description": [], "exits": [],
+		"region": db.field_value(loc, "region"), "image": db.image_of("location", loc), "description": [], "exits": [],
 		"people": [], "items": [], "actions": []}
 	for key in ["description", "presence"]:
 		var prog: Program = db.program("%s#%s" % [loc, key])
@@ -1050,6 +1098,7 @@ func show_location() -> void:
 				# Talk and sex added by an "instead of" hook count only while the hook applies.
 				"talk": fields.has("talk") or (game.has_hook("instead of talking to " + c) and game.hook_instead("instead of talking to " + c) != ""),
 				"sex": fields.has("sex") or (game.has_hook("instead of sex with " + c) and game.hook_instead("instead of sex with " + c) != ""),
+				"give": can_give(c),
 				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
 				"companion": c in game.state.companions,
 				"tamed": CompanionSystem.is_companion(game, c) and Condition._truthy(game.value("%s.tamed" % c))})
@@ -1143,7 +1192,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "sex", "smell", "look", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
 		return false
 	game.state.action_pending = true
@@ -1171,7 +1220,7 @@ func _queue_scheduled_scenes() -> bool:
 func _act(action: String, arg: String) -> bool:
 	var db: ContentDB = game.content
 	var loc: String = game.state.location
-	if action in ["talk", "sex", "smell", "look", "actions", "summon"] and arg != "" and game.character_hidden(arg):
+	if action in ["talk", "sex", "smell", "look", "give", "actions", "summon"] and arg != "" and game.character_hidden(arg):
 		return false  # a character hidden by a banned filter
 	match action:
 		"wait":
@@ -1200,6 +1249,14 @@ func _act(action: String, arg: String) -> bool:
 			game.set_value("%s.met" % arg, true)
 			emit_title("Talking with %s" % db.typed_value("character", arg, "name", arg), arg)
 			start(talk_instead if talk_instead != "" else "%s#talk" % arg)
+			return true
+		"give":
+			# A character here that takes gifts: choose a carried item, then its `gift:` script.
+			if not db.has(arg, "character") or game.where(arg) != loc or not can_give(arg):
+				return false
+			game.set_value("%s.met" % arg, true)
+			emit_title("Giving to %s" % db.typed_value("character", arg, "name", arg), arg)
+			give_to(arg)
 			return true
 		"sex", "smell", "look":
 			# A character here: its sex scene, scent or description.
@@ -1338,6 +1395,8 @@ func _act(action: String, arg: String) -> bool:
 			game.pass_turn()
 			game.emit({"type": "paragraph", "spans": [{"text": "You travel to %s, keeping to the shadows." % db.field_value(arg, "name", arg), "bold": false, "italic": false, "class": ""}]})
 			frames.append({"kind": "travel", "place": arg})
+			# Hooks "while travelling" (a companion's chatter on the way), before arriving.
+			frames.append({"kind": "hooks", "moment": "while travelling"})
 			var pool := encounter_pool("outside")
 			var bonus: int = (int(game.value("player.perception")) - 10) / 2
 			if not pool.is_empty() and game.rng.range_int(1, 20) < 10 - bonus:
@@ -1818,7 +1877,7 @@ func start_encounter(id: String, hunted: bool = false) -> void:
 
 func _encounter_title(id: String) -> void:
 	var known: bool = game.creature_field(id, "name known", "no") == "yes" and game.creature_field(id, "personal name") != ""
-	emit_title("Encounter: " + game.creature_field(id, "personal name" if known else "name", id), "", game.creature_field(id, "image"))
+	emit_title("Encounter: " + game.creature_field(id, "personal name" if known else "name", id), "", game.creature_field(id, "image"), id)
 
 
 # --- Saving -----------------------------------------------------------------

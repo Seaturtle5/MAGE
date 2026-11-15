@@ -553,7 +553,7 @@ static func _sire_bonus(game, taker: String) -> int:
 		return 0
 	var bonus := int(game.value("player.balls.size")) if game.value("player.balls.size") != null else 0
 	var mine := int(game.value("player.scale"))
-	var theirs := int(game.content.typed_value("form", game.creature_field(taker, "form", taker), "scale", "3"))
+	var theirs := BodySystem.form_scale(game, game.creature_field(taker, "form", taker))
 	if theirs > mine:
 		bonus -= theirs - mine
 	elif mine > theirs + 1 and bonus < 7:

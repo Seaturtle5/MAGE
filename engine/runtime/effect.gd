@@ -94,7 +94,7 @@ static var _rules: Array = [
 	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
 	["remove_from", RegEx.create_from_string("^remove (\\w+) from (\\w+)$")],
 	["item_strain", RegEx.create_from_string("^item (\\w+) infects as (\\w+)$")],
-	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
+	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|scale|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
 	["take", RegEx.create_from_string("^take ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+))?$")],
 	["move", RegEx.create_from_string("^move (\\w+) to (\\w+)$")],

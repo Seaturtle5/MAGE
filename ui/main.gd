@@ -18,11 +18,14 @@ extends Control
 ##
 ## Command line (after `--`): `--seed N`, `--start ID` (skip the title and
 ## start at a location), and for automated screenshots
-## `--steps "new bunker_start;go up"` with `--shot path.png`.
+## `--steps "new bunker_start;go up"` with `--shot path.png` (also `reveal`,
+## `open areas`, `open map <area>`).
 
 const MapView := preload("res://ui/map_view.gd")
 ## The content settings chosen for the last new game, offered again next time.
 const CONTENT_PREFS := "user://content_settings.json"
+## The player's own packs folder, where pictures added in play go (PlayerArt).
+const PLAYER_PACKS := "user://packs"
 ## Display preferences, kept outside saves.
 const PREFS := "user://preferences.cfg"
 const UI_SCALES := [0.9, 1.0, 1.1, 1.25]
@@ -65,7 +68,10 @@ var choices_box: VBoxContainer
 var scene_title := ""
 var scene_image := ""
 var scene_character := ""
+var scene_creature := ""  ## the creature a scene shows (an encounter), for "Add image"
 var scene_art: TextureRect
+var scene_frame: Control  ## the mat around the scene's picture
+var scene_links: HBoxContainer  ## "Add image" / "Change image" under the scene's picture
 var scene_plate: Control  ## the framed picture beside a scene's text
 var scene_credit: Label
 var image_cache: Dictionary = {}
@@ -174,6 +180,8 @@ func _after_load(start: String, test_content: bool) -> void:
 	if not db.errors().is_empty():
 		_show_errors(db.errors())
 		return
+	if shot_path == "":
+		_load_art_prefs()
 	if shot_path == "":
 		store.import_legacy()
 	if start != "" or test_content:
@@ -455,6 +463,7 @@ func _drain() -> void:
 	for e in game.take_output():
 		match e.type:
 			"title":
+				scene_creature = str(e.get("creature", ""))
 				_begin_scene(e.text, e.get("character", ""), e.get("image", ""))
 			"paragraph":
 				_page_text(_bbcode(e.spans), TextTemplate.plain(e.spans))
@@ -549,7 +558,26 @@ func _show_location() -> void:
 	var e := location_view
 	if e.is_empty():
 		return
-	stage_box.add_child(_banner(e.image, e.name, "%s  ·  %s" % [game.status_snapshot().region, _time_text()]))
+	var area: String = game.status_snapshot().region
+	var banner := _banner(e.image, e.name, "%s  ·  %s" % [area, _time_text()] if area != "" else _time_text())
+	# A soft plate keeps the links readable over any picture.
+	var plate := PanelContainer.new()
+	var plate_box := FsTheme.box(Color(FsTheme.SURFACE, 0.8), FsTheme.RADIUS, Color.TRANSPARENT, 10)
+	plate_box.content_margin_top = 4
+	plate_box.content_margin_bottom = 4
+	plate.add_theme_stylebox_override("panel", plate_box)
+	plate.anchor_left = 1.0
+	plate.anchor_right = 1.0
+	plate.offset_left = -16
+	plate.offset_right = -16
+	plate.offset_top = 12
+	plate.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	var links := HBoxContainer.new()
+	links.add_theme_constant_override("separation", 12)
+	_image_links(links, "location", str(e.id), _pack_image(str(e.image)) != null)
+	plate.add_child(links)
+	banner.add_child(plate)
+	stage_box.add_child(banner)
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -647,8 +675,8 @@ func _person_card(p: Dictionary) -> Control:
 	v.add_child(FsTheme.title(p.name, 18))
 	var buttons := HBoxContainer.new()
 	var id: String = p.id
-	# Talk, then the character's other doings: its actions menu, sex, scent and look.
-	for spec in [["talk", "Talk", "talk"], ["actions", "Actions", "use"], ["sex", "Sex", "libido"],
+	# Talk, then the character's other doings: its actions menu, giving an item, sex, scent and look.
+	for spec in [["talk", "Talk", "talk"], ["actions", "Actions", "use"], ["give", "Give", "inventory"], ["sex", "Sex", "libido"],
 			["smell", "Smell", "observe"], ["look", "Look", "character"]]:
 		if not p.get(spec[0], false):
 			continue
@@ -692,7 +720,7 @@ func _item_card(it: Dictionary) -> Control:
 ## An item's picture, or a line icon when it has none: clothing by the slot it is
 ## worn on, weapons by type, anything else by category.
 func _item_icon(id: String, size: int) -> Control:
-	var tex := _pack_image(game.content.typed_value("item", id, "image"))
+	var tex := _pack_image(game.content.image_of("item", id))
 	if tex == null:
 		var category := game.content.typed_value("item", id, "category", "other").to_lower()
 		var name := category
@@ -813,12 +841,16 @@ func _scene_plate() -> Control:
 	mat.shadow_offset = Vector2(0, 4)
 	frame.add_theme_stylebox_override("panel", mat)
 	v.add_child(frame)
+	scene_frame = frame
 	scene_art = TextureRect.new()
 	scene_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	scene_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	frame.add_child(scene_art)
 	scene_credit = FsTheme.heading("", 12, FsTheme.TEXT_FAINT)
 	v.add_child(scene_credit)
+	scene_links = HBoxContainer.new()
+	scene_links.add_theme_constant_override("separation", 12)
+	v.add_child(scene_links)
 	scene_plate = col
 	return col
 
@@ -827,8 +859,18 @@ func _set_scene_image(id: String) -> void:
 	scene_image = id
 	var texture := _pack_image(id)
 	scene_art.texture = texture
-	scene_plate.visible = texture != null
+	# Who the picture shows: the character talked to, or the creature met.
+	var subject: Array = (["character", scene_character] if scene_character != "" and game.content.has(scene_character, "character")
+		else ["creature", scene_creature] if scene_creature != "" else [])
+	for child in scene_links.get_children():
+		child.queue_free()
+	if not subject.is_empty():
+		_image_links(scene_links, subject[0], subject[1], texture != null)
+	scene_plate.visible = texture != null or not subject.is_empty()
+	scene_frame.visible = texture != null
+	scene_credit.visible = false
 	if texture == null:
+		scene_art.custom_minimum_size = Vector2(PLATE_WIDTH, 0)
 		return
 	# A fixed width; the height follows the picture, within limits (very
 	# tall pictures are trimmed top and bottom).
@@ -1095,7 +1137,7 @@ func _time_text() -> String:
 func _refresh_status() -> void:
 	var s := game.status_snapshot()
 	status_place.text = s.location
-	status_time.text = "%s  ·  %s" % [s.region, _time_text()]
+	status_time.text = "%s  ·  %s" % [s.region, _time_text()] if str(s.region) != "" else _time_text()
 	status_sleep.text = s.sleep
 	status_sleep.visible = s.sleep != ""
 	var st: Dictionary = s.stats
@@ -1133,17 +1175,81 @@ func _set_meter(key: String, v: int, maxv: int) -> void:
 func _pack_image(id: String) -> Texture2D:
 	if image_cache.has(id):
 		return image_cache[id]
-	if id != "" and db != null:
-		for pack in db.packs:
-			for ext in ["png", "jpg", "jpeg", "webp"]:
-				var path: String = pack.path.path_join("images/%s.%s" % [id, ext])
-				if FileAccess.file_exists(path):
-					var img := Image.load_from_file(ProjectSettings.globalize_path(path))
-					if img != null:
-						var texture := ImageTexture.create_from_image(img)
-						image_cache[id] = texture
-						return texture
+	var path := db.image_file(id) if db != null else ""
+	if path != "":
+		var img := Image.load_from_file(ProjectSettings.globalize_path(path))
+		if img != null:
+			var texture := ImageTexture.create_from_image(img)
+			image_cache[id] = texture
+			return texture
 	return null
+
+
+## Small links under a picture: "Add image" (or "Change image") to use a
+## picture of the player's own, and "Remove my image" while theirs is shown.
+func _image_links(row: HBoxContainer, type: String, id: String, has_picture: bool) -> void:
+	var mine := PlayerArt.has_image(db, type, id) and PlayerArt.PACK_ID not in db.art_off
+	row.add_child(_small_link("Change image" if has_picture else "Add image", func(): _choose_picture(type, id)))
+	if mine:
+		row.add_child(_small_link("Remove my image", func():
+			PlayerArt.remove(db, PLAYER_PACKS, type, id)
+			_refresh_pictures()))
+
+
+func _small_link(text: String, pressed: Callable) -> LinkButton:
+	var link := LinkButton.new()
+	link.text = text
+	link.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
+	link.add_theme_font_size_override("font_size", 13)
+	link.add_theme_color_override("font_color", FsTheme.TEXT_DIM)
+	link.add_theme_color_override("font_hover_color", FsTheme.ACCENT)
+	link.pressed.connect(pressed)
+	return link
+
+
+## A file chooser for a picture of the player's own; it is copied into their
+## own art pack and shown at once.
+func _choose_picture(type: String, id: String) -> void:
+	var dialog := FileDialog.new()
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp ; Pictures"])
+	dialog.title = "Choose a picture"
+	dialog.use_native_dialog = true
+	add_child(dialog)
+	dialog.file_selected.connect(func(path: String):
+		dialog.queue_free()
+		var problem := PlayerArt.add(db, PLAYER_PACKS, type, id, path)
+		if problem != "":
+			_toast(problem)
+			return
+		if PlayerArt.PACK_ID in db.art_off:
+			db.art_off.erase(PlayerArt.PACK_ID)  # adding a picture switches the player's own pack back on
+			_save_art_prefs()
+		_refresh_pictures())
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.popup_centered_ratio(0.7)
+
+
+## Shows changed pictures at once (a picture added or removed, an art pack switched).
+func _refresh_pictures() -> void:
+	image_cache.clear()
+	if game == null:
+		return
+	if overlay != null and inv_selected != "":
+		_open_inventory()
+	if mode == "location" and not location_view.is_empty():
+		location_view.image = game.content.image_of("location", game.state.location)
+		_show_location()
+	elif mode in ["scene", "moment"] and scene_art != null and is_instance_valid(scene_art):
+		if scene_character != "" and game.content.has(scene_character, "character"):
+			_set_scene_image(game.character_image(scene_character))
+		elif scene_creature != "":
+			_set_scene_image(game.creature_field(scene_creature, "image"))
+		else:
+			_set_scene_image(scene_image)
+	if mini_map != null:
+		_refresh_status()
 
 
 func _image_or_placeholder(id: String, name: String) -> Texture2D:
@@ -1578,6 +1684,10 @@ func _item_details(items: Array) -> Control:
 	center.add_child(_item_icon(str(it.id), 112))
 	frame.add_child(center)
 	col.add_child(frame)
+	var item_links := HBoxContainer.new()
+	item_links.add_theme_constant_override("separation", 12)
+	_image_links(item_links, "item", str(it.id), _pack_image(game.content.image_of("item", str(it.id))) != null)
+	col.add_child(item_links)
 	var name := FsTheme.title(str(it.name).capitalize(), 24)
 	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	col.add_child(name)
@@ -1688,19 +1798,78 @@ func _open_journal() -> void:
 			box.add_child(card)
 
 
-func _open_map() -> void:
-	var box := _open_overlay("Map")
-	var data := game.map_data()
-	box.add_child(FsTheme.label(data.name, 18, FsTheme.TEXT_DIM))
+## The map of one group of places (the player's own by default), with a way
+## back to the overview of all areas the player knows.
+func _open_map(key: String = "") -> void:
+	var data := game.map_data(key)
+	var box := _open_overlay("Map", true, Vector2(900, 640))
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	var all := HBoxContainer.new()
+	all.add_child(_plain_label("‹  All areas", 15, FsTheme.TEXT_DIM))
+	var back := _face_button(head, all, _open_map_overview, false, 10, 6)
+	back.add_theme_stylebox_override("normal", FsTheme.box(Color.TRANSPARENT, FsTheme.RADIUS, FsTheme.BORDER))
+	var name := FsTheme.label(_area_name(str(data.name)), 18, FsTheme.TEXT_DIM)
+	name.size_flags_horizontal = SIZE_EXPAND_FILL
+	name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	head.add_child(name)
+	box.add_child(head)
 	var view := MapView.new()
-	view.custom_minimum_size = Vector2(840, 460)
 	view.data = data
 	view.background = _pack_image(str(data.image)) if str(data.image) != "" else null
 	view.place_clicked.connect(func(id):
 		_close_overlay()
 		_on_map_place(id))
-	box.add_child(view)
-	box.add_child(FsTheme.label("Click a fast-travel point (◆) to travel there.", 14, FsTheme.TEXT_FAINT))
+	# A large area scrolls rather than crowding its places together.
+	var frame := ScrollContainer.new()
+	frame.custom_minimum_size = Vector2(840, 450)
+	view.custom_minimum_size = view.preferred_size(frame.custom_minimum_size, 64.0)
+	frame.add_child(view)
+	box.add_child(frame)
+	_center_map_on_player.call_deferred(frame, view)
+	box.add_child(FsTheme.label("Click a fast-travel point (◆) to travel there. Hover a place to see its name.", 14, FsTheme.TEXT_FAINT))
+
+
+## Scrolls a large map so the player's place is in view, once it is drawn.
+func _center_map_on_player(frame: ScrollContainer, view: Control) -> void:
+	await RenderingServer.frame_post_draw
+	if is_instance_valid(frame) and is_instance_valid(view):
+		var at: Vector2 = view.get("current_point")
+		frame.scroll_horizontal = int(at.x - frame.size.x / 2.0)
+		frame.scroll_vertical = int(at.y - frame.size.y / 2.0)
+
+
+## A map group's name, or a plain word for places outside any named area.
+func _area_name(name: String) -> String:
+	return name if name != "" else "Other places"
+
+
+## Every area with a place the player knows; each opens its own map.
+func _open_map_overview() -> void:
+	var box := _open_overlay("Map", true, Vector2(900, 640))
+	box.add_child(FsTheme.label("Areas you know. Choose one to see its places.", 15, FsTheme.TEXT_DIM))
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	box.add_child(grid)
+	for g: Dictionary in game.map_groups():
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 3)
+		v.custom_minimum_size = Vector2(240, 0)
+		var title := _plain_label(_area_name(str(g.name)), 18, FsTheme.ACCENT if g.current else FsTheme.TEXT)
+		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		title.custom_minimum_size = Vector2(240, 0)
+		v.add_child(title)
+		var known := "%d of %d places known" % [int(g.known), int(g.places)]
+		if int(g.fast_travel) > 0:
+			known += "  ·  %d ◆" % int(g.fast_travel)
+		v.add_child(_plain_label(known, 13, FsTheme.TEXT_FAINT))
+		v.add_child(_plain_label("● You are here" if g.current else " ", 13, FsTheme.ACCENT))
+		var key: String = g.id
+		var b := _face_button(grid, v, func(): _open_map(key), false, 14, 10)
+		b.add_theme_stylebox_override("normal", FsTheme.box(FsTheme.SURFACE_2, FsTheme.RADIUS,
+			FsTheme.ACCENT if g.current else FsTheme.BORDER))
 
 
 func _open_travel() -> void:
@@ -2152,12 +2321,66 @@ func _fill_content_settings(panel: VBoxContainer) -> void:
 		panel.add_child(FsTheme.section("Content levels"))
 	for lv: Dictionary in view.levels:
 		panel.add_child(_level_row(panel, lv))
+	var art: Array = db.art_packs()
+	if not art.is_empty():
+		panel.add_child(FsTheme.section("Art packs"))
+		panel.add_child(FsTheme.label("Picture packs: switched off, the game shows its own pictures instead. Remembered for every game.", 14, FsTheme.TEXT_DIM))
+	for p: Dictionary in art:
+		panel.add_child(_art_pack_row(panel, p))
 	var igroup := "-"
 	for it: Dictionary in view.get("interests", []):
 		if it.group != igroup:
 			igroup = it.group
 			panel.add_child(FsTheme.section(igroup if igroup != "" else "Interested in"))
 		panel.add_child(_interest_row(panel, it))
+
+
+## An art pack: on or off, for every game (kept with the content settings).
+func _art_pack_row(panel: VBoxContainer, p: Dictionary) -> Control:
+	var card := FsTheme.card(FsTheme.SURFACE_2, 10)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	card.add_child(row)
+	var text := VBoxContainer.new()
+	text.add_theme_constant_override("separation", 2)
+	text.size_flags_horizontal = SIZE_EXPAND_FILL
+	text.add_child(FsTheme.label(p.name, 17))
+	text.add_child(FsTheme.label("Replaces the game's pictures" if p.replaces else "Fills in where the game has no picture", 14, FsTheme.TEXT_DIM))
+	row.add_child(text)
+	var toggle := CheckButton.new()
+	toggle.button_pressed = p.on
+	toggle.text = "On" if p.on else "Off"
+	toggle.size_flags_vertical = SIZE_SHRINK_CENTER
+	var id: String = p.id
+	toggle.toggled.connect(func(on: bool):
+		if on:
+			db.art_off.erase(id)
+		elif id not in db.art_off:
+			db.art_off.append(id)
+		_save_art_prefs()
+		_refresh_pictures()
+		_fill_content_settings(panel))
+	row.add_child(toggle)
+	return card
+
+
+## Keeps the art packs switched off in the content settings file.
+func _save_art_prefs() -> void:
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONTENT_PREFS)) if FileAccess.file_exists(CONTENT_PREFS) else {}
+	var prefs: Dictionary = data if data is Dictionary else {}
+	prefs["art_off"] = db.art_off.duplicate()
+	var f := FileAccess.open(CONTENT_PREFS, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(prefs, "  "))
+
+
+## Reads which art packs are switched off (at start, for every game).
+func _load_art_prefs() -> void:
+	if not FileAccess.file_exists(CONTENT_PREFS):
+		return
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONTENT_PREFS))
+	if data is Dictionary and data.get("art_off", []) is Array:
+		db.art_off = Array(data.art_off).map(func(x: Variant) -> String: return str(x))
 
 
 ## An interest (Males, Females ...): a yes/no switch the player can change at any time.
@@ -2297,7 +2520,7 @@ func _save_content_prefs() -> void:
 	var f := FileAccess.open(CONTENT_PREFS, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"banned": game.settings.banned, "warded": game.settings.warded,
-			"levels": game.settings.levels, "interests": game.settings.get("interests", {})}, "  "))
+			"levels": game.settings.levels, "interests": game.settings.get("interests", {}), "art_off": db.art_off}, "  "))
 
 
 func _open_hunt() -> void:
@@ -2781,8 +3004,15 @@ func _take_screenshot() -> void:
 					for _i in 3:
 						await get_tree().process_frame
 					overlay_scroll.scroll_vertical = int(overlay_scroll.get_v_scroll_bar().max_value)
+			"reveal":
+				# "reveal": every place counts as known (to see whole maps).
+				for id: String in game.content.all_of("location"):
+					game.state.known[id] = true
 			"open":
+				if arg.begins_with("map "):
+					_open_map(arg.substr(4))
 				match arg:
+					"areas": _open_map_overview()
 					"inventory": _open_inventory()
 					"journal": _open_journal()
 					"map": _open_map()

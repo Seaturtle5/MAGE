@@ -5,8 +5,10 @@ extends Control
 ## are shown as unexplored ("?"); the rest stay hidden. The current place is
 ## highlighted, fast-travel points are diamonds and can be clicked.
 ## Names are placed where they cross the fewest paths, places and other
-## names. Behind the map sits the region's image, if it has one, or a faint
-## dot grid.
+## names; a name that would still cover another is left out and shown when
+## the pointer is over its place (the current place is always named). The
+## compact map shows only the places near the player. Behind the map sits
+## the region's image, if it has one, or a faint dot grid.
 
 signal place_clicked(id: String)
 
@@ -14,10 +16,15 @@ signal place_clicked(id: String)
 const LABEL_SLOTS := [Vector2(0, 1), Vector2(0, -1), Vector2(1, 0), Vector2(-1, 0),
 	Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]
 
+## How far from the player the compact map reaches, in map steps.
+const NEAR := Vector2(3, 2)
+
 var data: Dictionary = {}
 var compact := false
 var background: Texture2D  ## the region's image, if any
+var current_point := Vector2.ZERO  ## where the player's place was last drawn
 var _hit: Array = []  ## [Rect2, id]
+var _names: Array = []  ## [centre, radius, name] of every drawn place, for tooltips
 
 
 func _init() -> void:
@@ -26,38 +33,25 @@ func _init() -> void:
 
 func _draw() -> void:
 	_hit.clear()
+	_names.clear()
 	_draw_background()
-	var places: Array = data.get("places", [])
-	if places.is_empty():
-		return
 	var by_id := {}
-	for p in places:
-		by_id[p.id] = p
-	var visible := {}
-	for p in places:
-		if p.known:
-			visible[p.id] = "known"
-	for p in places:
-		if p.known:
-			for x in p.exits:
-				if by_id.has(x) and not visible.has(x):
-					visible[x] = "unexplored"
+	var visible := _visible(by_id)
 	if visible.is_empty():
 		return
-	var minp := Vector2(INF, INF)
-	var maxp := Vector2(-INF, -INF)
-	for id in visible:
-		var v := Vector2(by_id[id].x, by_id[id].y)
-		minp = minp.min(v)
-		maxp = maxp.max(v)
-	var pad := 28.0 if compact else 60.0
-	var span := (maxp - minp).max(Vector2(1, 1))
+	var bounds := _span(visible, by_id)
+	var minp: Vector2 = bounds.position
+	var span: Vector2 = bounds.size
+	var pad := _pad()
 	var area := size - Vector2(pad, pad) * 2
 	var scale_f := minf(area.x / span.x, area.y / span.y)
 	scale_f = minf(scale_f, 90.0 if compact else 160.0)
 	var offset := (size - span * scale_f) / 2.0
 	var to_screen := func(p: Dictionary) -> Vector2:
 		return offset + (Vector2(p.x, p.y) - minp) * scale_f
+	for id in visible:
+		if by_id[id].current:
+			current_point = to_screen.call(by_id[id])
 	var font := get_theme_default_font()
 	# Paths need more contrast over a region picture.
 	var line_col := Color(FsTheme.TEXT_DIM, 0.7) if background != null else Color(FsTheme.BORDER, 1.0)
@@ -104,7 +98,12 @@ func _draw() -> void:
 		var size_f := 12 if compact else 15
 		var label_col := FsTheme.TEXT if p.current else FsTheme.TEXT_DIM
 		var text_size := font.get_string_size(p.name, HORIZONTAL_ALIGNMENT_LEFT, -1, size_f)
+		_names.append([c, r + 4.0, p.name])
 		var box := best_label_rect(c, r + (8.0 if p.current else 4.0), text_size, segments, dots, labels, Rect2(Vector2.ZERO, size))
+		if not p.current and (labels.any(func(other: Rect2) -> bool: return box.grow(1).intersects(other))
+				or dots.any(func(d: Array) -> bool: return d[0] != c and _rect_hits_circle(box, d[0], d[1] - 4.0))
+				or not Rect2(Vector2.ZERO, size).encloses(box)):
+			continue
 		labels.append(box)
 		# A soft plate keeps the name readable where it can't avoid a path.
 		draw_rect(box.grow(2), Color(FsTheme.SURFACE, 0.72), true)
@@ -154,6 +153,73 @@ static func _rect_hits_segment(rect: Rect2, a: Vector2, b: Vector2) -> bool:
 static func _rect_hits_circle(rect: Rect2, c: Vector2, radius: float) -> bool:
 	var nearest := c.clamp(rect.position, rect.end)
 	return nearest.distance_to(c) < radius
+
+
+## The places drawn: known ones by name, their neighbours as unexplored;
+## fills `by_id`.
+func _visible(by_id: Dictionary) -> Dictionary:
+	var places: Array = data.get("places", [])
+	for p in places:
+		by_id[p.id] = p
+	var visible := {}
+	for p in places:
+		if p.known:
+			visible[p.id] = "known"
+	for p in places:
+		if p.known:
+			for x in p.exits:
+				if by_id.has(x) and not visible.has(x):
+					visible[x] = "unexplored"
+	if compact:
+		_keep_near_current(visible, by_id)
+	return visible
+
+
+## The smallest and the spread of the drawn places' map positions.
+static func _span(visible: Dictionary, by_id: Dictionary) -> Rect2:
+	var minp := Vector2(INF, INF)
+	var maxp := Vector2(-INF, -INF)
+	for id in visible:
+		var v := Vector2(by_id[id].x, by_id[id].y)
+		minp = minp.min(v)
+		maxp = maxp.max(v)
+	return Rect2(minp, (maxp - minp).max(Vector2(1, 1)))
+
+
+func _pad() -> float:
+	return 28.0 if compact else 70.0
+
+
+## The size that draws the map at least `cell` pixels per map step, and at
+## least `least`; a large map then scrolls instead of crowding.
+func preferred_size(least: Vector2, cell: float) -> Vector2:
+	var by_id := {}
+	var visible := _visible(by_id)
+	if visible.is_empty():
+		return least
+	var span := _span(visible, by_id).size
+	return least.max(span * cell + Vector2(_pad(), _pad()) * 2)
+
+
+## Keeps only places within a few steps of the current one (the compact map).
+func _keep_near_current(visible: Dictionary, by_id: Dictionary) -> void:
+	var here := Vector2.INF
+	for id in visible:
+		if by_id[id].current:
+			here = Vector2(by_id[id].x, by_id[id].y)
+	if here == Vector2.INF:
+		return
+	for id in visible.keys():
+		var at := Vector2(by_id[id].x, by_id[id].y)
+		if absf(at.x - here.x) > NEAR.x or absf(at.y - here.y) > NEAR.y:
+			visible.erase(id)
+
+
+func _get_tooltip(at_position: Vector2) -> String:
+	for n: Array in _names:
+		if at_position.distance_to(n[0]) <= n[1]:
+			return str(n[2])
+	return ""
 
 
 func _draw_background() -> void:
