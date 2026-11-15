@@ -1335,7 +1335,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
-			"unresolve", "character_image", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
+			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
@@ -1362,6 +1362,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"unbirth_pregnancy" when e.get("creature", "") != "":
 			if not db.has(e.creature, "creature") and not db.has(e.creature, "form"):
 				_err(line, "'%s' is neither a creature nor a form to carry.%s" % [e.creature, _suggest(e.creature, _ids("creature"))])
+		"character_pronouns":
+			_need(e.who, "character", line)
 		"character_image":
 			_need(e.who, "character", line)
 			if e.image != "default" and not _images.has(e.image):

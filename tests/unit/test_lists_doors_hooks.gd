@@ -374,6 +374,27 @@ func test_a_portrait_changes_in_play() -> void:
 	assert_eq(game.character_image("angie"), "angie_plain")
 
 
+func test_pronouns_change_in_play_and_can_follow_the_body() -> void:
+	game.apply(Effect.compile("character angie pronouns he"))
+	assert_eq(game.pronoun("angie", "He"), "He")
+	assert_eq(game.pronoun("angie", "his"), "his")
+	var other := _saved()
+	assert_eq(other.pronoun("angie", "him"), "him", "kept in a save")
+	other.dispose()
+	game.apply(Effect.compile("character angie pronouns by body"))
+	game.state.values["angie.cocks"] = 1
+	game.state.values["angie.cunts"] = 0
+	assert_eq(game.pronoun("angie", "he"), "he", "only a cock")
+	game.state.values["angie.cunts"] = 1
+	assert_eq(game.pronoun("angie", "he"), "she", "a cunt")
+	game.state.values["angie.cocks"] = 0
+	game.state.values["angie.cunts"] = 0
+	assert_eq(game.pronoun("angie", "he"), "they", "neither")
+	game.apply(Effect.compile("character angie pronouns default"))
+	assert_eq(game.pronoun("angie", "he"), game.pronoun("angie", "he"))
+	assert_false(game.state.values.has("character.angie.pronouns"))
+
+
 func test_values_every_character_has_and_their_change_texts() -> void:
 	assert_eq(int(game.value("nermine.affection")), 0, "every character has it")
 	game.apply(Effect.compile("nermine.affection + 3 up to 100"))

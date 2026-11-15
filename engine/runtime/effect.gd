@@ -110,6 +110,7 @@ static var _rules: Array = [
 	# A character's portrait changed in play: "~ character jay image jay_rubber" (the original's
 	# "now the icon of Jay is Figure of X"); "default" goes back to its own `image:`.
 	["character_image", RegEx.create_from_string("^character (\\w+) image (\\w+)$")],
+	["character_pronouns", RegEx.create_from_string("^character (\\w+) pronouns (he|she|they|it|by body|default)$")],
 	["lives_at", RegEx.create_from_string("^(\\w+) lives at (\\w+)$")],
 	["discover", RegEx.create_from_string("^discover (\\w+)$")],
 	["forget", RegEx.create_from_string("^forget (\\w+)$")],
@@ -333,6 +334,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "creature_change", "creature": m.get_string(1), "field": m.get_string(2), "value": m.get_string(3).strip_edges()}
 			"character_image":
 				return {"op": "character_image", "who": m.get_string(1), "image": m.get_string(2)}
+			"character_pronouns":
+				return {"op": "character_pronouns", "who": m.get_string(1), "pronouns": m.get_string(2)}
 			"lives_at":
 				return {"op": "lives_at", "who": m.get_string(1), "place": m.get_string(2)}
 			"discover":

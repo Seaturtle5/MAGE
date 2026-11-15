@@ -836,10 +836,17 @@ func monster_word(word: String) -> String:
 	return str(words[word])
 
 
+## A pronoun of the player or a character. A character's pronouns are the ones
+## set in play (`~ character X pronouns she`), else its `pronouns:` field;
+## `by body` follows its body now: he with only a cock, she with a cunt, else they.
 func pronoun(who: String, form: String) -> String:
 	var p := content.field_value(who, "pronouns", "they")
+	if state.values.has("character.%s.pronouns" % who):
+		p = str(state.values["character.%s.pronouns" % who])
 	if who == "player" and value("player.pronouns") != null:
 		p = str(value("player.pronouns"))
+	if p == "by body":
+		p = "she" if body_count(who, "cunt") > 0 else ("he" if body_count(who, "cock") > 0 else "they")
 	var table := {
 		"he": {"he": "he", "him": "him", "his": "his", "hers": "his"},
 		"she": {"he": "she", "him": "her", "his": "her", "hers": "hers"},
@@ -1118,6 +1125,11 @@ func apply(e: Dictionary) -> void:
 				go_to(e.place)
 			else:
 				state.char_location[e.who] = e.place
+		"character_pronouns":
+			if e.pronouns == "default":
+				state.values.erase("character.%s.pronouns" % e.who)
+			else:
+				state.values["character.%s.pronouns" % e.who] = e.pronouns
 		"character_image":
 			if e.image == "default":
 				state.values.erase("character.%s.image" % e.who)
