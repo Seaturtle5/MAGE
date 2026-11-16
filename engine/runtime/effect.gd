@@ -186,6 +186,15 @@ static var _rules: Array = [
 	["fight:tag", RegEx.create_from_string("^(creature|form) (\\w+) tags? ([+-]) ([a-z0-9_]+(?:\\s*,\\s*[a-z0-9_]+)*)$")],
 	["fight:script", RegEx.create_from_string("^creature (\\w+) (attack|miss|before attack|after attack|each round) -> ([a-z0-9_.]+)$")],
 	["fight:loot", RegEx.create_from_string("^creature (\\w+) loot chance ([+=-]) (.+)$")],
+	# StorySystem: "~ rest" (the Rest action's healing and sleep from a scene, no time passing);
+	# "~ pick random event tagged dream" (then `play picked event`); "~ discover every place
+	# flagged city_map"; "~ resolve every event tagged city_map"; "~ for each tamed companion
+	# play X" and "~ for all companions play X" (every character that can follow the player).
+	["rest", RegEx.create_from_string("^rest$")],
+	["pick_event", RegEx.create_from_string("^pick random event tagged (\\w+)$")],
+	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*)$")],
+	["resolve_tagged", RegEx.create_from_string("^resolve every event tagged (\\w+)$")],
+	["each_companion_of", RegEx.create_from_string("^for (each tamed companion|all companions) play (\\w[\\w.]*)$")],
 ]
 ## The rules worth trying for an effect, by its first word: the rules whose
 ## sentence starts with that word ("give one of ..." -> "give") and the rules
@@ -606,6 +615,16 @@ static func _match(s: String) -> Dictionary:
 				if amt.has("error"):
 					return {"error": amt.error}
 				return {"op": "change", "path": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
+			"rest":
+				return {"op": "rest"}
+			"pick_event":
+				return {"op": "pick_event", "tag": m.get_string(1)}
+			"discover_flagged":
+				return {"op": "discover_flagged", "flag": m.get_string(1).strip_edges()}
+			"resolve_tagged":
+				return {"op": "resolve_tagged", "tag": m.get_string(1)}
+			"each_companion_of":
+				return {"op": "each_companion_of", "scope": "tamed" if m.get_string(1).begins_with("each") else "all", "scene": m.get_string(2)}
 			_ when str(rule[0]).begins_with("fight:"):
 				return FightControlSystem.compile_effect(rule[0], m)
 	return {"error": "unknown effect '%s'" % s}

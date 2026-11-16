@@ -80,6 +80,8 @@ static var _rules: Array = [
 	["value_is", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?(.+)$")],
 	# "player wields x.pick", "player wears x.pick": the item a value holds (GearSystem).
 	["gear_held", RegEx.create_from_string("^player (wears|does not wear|wields|does not wield) ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	# After `~ pick random event tagged dream` (StorySystem): whether one was found.
+	["event_picked", RegEx.create_from_string("^(an|no) event is picked$")],
 ]
 
 
@@ -314,6 +316,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 			"gear_held":
 				var verb := m.get_string(1)
 				return {"op": "gear_held", "verb": "wields" if "wield" in verb else "wears", "path": m.get_string(2), "neg": verb.begins_with("does not")}
+			"event_picked":
+				return {"op": "empty", "path": "picked.event", "neg": m.get_string(1) == "an"}
 			"value_is":
 				var right := Expr.parse(m.get_string(3))
 				if right.has("error"):
@@ -369,6 +373,8 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 			var tags: Array = []
 			if db.has(held, "item"):
 				tags = db.list_field(held, "tags")
+			elif db.has(held, "event"):
+				tags = db.list_field(held, "tags")  # "picked.event is tagged restless"
 			elif db.has(held, "creature"):
 				tags = VoreSystem.tags_of(ctx, held)
 			return (node.tag in tags) != node.neg
@@ -391,7 +397,7 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 static func compare(a: Variant, cmp: String, b: Variant, left: Dictionary, ctx) -> bool:
 	# A word on the right side of a state value is a state name: compare by name.
 	if cmp in ["=", "!="]:
-		var equal: bool = str(a) == str(b) if (a is String or b is String) else a == b
+		var equal: bool = str(a) == str(b) if (a is String or b is String) else same(a, b)
 		return equal if cmp == "=" else not equal
 	var x := Expr._num(a)
 	var y := Expr._num(b)
@@ -405,6 +411,19 @@ static func compare(a: Variant, cmp: String, b: Variant, left: Dictionary, ctx) 
 		"<=":
 			return x <= y
 	return false
+
+
+## Whether two values are equal without a script error for mixed kinds: a yes/no
+## and a number compare as 1 or 0, other mixes are never equal.
+static func same(a: Variant, b: Variant) -> bool:
+	var numbers := [TYPE_INT, TYPE_FLOAT, TYPE_BOOL]
+	if typeof(a) in numbers and typeof(b) in numbers:
+		var x: float = (1.0 if a else 0.0) if a is bool else float(a)
+		var y: float = (1.0 if b else 0.0) if b is bool else float(b)
+		return x == y
+	if typeof(a) != typeof(b):
+		return false
+	return a == b
 
 
 ## Whether a list holds a value (a number and its text count as the same).

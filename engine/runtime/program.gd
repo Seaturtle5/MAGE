@@ -18,7 +18,8 @@ extends RefCounted
 ##              "always_shown", "to": index}], "after": index}
 ##   fight     {"creature", "variant", "outcomes": {name: index}, "after": index}
 ##             fights in a row add "creatures" (a list) or "times" (an expression),
-##             and "each": index of the block played before each fight (-1 for none)
+##             and "each": index of the block played before each fight (-1 for none);
+##             "away": true for `fight X away from home:`
 ##   return    {}                          end of the program
 ##
 ## Compile errors are collected in `errors` as {"line", "message"}.
@@ -87,6 +88,8 @@ func _block(nodes: Array) -> void:
 				var pm := _picked_re.search(target)
 				if pm != null:
 					target = "@picked#" + pm.get_string(1)
+				if target == "picked event":
+					target = "@picked_event"  # the event `~ pick random event tagged X` chose (StorySystem)
 				# "play talk of gang_members": a character's own talk (or sex) from another scene,
 				# as the player would start it there (the original's "try talking to X").
 				var cm := _character_re.search(target)
@@ -150,6 +153,8 @@ func _fight(n: Dictionary) -> void:
 	var at := _emit(instr)
 	if n.has("zones"):
 		instr["zones"] = n.zones
+	if n.get("away", false):
+		instr["away"] = true  # `fight wolf away from home:` (StorySystem.away)
 	if n.has("creatures"):
 		instr["creatures"] = n.creatures
 	if n.has("times"):

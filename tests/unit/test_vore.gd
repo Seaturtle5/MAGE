@@ -12,6 +12,18 @@ description: A quiet den.
 == tag no_vore
 name: Never consumed
 
+== feat predator
+name: Predator
+
+== feat womb_predator
+name: Womb Predator
+
+== feat gory
+name: Gory
+
+== feat picky
+name: Picky
+
 == tag no_hard_vore
 name: Never torn apart
 

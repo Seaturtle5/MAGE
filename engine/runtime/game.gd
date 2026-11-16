@@ -103,6 +103,7 @@ var looking_asked := false  ## a text asked whether the player is looking at the
 func value(path: String) -> Variant:
 	if _subject != "" and path.begins_with("player."):
 		path = _subject + path.substr(6)
+	path = StorySystem.resolve_path(self, path)  # gift.to.last_sex: the receiving character's
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
 	if path == "game.debug":
@@ -344,7 +345,14 @@ func set_value(path: String, v: Variant) -> void:
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		_set_fight_value(path, v)
 		return
+	path = StorySystem.resolve_path(self, path)
 	var decl: Dictionary = content.values.get(path, {})
+	# A yes/no stored in a number value counts as 1 or 0, a number in a flag as yes or no
+	# (a story's own number named like a built-in flag: `met`, `had_sex`).
+	if decl.get("kind", "") == "number" and v is bool:
+		v = 1 if v else 0
+	elif decl.get("kind", "") == "flag" and (v is int or v is float):
+		v = v != 0
 	if decl.has("max"):
 		var top: int = decl.fight_max if decl.has("fight_max") and in_fight() else decl.max
 		v = clampi(int(v), int(decl.min), top)
@@ -357,7 +365,7 @@ func set_value(path: String, v: Variant) -> void:
 	if decl.get("kind", "") == "time":
 		state.stamps[path] = state.turn
 		return
-	if decl.has("default") and v == decl.default:
+	if decl.has("default") and Condition.same(v, decl.default):
 		state.values.erase(path)
 	else:
 		state.values[path] = v
@@ -388,6 +396,7 @@ func state_index(path: String, v: Variant) -> int:
 
 
 func turns_since(path: String) -> int:
+	path = StorySystem.resolve_path(self, path)
 	if not state.stamps.has(path):
 		return 1 << 30
 	return state.turn - int(state.stamps[path])
@@ -545,6 +554,8 @@ func adjective(who: String, adj: String) -> bool:
 		return Condition._truthy(state.values.get("end." + ("left" if adj == "gone" else adj), false))
 	if who == "captivity" and adj == "ending":
 		return captivity_exit != ""  # '~ end captivity' or '~ escape captivity' ran this round
+	if who == "fight" and adj == "away from home":
+		return StorySystem.away(self)  # a scene's `fight X away from home:` (the original's showlocale false)
 	if who == "here":
 		# The player's location: "here is flagged fast travel", "here is explorable" (it has a zone).
 		if adj.begins_with("flagged "):
@@ -1068,6 +1079,9 @@ func render(compiled: Dictionary) -> Array:
 
 func apply(e: Dictionary) -> void:
 	var quiet: bool = e.get("quiet", false)
+	if str(e.get("path", "")).begins_with("gift.to."):
+		e = e.duplicate()
+		e.path = StorySystem.resolve_path(self, e.path)  # a value of the character an item is given to
 	match e.op:
 		"schedule":
 			ActionScheduler.schedule(self, e.scene, e.actions)
@@ -1495,6 +1509,8 @@ func apply(e: Dictionary) -> void:
 		_ when e.op in FightControlSystem.OPS:
 			FightControlSystem.apply(self, e)
 		_:
+			if StorySystem.apply(self, e):
+				return
 			warn("Effect '%s' is not supported yet." % e.op)
 			emit({"type": "notice", "text": "[effect '%s' not implemented yet]" % e.op})
 
@@ -1663,6 +1679,22 @@ func set_level(id: String, option: String) -> bool:
 	return true
 
 
+## Whether the player can choose a level's option now: an option with `when:`
+## only while its condition holds (a scene can still set it: `~ level ovi = always`).
+func level_open(id: String, option: String) -> bool:
+	var when: Dictionary = content.levels.get(id, {}).get("when", {}).get(option, {})
+	if when.is_empty():
+		return true
+	var c := Condition.compile(str(when.condition))
+	return not c.has("error") and Condition.evaluate(c, self)
+
+
+## The player's own choice of a level option (Settings, the new-game screen): refused
+## while the option is not open to them (`when:` under it).
+func choose_level(id: String, option: String) -> bool:
+	return level_open(id, option) and set_level(id, option)
+
+
 ## The filter that keeps tagged content out, or "". Banned filters always
 ## do; warded filters only keep content out of random selection.
 ## A character whose tags hold a banned filter is hidden: not shown at its place,
@@ -1696,7 +1728,7 @@ func content_settings() -> Dictionary:
 		var lv: Dictionary = content.levels[id]
 		var options: Array = []
 		for o in lv.options:
-			options.append({"id": o, "name": str(o).capitalize(), "description": lv.text.get(o, "")})
+			options.append({"id": o, "name": str(o).capitalize(), "description": lv.text.get(o, ""), "available": level_open(id, o)})
 		levels.append({"id": id, "name": content.typed_value("level", id, "name", str(id).capitalize()),
 			"description": content.typed_value("level", id, "description"), "options": options, "value": level(id)})
 	var interests: Array = []
@@ -1843,8 +1875,9 @@ const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity sta
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),
 ## "after taking trophy police_whistle" (chosen from a won fight's trophies),
-## "after picking up porn_collection" (taken from the ground).
-const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy ", "after picking up "]
+## "after picking up porn_collection" (taken from the ground), "instead of using
+## clean_bandages" (played instead of the item's own use text, StorySystem.use_script).
+const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy ", "after picking up ", "instead of using "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`

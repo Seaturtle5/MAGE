@@ -90,8 +90,10 @@ const SCHEMA := {
 		"arrival requires": "text", "exploring requires": "text"},
 	"location": {"name": "text", "region": "text", "zone": "text", "map": "text", "flags": "list", "image": "text",
 		"items": "list", "source": "meta", "exits": "fields", "description": "script", "scent": "script", "observe": "menu",
+		"scenery scents": "menu",
 		"actions": "menu", "rest": "text", "rest text": "text", "microwave": "text", "instead of": "fields", "presence": "script", "enter": "script"},
 	"door": {"name": "text", "description": "script", "shown in room": "script", "locked": "text", "locked text": "script",
+		"scent": "script",
 		"leads to zone": "text", "source": "meta"},
 	"region": {"name": "text", "travel order": "text", "map grid": "text", "image": "text", "source": "meta"},
 	"zone": {"name": "text", "ambient": "script", "source": "meta"},
@@ -99,6 +101,7 @@ const SCHEMA := {
 		"use": "script", "consumed": "text", "trades for": "text", "purified": "text", "infectious": "text", "aliases": "list",
 		"rest": "text", "carried rest text": "text", "ground rest text": "text", "keep": "text", "use action": "text",
 		"in combat": "text", "purify refusal": "text",
+		"given": "script",
 		"equipment": "fields", "weapon": "fields", "on wear": "script", "on remove": "script", "worn each turn": "script",
 		"tags": "list", "source": "meta", "fight actions": "menu"},
 	"values": {"values": "values", "source": "meta"},
@@ -187,7 +190,8 @@ var menus: Dictionary = {}  ## menu id -> {"def", "options": [option nodes], "se
 var extra_scripts: Dictionary = {}  ## "type:id#field" -> [node lists added by extend]
 var line_paths: Dictionary = {}  ## Line -> path, for lines another file added by extend (exits)
 ## Content levels: id -> {"options": [ids], "text": {option: description},
-## "bans": {option: [filters]}, "allows": {option: [filters]}, "default", "lines": {option: line}}
+## "bans": {option: [filters]}, "allows": {option: [filters]}, "default", "lines": {option: line},
+## "when": {option: {"condition", "line"}} (an option the player can choose only while it holds)}
 var levels: Dictionary = {}
 var _programs: Dictionary = {}
 var _parse_results: Array = []
@@ -539,7 +543,7 @@ func _index_quest(d: FscParser.Definition) -> void:
 ## A level's options, one per line ("less: description"), each optionally
 ## followed by indented "bans:" or "allows:" lines naming filters.
 func _index_level(d: FscParser.Definition) -> void:
-	var lv := {"options": [], "text": {}, "bans": {}, "allows": {}, "lines": {}, "default": ""}
+	var lv := {"options": [], "text": {}, "bans": {}, "allows": {}, "lines": {}, "default": "", "when": {}}
 	var f: FscParser.Field = d.fields.get("options", null)
 	if f != null:
 		var top := _min_indent(f.children)
@@ -568,8 +572,11 @@ func _index_level(d: FscParser.Definition) -> void:
 					if s.strip_edges() != "":
 						ids.append(s.strip_edges())
 				lv[key][current] = lv[key].get(current, []) + ids
+			elif current != "" and key == "when":
+				# The player can choose this option only while the condition holds (a story unlocks it).
+				lv.when[current] = {"condition": rest, "line": l.number}
 			else:
-				error(d.path, l.number, "Under a level option, only 'bans:' and 'allows:' lines are allowed.")
+				error(d.path, l.number, "Under a level option, only 'bans:' and 'allows:' lines (naming filters) and a 'when:' line (a condition) are allowed.")
 	if lv.options.is_empty():
 		error(d.path, d.line, "Level %s has no options. List them under 'options:'." % d.id)
 	else:
