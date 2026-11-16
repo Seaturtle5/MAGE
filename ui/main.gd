@@ -56,6 +56,7 @@ const ACTION_INFO := {
 	"actions": ["Actions", "Things you can do here.", ""],
 	"shop": ["Shop", "Buy, sell and trade.", ""],
 	"smell_place": ["Smell", "Take in the scents around you.", ""],
+	"storage": ["Storage", "Stash your things here and take them back later.", ""],
 }
 
 var game: Game
@@ -1126,11 +1127,11 @@ func _dir_short(dir: String) -> String:
 
 func _action_tile(id: String, busy: bool, label: String = "", arg: String = "", description: String = "") -> Button:
 	var info: Array = ACTION_INFO.get(id, [id.capitalize(), "", ""]).duplicate()
-	if id in ["actions", "shop", "command"] and label != "":
+	if id in ["actions", "shop", "command", "storage"] and label != "":
 		info[0] = label  # the menu's own title, or the command's name
 	if id == "command":
 		info[1] = description
-	var icon_name := id if _icon(id) != null else ("smell" if id == "smell_place" else "use")
+	var icon_name := id if _icon(id) != null else ("smell" if id == "smell_place" else ("inventory" if id == "storage" else "use"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	var icon := _icon_view(icon_name, 22, FsTheme.ACCENT)
@@ -1147,7 +1148,8 @@ func _action_tile(id: String, busy: bool, label: String = "", arg: String = "", 
 		var cost := FsTheme.heading(info[2], 12, FsTheme.TEXT_FAINT)
 		cost.size_flags_vertical = SIZE_SHRINK_BEGIN
 		row.add_child(cost)
-	return _face_button(actions_box, row, _open_hunt if id == "hunt" else func(): _act(id, arg), busy, 14, 11)
+	var pressed: Callable = _open_hunt if id == "hunt" else (_open_storage.bind(arg) if id == "storage" else func(): _act(id, arg))
+	return _face_button(actions_box, row, pressed, busy, 14, 11)
 
 
 func _time_text() -> String:
@@ -1884,6 +1886,90 @@ func _open_help(topic: String = "") -> void:
 		r.add_theme_font_size_override("normal_font_size", 17)
 		text.add_child(r)
 	body.add_child(text_scroll)
+
+
+## A storage here (StorageSystem): its description, then the player's pack and
+## what is stored side by side, each item with buttons to move one or all.
+func _open_storage(id: String) -> void:
+	var view := get_viewport_rect().size
+	var box := _open_overlay(StorageSystem.field(game, id, "name", id), true, Vector2(minf(1100, view.x - 60), minf(760, view.y - 60)))
+	var about: Program = game.content.program("%s#description" % id, "storage")
+	if about != null:
+		for spans: Array in game.runner.render_paragraphs(about):
+			box.add_child(FsTheme.label(TextTemplate.plain(spans), 15, FsTheme.TEXT_DIM))
+	var idle: bool = game.runner.status == "idle"
+	var pack: Array = game.inventory_list()
+	pack.sort_custom(func(a, b): return str(a.name) < str(b.name))
+	var stored := StorageSystem.list(game, id)
+	var cols := HBoxContainer.new()
+	cols.add_theme_constant_override("separation", 26)
+	cols.size_flags_vertical = SIZE_EXPAND_FILL
+	cols.custom_minimum_size = Vector2(0, minf(460, view.y - 340))
+	box.add_child(cols)
+	var sides := [["Your pack", pack, [["Stash", "stash"], ["All", "stash_all"]], StorageSystem.text(game, id, "pack empty")],
+		[StorageSystem.field(game, id, "name", id), stored, [["Retrieve", "retrieve"], ["All", "retrieve_all"]], StorageSystem.text(game, id, "empty")]]
+	for i in sides.size():
+		if i == 1:
+			cols.add_child(FsTheme.rule_v())
+		var side: Array = sides[i]
+		var col := VBoxContainer.new()
+		col.size_flags_horizontal = SIZE_EXPAND_FILL
+		col.add_theme_constant_override("separation", 6)
+		col.add_child(FsTheme.section(str(side[0])))
+		var scroll := ScrollContainer.new()
+		scroll.size_flags_vertical = SIZE_EXPAND_FILL
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		var list := VBoxContainer.new()
+		list.size_flags_horizontal = SIZE_EXPAND_FILL
+		list.add_theme_constant_override("separation", 4)
+		scroll.add_child(list)
+		col.add_child(scroll)
+		if (side[1] as Array).is_empty():
+			list.add_child(FsTheme.label(str(side[3]), 15, FsTheme.TEXT_FAINT))
+		for it: Dictionary in side[1]:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			row.add_child(_item_icon(str(it.id), 26))
+			var name := _plain_label("%s  ×%d" % [str(it.name).capitalize(), int(it.count)], 15, FsTheme.TEXT)
+			name.size_flags_horizontal = SIZE_EXPAND_FILL
+			name.clip_text = true
+			name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			row.add_child(name)
+			var why := StorageSystem.refusal(game, id, str(it.id)) if i == 0 else ""
+			if why != "":
+				# Kept or in use: the storage's own refusal instead of buttons.
+				row.add_child(_plain_label(TextTemplate.plain(game.render(TextTemplate.compile(why))), 13, FsTheme.TEXT_FAINT))
+			for b_spec: Array in ([] if why != "" else side[2]):
+				if b_spec[1].ends_with("_all") and int(it.count) < 2:
+					continue
+				var b := Button.new()
+				b.text = b_spec[0]
+				b.add_theme_font_size_override("font_size", 14)
+				b.disabled = not idle
+				var action: String = b_spec[1]
+				var arg := "%s:%s" % [id, it.id]
+				b.pressed.connect(func(): _storage_act(id, action, arg))
+				row.add_child(b)
+			list.add_child(row)
+		cols.add_child(col)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
+	overlay_footer.add_child(spacer)
+	for spec: Array in [["Stash everything", "stash_everything", pack.is_empty()], ["Retrieve everything", "retrieve_everything", stored.is_empty()]]:
+		var b := Button.new()
+		b.text = spec[0]
+		b.disabled = not idle or spec[2]
+		var action: String = spec[1]
+		b.pressed.connect(func(): _storage_act(id, action, id))
+		overlay_footer.add_child(b)
+
+
+func _storage_act(id: String, action: String, arg: String) -> void:
+	_act(action, arg)
+	if game.runner.status == "idle":
+		_open_storage(id)
+	else:
+		_close_overlay()
 
 
 func _open_journal() -> void:
@@ -3289,6 +3375,9 @@ func _take_screenshot() -> void:
 				match arg:
 					"areas": _open_map_overview()
 					"inventory": _open_inventory()
+					"storage":
+						if not StorageSystem.here(game).is_empty():
+							_open_storage(StorageSystem.here(game)[0])
 					"journal": _open_journal()
 					"map": _open_map()
 					"character": _open_character()

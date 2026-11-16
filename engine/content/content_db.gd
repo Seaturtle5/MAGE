@@ -156,6 +156,13 @@ const SCHEMA := {
 	"shop": {"name": "text", "at": "list", "run by": "text", "open when": "text", "closed": "script", "intro": "script",
 		"currency": "text", "currency names": "list", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
 		"trade bonus when": "text", "trade bonus chance": "text", "source": "meta"},
+	## A place to stash items (StorageSystem).
+	"storage": {"name": "text", "at": "list", "open when": "text", "description": "script", "stash": "text", "stash all": "text",
+		"retrieve": "text", "retrieve all": "text", "stash everything": "text", "retrieve everything": "text",
+		"kept": "text", "in use": "text", "empty": "text", "pack empty": "text", "source": "meta"},
+	## Things the player owns that are not items, counted by name (CollectionSystem).
+	"collection": {"name": "text", "of": "text", "title": "text", "empty": "text", "label": "text", "leave": "text",
+		"gained": "text", "lost": "text", "entry": "menu", "options": "menu", "source": "meta"},
 }
 ## Types the format defines but the engine does not run yet. They load with a warning.
 const PENDING_TYPES := ["epilogue"]

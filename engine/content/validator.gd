@@ -53,7 +53,8 @@ static func run(content: ContentDB) -> void:
 		["Heat and pregnancy", v._check_pregnancy], ["Captivity", v._check_captivity], ["Endings", v._check_endings],
 		["Status bar", v._check_status_bar], ["Companions", v._check_companions], ["Levels", v._check_levels],
 		["Vore", v._check_vore], ["Scavenging", v._check_scavenge_rules], ["World", v._check_world],
-		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help]]
+		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help],
+		["Storage", StorageSystem.check.bind(v)], ["Collections", CollectionSystem.check.bind(v)]]
 	for i in steps.size():
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
@@ -1451,7 +1452,7 @@ func _check_target(target: String, line: int) -> void:
 		elif not db.get_def("character", who).fields.has(field) and not _has_instead_hook(who, field):
 			_err(line, "%s has no %s: to play." % [who, field])
 		return
-	if target in SPECIAL_TARGETS or db.menus.has(target) or db.has(target, "scene") or db.has(target, "text"):
+	if target in SPECIAL_TARGETS or db.menus.has(target) or db.has(target, "scene") or db.has(target, "text") or db.has(target, "collection"):
 		return
 	if "#" in target and db.program(target) != null:
 		return
@@ -1477,12 +1478,14 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
-			"moment"]:
+			"moment", "collect", "discard", "tame_all", "each_companion"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	if e.op == "moment":
 		_moments_raised[e.moment] = true
 	match e.op:
+		"collect", "discard":
+			CollectionSystem.check_effect(self, e, line)
 		"ask" when e.get("number", false):
 			_check_path(e.path, line)
 			var kind: String = db.values.get(e.path, {}).get("kind", "")
@@ -1518,7 +1521,9 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"choose_feat":
 			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
 				_err(line, "No feat has group '%s'." % e.group)
-		"companion_level" when e.who == "player":
+		"each_companion":
+			_check_target(e.scene, line)
+		"companion_level" when e.who == "player" or e.who == "companion":
 			pass
 		"tame", "summon", "dismiss", "companion_level":
 			_need(e.who, "character", line)
@@ -1765,12 +1770,15 @@ func _check_path(path: String, line: int) -> void:
 	if not _reads.has(path):
 		_reads[path] = [_path, line]
 	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to",
-			"smell.thing", "smell.kind", "notes.count", "date.year", "date.month", "date.day", "note.year", "note.month", "note.day", "note.number"]:
+			"smell.thing", "smell.kind", "notes.count", "date.year", "date.month", "date.day", "note.year", "note.month", "note.day", "note.number",
+			"infection.creature", "storage.item", "storage.item_name", "storage.count", "storage.kinds"]:
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:
 			return
 	var parts := path.split(".")
+	if CollectionSystem.check_path(self, parts, line):
+		return
 	if parts[0] == "captivity" and parts.size() == 2 and parts[1] in CaptivitySystem.VALUES:
 		return
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
@@ -1782,8 +1790,8 @@ func _check_path(path: String, line: int) -> void:
 			_err(line, "'%s' is not a slot. Slots: %s." % [parts[1], ", ".join(ItemSystem.SLOTS)])
 		return  # 1 when the player wears something on that slot
 	if parts[0] == "enemy" and parts.size() == 2:
-		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido", "form"]):
-			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido", "form"])])
+		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido", "form", "id", "infectious", "research_bypass"]):
+			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido", "form", "id", "infectious", "research_bypass"])])
 		return
 	if parts[0] == "player" and parts.size() == 3 and parts[2] == "strain_damage":
 		if parts[1] not in BodySystem.PARTS and not BodySystem.ALIASES.has(parts[1]):

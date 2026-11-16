@@ -38,6 +38,10 @@ var settings: Dictionary = {}
 var encountered: Array = []  ## creature ids the player has fought, in order met
 ## Ways out changed in play: location id -> {direction -> exit ("" when removed)}.
 var exits: Dictionary = {}
+## Items put away in storages (StorageSystem): storage id -> {item id -> count}.
+var storage: Dictionary = {}
+## What the player has collected (CollectionSystem): collection id -> {entry -> count}.
+var collections: Dictionary = {}
 
 
 func to_dict() -> Dictionary:
@@ -49,7 +53,7 @@ func to_dict() -> Dictionary:
 		"stamps": stamps, "ending": ending, "rng": rng_state, "runner": runner,
 		"combat": combat, "settings": settings,
 		"actions": actions, "action_pending": action_pending, "scheduled": scheduled, "encountered": encountered,
-		"exits": exits,
+		"exits": exits, "storage": storage, "collections": collections,
 	}
 
 
@@ -93,6 +97,10 @@ static func from_dict(d: Dictionary) -> GameState:
 	s.settings = d.get("settings", {})
 	s.encountered = d.get("encountered", [])
 	s.exits = d.get("exits", {})
+	for k in d.get("storage", {}):
+		s.storage[k] = _ints(d.storage[k])
+	for k in d.get("collections", {}):
+		s.collections[k] = _ints(d.collections[k])
 	# JSON turns whole numbers into floats; restore them.
 	for k in s.values:
 		var v = s.values[k]

@@ -135,6 +135,8 @@ func value(path: String) -> Variant:
 		return ItemSystem.worn_on(self, path.substr(5))  # 1 when something is worn there (worn.legs)
 	if path.begins_with("feat."):
 		return 1 if path.substr(5) in state.feats else 0  # for formulas: feat.good_teacher * 50
+	if path.begins_with("collection."):
+		return CollectionSystem.value(self, path.substr(11))  # collections (CollectionSystem)
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		return _fight_value(path)
 	if state.values.has(path):
@@ -275,6 +277,12 @@ func _fight_value(path: String) -> Variant:
 		return VoreSystem.scale_of(self, c.creature)
 	if key == "form":
 		return creature_field(c.creature, "form", c.creature)  # the strain it infects with
+	if key == "id":
+		return c.creature  # the creature fought
+	if key == "infectious":
+		return creature_field(c.creature, "infectious", "yes") != "no"
+	if key == "research_bypass":
+		return creature_field(c.creature, "research bypass", "no") == "yes"
 	if key in CombatSystem.ATTRIBUTES:
 		return CombatSystem.stat(self, c.creature, key)
 	return CombatSystem.number(self, c.creature, key.replace("_", " "), CombatSystem.ENEMY_DEFAULTS.get(key, 0))
@@ -320,6 +328,10 @@ func settle_fight_values() -> void:
 
 
 func set_value(path: String, v: Variant) -> void:
+	if path.begins_with("companion.") and CompanionSystem.DEFAULTS.has(path.substr(10)) and str(state.values.get("companion.id", "")) != "":
+		# In a script about one companion, its numbers change that companion's.
+		state.values[path] = v
+		path = "%s.%s" % [state.values["companion.id"], path.substr(10)]
 	if path == "game.debug":
 		debug = int(v)
 		return
@@ -1137,8 +1149,20 @@ func apply(e: Dictionary) -> void:
 		"companion_level":
 			if e.who == "player":
 				LevelSystem.level_up(self)
+			elif e.who == "companion":
+				# In a script about one companion (`~ for each companion play X`).
+				if str(state.values.get("companion.id", "")) != "":
+					CompanionSystem.level_up(self, str(state.values["companion.id"]))
 			else:
 				CompanionSystem.level_up(self, e.who)
+		"tame_all":
+			for c: String in content.all_of("character"):
+				if CompanionSystem.is_companion(self, c):
+					CompanionSystem.tame(self, c, true)
+		"each_companion":
+			for c: String in state.companions.duplicate():
+				CompanionSystem._with(self, c)
+				CompanionSystem._play(self, e.scene)
 		"check_level":
 			LevelSystem.check(self)
 		"choose_feat":
@@ -1325,8 +1349,22 @@ func apply(e: Dictionary) -> void:
 			var picked := str(state.values.get("picked.creature", ""))
 			if picked != "":
 				BodySystem.remember_strain(self, creature_field(picked, "form", picked))
+		"collect", "discard":
+			CollectionSystem.apply(self, e)
 		"infect":
 			var form: String = e.form if e.get("part", "") == "" else part_form("player", e.part)
+			if e.has("form_path"):
+				# "~ infect collection.entry": the creature (its strain) or form a value holds.
+				form = str(value(e.form_path)) if value(e.form_path) != null else ""
+				if form == "":
+					return
+				var held_creature := form
+				if content.has(form, "creature"):
+					form = creature_field(form, "form", form)
+				for _i in Effect.resolve_amount(e.times, self):
+					state.values["infection.bypass"] = content.has(held_creature, "creature") and creature_field(held_creature, "research bypass", "no") == "yes"
+					BodySystem.infect(self, form, false, e.get("keep_sex", false))
+				return
 			if form == "@picked":
 				# The creature picked with "~ pick random creature": its form.
 				var picked := str(value("picked.creature"))
@@ -1778,7 +1816,7 @@ func pass_turn() -> void:
 
 ## The moments hooks can run at (`on:` of a hook).
 const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
-	"after resting", "instead of resting", "game starts", "while travelling"]
+	"after resting", "instead of resting", "game starts", "while travelling", "infection"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),

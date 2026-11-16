@@ -80,6 +80,8 @@ static func infect(game, form: String, all: bool = false, keep_sex: bool = false
 		game.warn("No form '%s' to infect with." % form)
 		return
 	remember_strain(game, form)
+	if not all:
+		_infection_hooks(game, form)
 	# Infection rules can block infection altogether (Flexible Survival's Researcher start);
 	# `infection.bypass` says the infecting creature gets through anyway (research bypass).
 	if not all and rule(game, "blocked when"):
@@ -105,6 +107,31 @@ static func infect(game, form: String, all: bool = false, keep_sex: bool = false
 	if rule(game, "stats follow when"):
 		_stat_drift(game, form)
 	_libido_drift(game, form)
+
+
+static var _in_infection_hooks := false
+
+
+## Hooks "on: infection" (CombatSystem.hooks: text and effects, played at once):
+## an infectious creature's strain is about to infect, before the infection
+## rules decide whether it takes hold. `infection.creature` names the creature
+## and `infection.bypass` is still set (Flexible Survival's vial collecting,
+## Core Mechanics/Infections.i7x:404-405).
+static func _infection_hooks(game, form: String) -> void:
+	if _in_infection_hooks:
+		return
+	var creature := form if game.content.has(form, "creature") else ""
+	if creature == "":
+		for c: String in game.content.all_of("creature"):
+			if game.content.typed_value("creature", c, "form", c) == form:
+				creature = c
+				break
+	if creature == "" or game.creature_field(creature, "infectious", "yes") == "no":
+		return
+	game.state.values["infection.creature"] = creature
+	_in_infection_hooks = true
+	CombatSystem.hooks(game, "infection")
+	_in_infection_hooks = false
 
 
 static func _roll(game, form: String, keep_sex: bool = false) -> void:
