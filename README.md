@@ -92,8 +92,15 @@ Options go after `--`:
 |---|---|
 | `--packs DIR` | Load packs from this folder (can be repeated) |
 | `--test-content` | Load the test pack from `tests/packs` |
+| `--only-packs` | Load packs from the `--packs` folders only |
+| `--data DIR` | Keep saves and remembered settings in this folder instead of the player's own |
+| `--scenario ID` | Skip the title screen and start this scenario |
 | `--start ID` | Skip the title screen and start at this location |
+| `--play ID` | Then play a story: a scene's ID, `event:<id>`, or a story inside content as `<type>:<id>#<field>` (`character:adam#talk`) |
+| `--set PATH=VALUE` | Set a value before the story plays (can be repeated): a number, `yes` or `no`, or words |
 | `--seed N` | Fix the random seed |
+
+`--only-packs` with `--data` tries out a pack without touching the player's saves, settings or own packs.
 
 ## Tests
 

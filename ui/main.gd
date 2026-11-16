@@ -17,7 +17,9 @@ extends Control
 ## created when the player starts a new one or loads a save.
 ##
 ## Command line (after `--`): `--seed N`, `--start ID` (skip the title and
-## start at a location), and for automated screenshots
+## start at a location) and the other options of LaunchOptions for trying
+## out a pack (`--only-packs`, `--data DIR`, `--scenario ID`, `--play ID`,
+## `--set PATH=VALUE`), and for automated screenshots
 ## `--steps "new bunker_start;go up"` with `--shot path.png` (also `reveal`,
 ## `open areas`, `open map <area>`).
 
@@ -104,6 +106,11 @@ var shot_steps: Array = []
 var db: ContentDB
 var seed_value := 0  ## from --seed; 0 means a new seed for each game
 var store := SaveStore.new()
+## The options given on the command line; `--data DIR` moves the three files below.
+var launch := LaunchOptions.new()
+var content_prefs_path := CONTENT_PREFS
+var player_packs_path := PLAYER_PACKS
+var prefs_path := PREFS
 var prefs := ConfigFile.new()
 var title: TitleScreen
 var game_root: Control  ## the in-game screen, hidden while the title shows
@@ -118,9 +125,15 @@ var inv_bag_scroll: ScrollContainer
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
+	launch = LaunchOptions.parse(args)
+	if launch.data != "":
+		# A try-out keeps its saves and remembered settings away from the player's own.
+		store = SaveStore.new(launch.data_path("user://saves"))
+		content_prefs_path = launch.data_path(CONTENT_PREFS)
+		player_packs_path = launch.data_path(PLAYER_PACKS)
+		prefs_path = launch.data_path(PREFS)
 	var start := ""
 	var test_content := false
-	var extra_packs: Array = []
 	for i in args.size():
 		match args[i]:
 			"--test-content":
@@ -133,13 +146,11 @@ func _ready() -> void:
 				shot_path = args[i + 1]
 			"--steps":
 				shot_steps = Array(args[i + 1].split(";"))
-			"--packs":
-				extra_packs.append(args[i + 1])
 			"--light":
 				prefs.set_value("display", "light", true)  # screenshots of the light theme
 	# Automated screenshots use default preferences and their own save folder.
 	if shot_path == "":
-		prefs.load(PREFS)
+		prefs.load(prefs_path)
 		_apply_display_prefs()
 	else:
 		store = SaveStore.new("user://screenshot_saves")
@@ -147,8 +158,10 @@ func _ready() -> void:
 	theme = FsTheme.build()
 	_build()
 	db = ContentDB.new()
-	var folders: Array = ["res://tests/packs"] if test_content else _content_folders(extra_packs)
-	if shot_path == "" and start == "" and not test_content:
+	var usual := _content_folders([])
+	usual[-1] = player_packs_path
+	var folders: Array = ["res://tests/packs"] if test_content else launch.content_folders(usual)
+	if shot_path == "" and not launch.starts_game() and not test_content:
 		_load_with_loading_screen(folders)  # a player starting the game: show something while the packs load
 		return
 	db.load_folders(folders)
@@ -184,9 +197,10 @@ func _after_load(start: String, test_content: bool) -> void:
 		_load_art_prefs()
 	if shot_path == "":
 		store.import_legacy()
-	if start != "" or test_content:
+	if launch.starts_game() or test_content:
 		_reset_game()
-		game.start(start if start != "" else "shelter")
+		if not launch.begin(game):
+			game.start("shelter")
 		_drain()
 	else:
 		_show_title()
@@ -1192,7 +1206,7 @@ func _image_links(row: HBoxContainer, type: String, id: String, has_picture: boo
 	row.add_child(_small_link("Change image" if has_picture else "Add image", func(): _choose_picture(type, id)))
 	if mine:
 		row.add_child(_small_link("Remove my image", func():
-			PlayerArt.remove(db, PLAYER_PACKS, type, id)
+			PlayerArt.remove(db, player_packs_path, type, id)
 			_refresh_pictures()))
 
 
@@ -1219,7 +1233,7 @@ func _choose_picture(type: String, id: String) -> void:
 	add_child(dialog)
 	dialog.file_selected.connect(func(path: String):
 		dialog.queue_free()
-		var problem := PlayerArt.add(db, PLAYER_PACKS, type, id, path)
+		var problem := PlayerArt.add(db, player_packs_path, type, id, path)
 		if problem != "":
 			_toast(problem)
 			return
@@ -2232,7 +2246,7 @@ func _choice_row(name: String, description: String, options: Array, selected: in
 func _set_pref(key: String, value: Variant) -> void:
 	prefs.set_value("display", key, value)
 	if shot_path == "":
-		prefs.save(PREFS)
+		prefs.save(prefs_path)
 	_apply_display_prefs()
 
 
@@ -2366,19 +2380,19 @@ func _art_pack_row(panel: VBoxContainer, p: Dictionary) -> Control:
 
 ## Keeps the art packs switched off in the content settings file.
 func _save_art_prefs() -> void:
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONTENT_PREFS)) if FileAccess.file_exists(CONTENT_PREFS) else {}
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(content_prefs_path)) if FileAccess.file_exists(content_prefs_path) else {}
 	var prefs: Dictionary = data if data is Dictionary else {}
 	prefs["art_off"] = db.art_off.duplicate()
-	var f := FileAccess.open(CONTENT_PREFS, FileAccess.WRITE)
+	var f := FileAccess.open(content_prefs_path, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(prefs, "  "))
 
 
 ## Reads which art packs are switched off (at start, for every game).
 func _load_art_prefs() -> void:
-	if not FileAccess.file_exists(CONTENT_PREFS):
+	if not FileAccess.file_exists(content_prefs_path):
 		return
-	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(CONTENT_PREFS))
+	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(content_prefs_path))
 	if data is Dictionary and data.get("art_off", []) is Array:
 		db.art_off = Array(data.art_off).map(func(x: Variant) -> String: return str(x))
 
@@ -2498,9 +2512,9 @@ func _scroll_to(control: Control) -> void:
 
 
 func _load_content_prefs() -> void:
-	if not FileAccess.file_exists(CONTENT_PREFS):
+	if not FileAccess.file_exists(content_prefs_path):
 		return
-	var data = JSON.parse_string(FileAccess.get_file_as_string(CONTENT_PREFS))
+	var data = JSON.parse_string(FileAccess.get_file_as_string(content_prefs_path))
 	if not data is Dictionary:
 		return
 	var levels: Dictionary = data.get("levels", {}) if data.get("levels", {}) is Dictionary else {}
@@ -2517,7 +2531,7 @@ func _load_content_prefs() -> void:
 
 
 func _save_content_prefs() -> void:
-	var f := FileAccess.open(CONTENT_PREFS, FileAccess.WRITE)
+	var f := FileAccess.open(content_prefs_path, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify({"banned": game.settings.banned, "warded": game.settings.warded,
 			"levels": game.settings.levels, "interests": game.settings.get("interests", {}), "art_off": db.art_off}, "  "))
