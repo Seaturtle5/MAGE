@@ -37,6 +37,7 @@ var _name := "Player"
 var _pronoun := 0
 var _answers := {}
 var _modes: Array = []
+var import_folder := ""  ## the folder of the original game's export files to bring in ("" for none)
 
 var _bar: HBoxContainer
 var _page: VBoxContainer
@@ -393,6 +394,15 @@ func _build_challenge() -> void:
 	panel.child_entered_tree.connect(func(_c: Node): summary.text = str(_content_summary.call()))
 	_page.add_child(toggle)
 	_page.add_child(panel)
+	if ImportView.available(game):
+		_page.add_child(_spacer(6))
+		_page.add_child(ImportView.section(game, import_folder, set_import_folder))
+
+
+## Chooses the folder of export files to import after the start ("" for none).
+func set_import_folder(dir: String) -> void:
+	import_folder = dir
+	_go(_step)
 
 
 # --- The character sheet -----------------------------------------------------

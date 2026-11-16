@@ -167,6 +167,10 @@ const SCHEMA := {
 	## Things the player owns that are not items, counted by name (CollectionSystem).
 	"collection": {"name": "text", "of": "text", "title": "text", "empty": "text", "label": "text", "leave": "text",
 		"gained": "text", "lost": "text", "entry": "menu", "options": "menu", "source": "meta"},
+	## Rules for one export file of the original game (ImportSystem).
+	"save_import": {"name": "text", "file": "text", "columns": "list", "rows": "text", "map": "fields", "player row": "text",
+		"player": "fields", "nowhere": "list", "ignore": "list", "turn stamps": "text", "when missing": "list", "map like": "text",
+		"source": "meta"},
 }
 ## Types the format defines but the engine does not run yet. They load with a warning.
 const PENDING_TYPES := ["epilogue"]
@@ -177,7 +181,7 @@ const LOOKUP_PRIORITY := ["creation_rules", "game_mode", "location", "character"
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
 	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "infection_rules", "vore_rules",
-	"interest", "hunt_rules", "smell_rules", "notes_rules", "help"]
+	"interest", "hunt_rules", "smell_rules", "notes_rules", "help", "save_import"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
@@ -458,7 +462,7 @@ func _check_fields(d: FscParser.Definition) -> void:
 	if d.type in PENDING_TYPES:
 		return
 	for name in d.field_order:
-		if not schema.has(name):
+		if not schema.has(name) and not ImportSystem.allows_field(d.type, name):
 			var f: FscParser.Field = d.fields[name]
 			error(d.path, f.line, "Unknown field '%s' for %s. Allowed: %s." % [name, d.type, ", ".join(schema.keys())])
 	if not d.options.is_empty() and d.type != "menu":
