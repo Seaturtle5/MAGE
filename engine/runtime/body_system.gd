@@ -210,7 +210,13 @@ static func _change_part(game, form: String, part: String, message: bool = true)
 			"tail": "ass", "cock": "groin"}.get(part, part)
 		_say(game, "Your %s [one of]tingles[or]goes flush[or]vibrates with odd pleasure[or]goes cold[or]feels oily[at random] as %s." % [word, change])
 	game.set_value("player.body." + part, form)
-	game.set_value("player.body_description." + part, _text(game, data.get("description", "")))
+	game.looking_asked = false
+	var described := _text(game, data.get("description", ""))
+	if game.looking_asked:
+		# Worded differently when the player looks at themself: said fresh each time.
+		game.state.values.erase("player.body_description." + part)
+	else:
+		game.set_value("player.body_description." + part, described)
 
 
 ## A form's size: its `scale` (3, human size, when not written), or as changed
@@ -611,11 +617,13 @@ static func reset(game) -> void:
 
 static func view(game) -> Array:
 	var out: Array = []
+	game.looking += 1  # the character screen: the player looks at themself
 	for part in PARTS:
 		var form: String = game.part_form("player", part)
 		out.append({"id": part, "part": part.capitalize(), "form_id": form,
 			"form": game.content.typed_value("form", form, "name", form.capitalize()),
 			"description": part_description(game, "player", part)})
+	game.looking -= 1
 	return out
 
 

@@ -1478,7 +1478,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
-			"moment", "collect", "discard", "tame_all", "each_companion"]:
+			"moment", "collect", "discard", "tame_all", "each_companion", "unborn_looks", "ask_gear", "gear_number"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	if e.op == "moment":
@@ -1486,6 +1486,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 	match e.op:
 		"collect", "discard":
 			CollectionSystem.check_effect(self, e, line)
+		"unborn_looks", "ask_gear", "gear_number":
+			LooksSystem.check_effect(self, e, line)
 		"ask" when e.get("number", false):
 			_check_path(e.path, line)
 			var kind: String = db.values.get(e.path, {}).get("kind", "")
@@ -1725,6 +1727,7 @@ func _check_expr(node: Dictionary, line: int) -> void:
 		_check_path(p, line)
 	for p in Expr.list_paths(node):
 		_check_list(p, line)
+	LooksSystem.check_expr(self, node, line)  # "strain of x", "armor of x"
 
 
 ## A value declared as a list (`name: list`).
@@ -1779,6 +1782,8 @@ func _check_path(path: String, line: int) -> void:
 	var parts := path.split(".")
 	if CollectionSystem.check_path(self, parts, line):
 		return
+	if LooksSystem.check_path(self, parts, line):
+		return  # form numbers, the unborn child, the newest child (LooksSystem)
 	if parts[0] == "captivity" and parts.size() == 2 and parts[1] in CaptivitySystem.VALUES:
 		return
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
@@ -1947,6 +1952,8 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"wields":
 			if c.item != "anything":
 				_need(c.item, "item", line)
+		"gear_held":
+			_check_path(c.path, line)  # "player wields x.pick": the item a value holds
 		"filter":
 			_need(c.filter, "filter", line)
 		"level":
@@ -1984,7 +1991,7 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_err(line, "'%s is ready' tests an event's requirements, but %s is not an event." % [c.who, c.who])
 				return
 			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "ready", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
-					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred"]:
+					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred", LooksSystem.LOOKING]:
 				_check_path("%s.%s" % [c.who, c.adjective.replace(" ", "_")], line)
 		"lives_at", "is_at":
 			if c.who != "player":
@@ -2236,6 +2243,8 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			if who != "player" and not db.has(who, "character") and not db.has(who, "creature"):
 				_err(line, "[%s]: '%s' is not a character." % [n, who])
 			continue
+		if LooksSystem.check_text(self, n, line):
+			continue  # [strain of x], [wielded weapon], [traits of x]
 		_err(line, "Unknown text substitution [%s].%s" % [n, _suggest(n, DESCRIPTORS + _ids("text"))])
 	_walk_template_conditions(t.parts, line, owner)
 

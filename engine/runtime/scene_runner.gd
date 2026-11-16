@@ -901,7 +901,7 @@ func _item_choice_step(f: Dictionary) -> bool:
 		return false
 	f.shown = true
 	game.set_value(str(f.path), "")
-	var ids: Array = game.carried_with_tags(f.tags) if f.has("tags") else game.carried_tagged(str(f.tag))
+	var ids: Array = game.carried_with_tags(f.tags) if f.has("tags") else GearSystem.carried(game, f.gear) if f.has("gear") else game.carried_tagged(str(f.tag))
 	if ids.is_empty():
 		frames.erase(f)
 		return false

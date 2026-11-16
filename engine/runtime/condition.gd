@@ -78,6 +78,8 @@ static var _rules: Array = [
 	["name_known", RegEx.create_from_string("^(\\w+) name is (not )?known$")],
 	["is", RegEx.create_from_string("^(\\w+) is (not )?([a-z][a-z0-9_ ]*)$")],
 	["value_is", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) is (not )?(.+)$")],
+	# "player wields x.pick", "player wears x.pick": the item a value holds (GearSystem).
+	["gear_held", RegEx.create_from_string("^player (wears|does not wear|wields|does not wield) ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
 ]
 
 
@@ -309,6 +311,9 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "order", "path": m.get_string(1), "rel": m.get_string(2), "state": m.get_string(3)}
 			"is":
 				return {"op": "is", "who": m.get_string(1), "adjective": m.get_string(3).strip_edges(), "neg": m.get_string(2) != ""}
+			"gear_held":
+				var verb := m.get_string(1)
+				return {"op": "gear_held", "verb": "wields" if "wield" in verb else "wears", "path": m.get_string(2), "neg": verb.begins_with("does not")}
 			"value_is":
 				var right := Expr.parse(m.get_string(3))
 				if right.has("error"):
@@ -345,6 +350,8 @@ static func evaluate(node: Dictionary, ctx) -> bool:
 			return yes != node.neg
 		"truthy":
 			return _truthy(ctx.value(node.path))
+		"gear_held":
+			return GearSystem.holds(ctx, node) != node.neg
 		"enemy_hits":
 			return not ctx.state.combat.is_empty() and CombatSystem.hit_roll(ctx, node.stat)
 		"order":

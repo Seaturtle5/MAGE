@@ -95,6 +95,9 @@ var play_loops: Array = []  ## [index, count] of `play X N times` running inside
 ## The debug level (`game.debug`): 0 in normal play; the start option `--debug [N]`
 ## or `--set game.debug=N` raises it. Not saved, as the original's debugactive.
 var debug := 0
+## The player is looking at themself (LooksSystem): their own description is being shown.
+var looking := 0
+var looking_asked := false  ## a text asked whether the player is looking at themself
 
 
 func value(path: String) -> Variant:
@@ -137,6 +140,9 @@ func value(path: String) -> Variant:
 		return 1 if path.substr(5) in state.feats else 0  # for formulas: feat.good_teacher * 50
 	if path.begins_with("collection."):
 		return CollectionSystem.value(self, path.substr(11))  # collections (CollectionSystem)
+	var looked: Variant = LooksSystem.value(self, path)  # form numbers, the unborn child ... (LooksSystem)
+	if looked != null:
+		return looked
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		return _fight_value(path)
 	if state.values.has(path):
@@ -558,6 +564,8 @@ func adjective(who: String, adj: String) -> bool:
 		return runner._door_locked(who) == (adj == "locked")
 	if who == "player" and adj.begins_with("interested in "):
 		return interest(adj.substr(14).strip_edges())
+	if adj == LooksSystem.LOOKING:
+		return LooksSystem.looking(self, who)  # the original's looknow
 	match adj:
 		"male":
 			return body_count(who, "cock") > 0
@@ -805,6 +813,8 @@ func describe(name: String) -> String:
 			return body_type
 		"skin":
 			var skin = value("%s.body_description.skin" % who)
+			if (skin == null or str(skin) == "") and part_form(who, "skin") != "human":
+				skin = BodySystem.part_description(self, who, "skin")  # worded fresh each time (looking at oneself)
 			return str(skin) if skin != null and str(skin) != "" else "smooth"
 		"ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine":
 			return monster_word(what)
@@ -876,7 +886,12 @@ func describe(name: String) -> String:
 	if content.has(n, "text"):
 		var prog := content.program(n)
 		if prog != null:
+			if n == "self_description":  # the player's own description: they look at themself
+				return LooksSystem.look(self, runner.render_inline.bind(prog))
 			return runner.render_inline(prog)
+	var said: Variant = LooksSystem.describe(self, n)  # [strain of x], [wielded weapon], [traits of x]
+	if said != null:
+		return said
 	warn("Unknown descriptor [%s]" % n)
 	return "[%s]" % n
 
@@ -922,7 +937,7 @@ func self_description() -> PackedStringArray:
 		return out
 	var saved_rng := rng.get_state()
 	var saved_variations := state.variations.duplicate(true)
-	var paragraphs: Array = runner.render_paragraphs(prog)
+	var paragraphs: Array = LooksSystem.look(self, runner.render_paragraphs.bind(prog))
 	rng.set_state(saved_rng)
 	state.variations = saved_variations
 	for spans: Array in paragraphs:
@@ -1169,6 +1184,8 @@ func apply(e: Dictionary) -> void:
 			runner.choose_feat(e.group)
 		"ask_item":
 			runner.choose_item(e.path, e.tag, e.prompt)
+		"unborn_looks", "ask_gear", "gear_number":
+			LooksSystem.apply(self, e)  # the child carried now; weapons and armor (GearSystem)
 		"ask":
 			if e.get("number", false):
 				# A typed number, within its bounds when it has them (worked out now).

@@ -167,6 +167,13 @@ static var _rules: Array = [
 	["shift_time", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) (earlier|later) by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
+	# The child carried now (LooksSystem): "~ unborn child looks like snake",
+	# "~ unborn child head, torso look like \"Seal Toy\"" (the original's "now HeadName of Child is ...").
+	["unborn_looks", RegEx.create_from_string("^unborn child(?: ([a-z, ]+?))? looks? like (.+)$")],
+	# Weapons and armor (GearSystem): "~ ask x.pick as weapon or armor: Which one?",
+	# "~ item x.pick armor + 5 up to 100" (also damage, hit bonus, effectiveness; an item ID or a value).
+	["ask_gear", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:an? )?(weapon or armor|armor or weapon|weapon|armor):\\s*(.+)$")],
+	["gear_number", RegEx.create_from_string("^item ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*) (damage|hit bonus|armor|effectiveness) ([+=-]) (.+)$")],
 ]
 ## The rules worth trying for an effect, by its first word: the rules whose
 ## sentence starts with that word ("give one of ..." -> "give") and the rules
@@ -524,6 +531,8 @@ static func _match(s: String) -> Dictionary:
 				if m.get_string(3) != "" and m.get_string(1) != "sex":
 					return {"error": "Only a sex change can keep the cock's strain: ~ sex change keeping cock"}
 				return {"op": "sex_change", "what": m.get_string(1), "form": m.get_string(2), "keep_cock": m.get_string(3) != ""}
+			"unborn_looks", "ask_gear", "gear_number":
+				return LooksSystem.compile(rule[0], m)
 			"form_number":
 				var to := Expr.parse(m.get_string(3))
 				if to.has("error"):

@@ -46,6 +46,8 @@ static func sub(game, id: String, field: String) -> Dictionary:
 
 
 static func gear(game, id: String, key: String, default: String = "") -> String:
+	if key in ["armor", "effectiveness"] and game.state.values.has("item.%s.%s" % [id, key]):
+		return str(game.state.values["item.%s.%s" % [id, key]])  # changed in play (~ item X armor + 5)
 	return str(sub(game, id, "equipment").get(key, default))
 
 

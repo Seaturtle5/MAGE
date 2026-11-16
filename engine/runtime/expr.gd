@@ -155,6 +155,12 @@ class _P:
 				err = "%s takes %s" % [tok, "one value" if tok == "sqrt" else "two values: %s(a, b)" % tok]
 				return {}
 			return {"op": tok, "a": args[0], "b": args[1] if args.size() > 1 else {"op": "num", "v": 0}}
+		if tok in LooksSystem.READINGS and i < t.size() and t[i] == "of":
+			# "strain of player.body.cock", "armor of x.pick": a reading of the form,
+			# creature or item an operand names or holds (LooksSystem, GearSystem).
+			i += 1
+			var operand := atom()
+			return {} if err != "" else {"op": "of", "what": tok, "a": operand}
 		if tok.begins_with("\""):
 			return {"op": "text", "v": tok.substr(1, tok.length() - 2)}
 		if tok.is_valid_int():
@@ -209,6 +215,8 @@ static func evaluate(node: Dictionary, ctx) -> Variant:
 		"random_entry":
 			var list = ctx.value(node.a.v)
 			return list[ctx.rng.range_int(0, list.size() - 1)] if list is Array and not list.is_empty() else null
+		"of":
+			return LooksSystem.read_of(ctx, node.what, evaluate(node.a, ctx))
 		"%":
 			# The original's "the remainder after dividing a by b".
 			var m := _num(evaluate(node.b, ctx))
@@ -256,7 +264,7 @@ static func paths(node: Dictionary, out: Array = []) -> Array:
 		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt", "entry":
 			paths(node.a, out)
 			paths(node.b, out)
-		"count", "random_entry":
+		"count", "random_entry", "of":
 			paths(node.a, out)
 	return out
 
@@ -272,4 +280,6 @@ static func list_paths(node: Dictionary, out: Array = []) -> Array:
 		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt":
 			list_paths(node.a, out)
 			list_paths(node.b, out)
+		"of":
+			list_paths(node.a, out)
 	return out
