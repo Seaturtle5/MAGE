@@ -91,6 +91,19 @@ func play_loop() -> Array:
 	return []
 
 
+## `play talk of X` / `play sex of X`: what talking to (or sex with) the character
+## plays, as the player would start it ("instead of" hooks first); the character
+## counts as met. "" (with a warning) when there is nothing to play.
+func character_story(id: String, field: String) -> String:
+	var hook: String = game.hook_instead(("instead of talking to " if field == "talk" else "instead of sex with ") + id)
+	var own := "character:%s#%s" % [id, field]
+	if hook == "" and game.content.program(own) == null:
+		game.warn("'%s' has no %s to play." % [id, field])
+		return ""
+	game.set_value("%s.met" % id, true)
+	return hook if hook != "" else own
+
+
 func _push_if(pid: String) -> void:
 	if game.content.program(pid) != null:
 		frames.append({"kind": "script", "pid": pid, "pc": 0})
@@ -428,6 +441,10 @@ func run() -> void:
 					if picked == "" or game.content.program(picked + target.substr(7)) == null:
 						continue
 					target = picked + target.substr(7)
+				elif target.begins_with("@character:"):
+					target = character_story(target.substr(11).get_slice("#", 0), target.get_slice("#", 1))
+					if target == "":
+						continue
 				var times: int = Effect.resolve_amount(ins.times, game) if ins.has("times") else 1
 				# Frames run last pushed first: push the last repetition first so they run 1, 2, 3 ...
 				for i in range(times, 0, -1):
@@ -934,6 +951,7 @@ func choose(index: int) -> bool:
 		frames.erase(f)
 		if str(p.trophy) != "":
 			game.apply(Effect.compile("give " + str(p.trophy)))
+			game.run_hooks("after taking trophy " + str(p.trophy))  # hooks "after taking trophy police_whistle"
 		elif CombatSystem.rule(game, "no trophy", "") != "":
 			game.emit({"type": "paragraph", "spans": game.render(TextTemplate.compile(CombatSystem.rule(game, "no trophy", "")))})
 	elif p.has("feat"):
@@ -1616,11 +1634,8 @@ func arrival_event(mode: String, place: String = "", replacing: bool = false) ->
 			continue
 		if int(st.get("last_turn", -1)) >= 0 and game.state.turn - int(st.last_turn) <= int(db.typed_value("event", ev, "cooldown", "0")):
 			continue
-		var req := db.typed_value("event", ev, "requires")
-		if req != "":
-			var c := Condition.compile(req)
-			if c.has("error") or not Condition.evaluate(c, game):
-				continue
+		if not _event_requires(ev, "requires") or not _event_requires(ev, "arrival requires"):
+			continue
 		candidates.append(ev)
 	candidates.sort()
 	# Shuffle, then a stable sort by priority (the original sorts randomly, then by priority).
@@ -1670,14 +1685,23 @@ func _events_found(zone: String, way: String) -> Array:
 			continue
 		if int(game.value("player.score")) < int(db.typed_value("event", ev, "min score", "-2147483648")):
 			continue
-		var req := db.typed_value("event", ev, "requires")
-		if req != "":
-			var c := Condition.compile(req)
-			if c.has("error") or not Condition.evaluate(c, game):
-				continue
+		if not _event_requires(ev, "requires") or not _event_requires(ev, "exploring requires"):
+			continue
 		candidates.append(ev)
 	candidates.sort()
 	return candidates
+
+
+## Whether an event's condition field holds (an event without it: true). Besides
+## `requires`, `arrival requires` applies only when the event is found by walking
+## in or travelling there, `exploring requires` only when found by exploring or
+## scavenging, for events found both ways with different conditions.
+func _event_requires(ev: String, field: String) -> bool:
+	var req: String = game.content.typed_value("event", ev, field)
+	if req == "":
+		return true
+	var c := Condition.compile(req)
+	return not c.has("error") and Condition.evaluate(c, game)
 
 
 ## Scavenging at a fast-travel point (Core Mechanics/Scavenging.i7x): a

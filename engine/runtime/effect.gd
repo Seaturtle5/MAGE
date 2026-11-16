@@ -41,6 +41,8 @@ static var _rules: Array = [
 	["list_remove_entry", RegEx.create_from_string("^remove entry (.+) from ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
 	["list_remove", RegEx.create_from_string("^remove (.+) from ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
 	["list_clear", RegEx.create_from_string("^clear ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
+	# One entry replaced: "~ entry 2 of x.list = 5" (the original's "now entry 2 of L is 5").
+	["list_set", RegEx.create_from_string("^entry (.+?) of ([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["list_sort", RegEx.create_from_string("^sort ([a-z0-9_]+\\.[a-z0-9_.]+)(?: in (random|reverse) order)?$")],
 	# Doors locked or unlocked in play (saved): "~ unlock cell_door", "~ lock cell_door".
 	["lock", RegEx.create_from_string("^(lock|unlock) (\\w+)$")],
@@ -76,6 +78,10 @@ static var _rules: Array = [
 	["condition", RegEx.create_from_string("^condition (\\w+) for (\\d+) (hours?|turns?)$")],
 	["spend", RegEx.create_from_string("^spend (\\d+) turns?$")],
 	["schedule", RegEx.create_from_string("^schedule ([a-z0-9_.]+) after (\\d+) actions?$")],
+	# The loot of a random creature (the original's random row of the Table of Random Critters):
+	# "~ give loot of random creature", or "~ x.prize = loot of random creature" ("" when it has none);
+	# "loot of picked creature": of the creature `~ pick random creature` chose.
+	["random_loot", RegEx.create_from_string("^(?:give loot|([a-z0-9_]+\\.[a-z0-9_.]+) = loot) of (random|picked) creature$")],
 	["give_one", RegEx.create_from_string("^give one of ([a-z0-9_, ]+)$")],
 	["give", RegEx.create_from_string("^give ([a-z0-9_]+(?:\\.[a-z0-9_.]+)?)(?: (.+))?$")],
 	# "~ remove whatever is worn on neck": takes off what is worn in that slot (not cursed gear).
@@ -92,8 +98,11 @@ static var _rules: Array = [
 	["player_move", RegEx.create_from_string("^(attack enemy|try to flee)$")],
 	# Items lying in a place, and an item's infection, changed during play.
 	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
-	["remove_from", RegEx.create_from_string("^remove (\\w+) from (\\w+)$")],
+	["remove_from", RegEx.create_from_string("^remove (\\w+)(?: (\\d+))? from (\\w+)$")],
 	["item_strain", RegEx.create_from_string("^item (\\w+) infects as (\\w+)$")],
+	# A weapon's numbers changed in play: "~ item abyssal_edge damage + 1" (the original's
+	# "increase weapon damage of X by 1"); also "= 8" and "hit bonus".
+	["item_number", RegEx.create_from_string("^item (\\w+) (damage|hit bonus) ([+=-]) (.+)$")],
 	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|scale|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
 	["take", RegEx.create_from_string("^take ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+))?$")],
@@ -205,6 +214,13 @@ static func _match(s: String) -> Dictionary:
 				if rule[0] == "list_add":
 					node["if_absent"] = m.get_string(3) != ""
 				return node
+			"list_set":
+				# items: the place (from 1) and the new entry.
+				var at := Expr.parse(m.get_string(1))
+				var to := Expr.parse(m.get_string(3))
+				if at.has("error") or to.has("error"):
+					return {"error": "cannot read '%s': %s" % [s, at.get("error", to.get("error", ""))]}
+				return {"op": "list_set", "path": m.get_string(2), "items": [at, to]}
 			"list_clear":
 				return {"op": "list_clear", "path": m.get_string(1)}
 			"list_sort":
@@ -292,6 +308,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "remove_slot", "slot": m.get_string(1)}
 			"take_all":
 				return {"op": "take_all", "item": m.get_string(1)}
+			"random_loot":
+				return {"op": "random_loot", "path": m.get_string(1), "picked": m.get_string(2) == "picked"}
 			"give_one":
 				var items: Array = []
 				for it in m.get_string(1).split(","):
@@ -335,9 +353,16 @@ static func _match(s: String) -> Dictionary:
 			"put":
 				return {"op": "put", "item": m.get_string(1), "count": int(m.get_string(2)) if m.get_string(2) != "" else 1, "place": m.get_string(3)}
 			"remove_from":
-				return {"op": "remove_from", "item": m.get_string(1), "place": m.get_string(2)}
+				# "~ remove gem from market" clears them all; "~ remove gem 1 from market" takes that many.
+				return {"op": "remove_from", "item": m.get_string(1), "place": m.get_string(3),
+					"count": int(m.get_string(2)) if m.get_string(2) != "" else -1}
 			"item_strain":
 				return {"op": "item_strain", "item": m.get_string(1), "form": m.get_string(2)}
+			"item_number":
+				var amt := amount(m.get_string(4))
+				if amt.has("error"):
+					return {"error": amt.error}
+				return {"op": "item_number", "item": m.get_string(1), "field": m.get_string(2), "how": m.get_string(3), "amount": amt}
 			"creature_number":
 				var amt := amount(m.get_string(4))
 				if amt.has("error"):

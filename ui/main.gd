@@ -19,7 +19,7 @@ extends Control
 ## Command line (after `--`): `--seed N`, `--start ID` (skip the title and
 ## start at a location) and the other options of LaunchOptions for trying
 ## out a pack (`--only-packs`, `--data DIR`, `--scenario ID`, `--play ID`,
-## `--set PATH=VALUE`), and for automated screenshots
+## `--set PATH=VALUE`, `--debug [N]`), and for automated screenshots
 ## `--steps "new bunker_start;go up"` with `--shot path.png` (also `reveal`,
 ## `open areas`, `open map <area>`).
 
@@ -2626,6 +2626,7 @@ func _reset_game() -> void:
 	if game != null:
 		game.dispose()
 	game = Game.new(db, seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()))
+	game.debug = launch.debug
 	history.clear()
 	location_view = {}
 	mode = ""
@@ -2785,6 +2786,7 @@ func _write_save(id: String, name: String, thumb: PackedByteArray) -> void:
 ## Loads a save into a new game object, so a failed load leaves the current game as it was.
 func _load_save(id: String) -> bool:
 	var fresh := Game.new(db, seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()))
+	fresh.debug = launch.debug
 	if not store.load_into(id, fresh):
 		fresh.dispose()
 		_notify(store.last_error)

@@ -15,9 +15,14 @@ extends RefCounted
 ## outside: up-left) and pushed further that way until they overlap nothing.
 ## A block without a hand-set place starts from its fast-travel point (or its
 ## first place by ID). Sets of connected places not joined to the rest are
-## packed in rows below it. Doors and one-way exits count as connections.
-## Everything is visited in a fixed order, so the same content always gives
-## the same map.
+## packed in rows below it. Doors and one-way exits count as connections, and
+## so do the exits scenes make in play (`~ change north exit of A to B`, read
+## from every script; set off to the side when A already has a written exit
+## that way). Places behind a dangerous door (`north: door skyscrapers`, which
+## leads into a zone) that no exit joins to a region belong to the region of the
+## places with doors into their zone. Places flagged `off map` (holding rooms)
+## are left out. Everything is visited in a fixed order, so the same content
+## always gives the same map.
 
 const STEPS := {"north": Vector2i(0, -1), "south": Vector2i(0, 1), "east": Vector2i(1, 0), "west": Vector2i(-1, 0),
 	"northeast": Vector2i(1, -1), "northwest": Vector2i(-1, -1), "southeast": Vector2i(1, 1), "southwest": Vector2i(-1, 1)}
@@ -33,6 +38,7 @@ var members: Dictionary = {}  ## group key -> [locations], sorted
 
 var _db: ContentDB
 var _links: Dictionary = {}  ## location -> [[other, step: Vector2i, compass: bool]]
+var _door_into: Dictionary = {}  ## zone -> [places with a dangerous door into it], sorted
 
 
 static func build(db: ContentDB) -> MapLayout:
@@ -80,14 +86,62 @@ static func written_exits(db: ContentDB, id: String) -> Array:
 	return out
 
 
+## Exits scenes make in play, from every script: [direction, from, to] for each
+## `~ change <direction> exit of <from> to <to>` (not `to nothing`), sorted.
+static func changed_exits(db: ContentDB) -> Array:
+	var re := RegEx.create_from_string("~\\s*change (\\w+) exit of (\\w+) to (\\w+)")
+	var found := {}
+	var scan := func(lines: Array) -> void:
+		for l: FscParser.Line in lines:
+			if "exit of" not in l.text:
+				continue
+			var m := re.search(l.text)
+			if m != null and m.get_string(3) != "nothing":
+				found["%s %s %s" % [m.get_string(1), m.get_string(2), m.get_string(3)]] = true
+	for type: String in db.definitions:
+		for id: String in db.definitions[type]:
+			var d: FscParser.Definition = db.definitions[type][id]
+			scan.call(d.body)
+			for f: FscParser.Field in d.fields.values():
+				scan.call(f.children)
+	for key: String in db.extra_scripts:
+		for extra: Dictionary in db.extra_scripts[key]:
+			scan.call((extra.field as FscParser.Field).children)
+	var out: Array = []
+	for key: String in _sorted(found.keys()):
+		out.append(Array(key.split(" ")))
+	return out
+
+
 func _collect_links() -> void:
 	for id: String in _sorted(_db.all_of("location").keys()):
-		_links[id] = _links.get(id, [])
+		if "off map" not in _db.list_field(id, "flags"):
+			_links[id] = []
 	for id: String in _sorted(_links.keys()):
 		for pair: Array in written_exits(_db, id):
-			var s: Array = step_of(pair[0])
-			_links[id].append([pair[1], s[0], s[1]])
-			_links[pair[1]].append([id, -s[0], s[1]])
+			if _links.has(pair[1]):
+				_link(id, pair[1], step_of(pair[0]))
+		# A dangerous door leads into a zone, not a place.
+		var d := _db.get_def("location", id)
+		if d == null or not d.fields.has("exits"):
+			continue
+		for l: FscParser.Line in (d.fields["exits"] as FscParser.Field).children:
+			var to := l.text.split(":", true, 1)[1].split(",")[0].strip_edges() if ":" in l.text else ""
+			var zone := _db.typed_value("door", to.substr(5).strip_edges(), "leads to zone") if to.begins_with("door ") else ""
+			if zone != "" and id not in _door_into.get(zone, []):
+				_door_into[zone] = _door_into.get(zone, []) + [id]
+	for triple: Array in changed_exits(_db):
+		var from: String = triple[1]
+		var to: String = triple[2]
+		if from == to or not _links.has(from) or not _links.has(to) or _links[from].any(func(k: Array) -> bool: return k[0] == to):
+			continue
+		var written := written_exits(_db, from).any(func(pair: Array) -> bool: return pair[0] == triple[0])
+		_link(from, to, [OTHER_STEP, false] if written else step_of(triple[0]))
+
+
+func _link(from: String, to: String, s: Array) -> void:
+	_links[from].append([to, s[0], s[1]])
+	_links[to].append([from, -s[0], s[1]])
 
 
 func _assign_groups() -> void:
@@ -99,14 +153,25 @@ func _assign_groups() -> void:
 			group[id] = region
 			queue.append(id)
 	# The nearest place with a region, following exits either way.
-	var i := 0
-	while i < queue.size():
-		var u: String = queue[i]
-		i += 1
-		for link: Array in _links[u]:
-			if not group.has(link[0]):
-				group[link[0]] = group[u]
-				queue.append(link[0])
+	_spread(queue)
+	# Places behind dangerous doors: the region most of the doors into their zone are in.
+	var behind: Array = []
+	for zone: String in _sorted(_door_into.keys()):
+		var votes := {}
+		for p: String in _door_into[zone]:
+			if group.has(p):
+				votes[group[p]] = int(votes.get(group[p], 0)) + 1
+		var best := ""
+		for g: String in _sorted(votes.keys()):
+			if best == "" or int(votes[g]) > int(votes[best]):
+				best = g
+		if best == "":
+			continue
+		for id: String in ids:
+			if not group.has(id) and _db.typed_value("location", id, "zone") == zone:
+				group[id] = best
+				behind.append(id)
+	_spread(behind)
 	# Connected places without any region share their most common zone.
 	for id: String in ids:
 		if group.has(id):
@@ -127,6 +192,18 @@ func _assign_groups() -> void:
 		if not members.has(group[id]):
 			members[group[id]] = []
 		members[group[id]].append(id)
+
+
+## Gives the places joined to those in `queue` (breadth first) their group.
+func _spread(queue: Array) -> void:
+	var i := 0
+	while i < queue.size():
+		var u: String = queue[i]
+		i += 1
+		for link: Array in _links[u]:
+			if not group.has(link[0]):
+				group[link[0]] = group[u]
+				queue.append(link[0])
 
 
 ## The places reachable from `start` over links whose other end passes `keep`, sorted.

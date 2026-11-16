@@ -98,6 +98,7 @@ Options go after `--`:
 | `--start ID` | Skip the title screen and start at this location |
 | `--play ID` | Then play a story: a scene's ID, `event:<id>`, or a story inside content as `<type>:<id>#<field>` (`character:adam#talk`) |
 | `--set PATH=VALUE` | Set a value before the story plays (can be repeated): a number, `yes` or `no`, or words |
+| `--debug [N]` | Debug mode: `game.debug` reads N (1 when no number follows) instead of 0, so content can show its debug lines (`if game.debug:`); not saved |
 | `--seed N` | Fix the random seed |
 
 `--only-packs` with `--data` tries out a pack without touching the player's saves, settings or own packs.

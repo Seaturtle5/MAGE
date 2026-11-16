@@ -199,3 +199,96 @@ func test_a_bent_way_back_is_reported() -> void:
 	var bent := warnings.filter(func(w: String) -> bool: return "map bends" in w)
 	assert_eq(bent.size(), 1, str(warnings))
 	assert_true("w.fsc 4 Exit west leads to b, but its way back is west" in str(bent), str(bent))
+
+
+const AREAS := """== location alpha
+name: Alpha Gate
+region: alpha
+flags: fast travel
+
+== region zeta
+name: Zeta Side
+travel order: 1
+
+== region alpha
+name: Alpha Side
+travel order: 2
+
+== location hub
+name: Hub
+flags: fast travel
+
+== quest errand
+name: Errand
+region: alpha
+stages:
+    not_started
+    open: An errand.
+
+== zone wilds
+name: Wilds
+
+== door thicket_gate
+name: Thicket
+leads to zone: wilds
+
+== location trailhead
+name: Trailhead
+region: zeta
+flags: fast travel
+exits:
+    north: door thicket_gate
+    east: shed
+
+== location shed
+name: Shed
+exits:
+    west: trailhead
+
+== location glade
+name: Glade
+zone: wilds
+exits:
+    east: pond
+
+== location pond
+name: Pond
+exits:
+    west: glade
+
+== location secret_room
+name: Secret Room
+
+== location holding
+name: Holding Room
+flags: off map
+
+== scene open_wall
+~ change north exit of shed to secret_room
+~ change east exit of trailhead to holding
+"""
+
+
+func test_area_order_doors_exits_made_in_play_and_holding_rooms() -> void:
+	var g := Game.new(_load({"pack.fsc": "== pack p\nname: Test\n", "values.fsc": TestPlayerValues.TEXT, "w.fsc": AREAS}), 3)
+	assert_eq(g.content.errors(), [])
+	g.start("trailhead")
+	g.take_output()
+	g.state.known["alpha"] = true
+	g.state.known["trailhead"] = true
+	g.state.location = "hub"
+	var travel: Array = g.travel_destinations()
+	assert_eq(travel.map(func(d: Dictionary) -> String: return d.region), ["Zeta Side", "Alpha Side"], "by travel order, not by name")
+	g.state.values["quest.errand"] = "open"
+	assert_eq(g.quest_list().map(func(q: Dictionary) -> String: return q.region), ["Alpha Side"],
+		"the region's name, not the place's that shares its ID")
+	var layout := g.content.map_layout()
+	assert_eq(layout.group.glade, "zeta", "behind the dangerous door of a place in the region")
+	assert_eq(layout.group.pond, "zeta", "and joined to that place")
+	assert_eq(layout.group.secret_room, "zeta", "reached by an exit a scene makes")
+	assert_eq(layout.position.secret_room - layout.position.shed, Vector2i(0, -1), "north of it")
+	assert_false(layout.group.has("holding"), "a holding room is left off the map")
+	assert_false(layout.members.values().any(func(m: Array) -> bool: return "holding" in m))
+	g.state.known["glade"] = true
+	assert_eq(g.map_groups().map(func(x: Dictionary) -> String: return x.id), ["zeta", "alpha", "zone:"], "travel order, not names; the hub is in the rest")
+	g.dispose()

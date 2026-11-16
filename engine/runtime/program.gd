@@ -82,6 +82,11 @@ func _block(nodes: Array) -> void:
 				var pm := RegEx.create_from_string("^picked creature (victory|defeated|encounter)$").search(target)
 				if pm != null:
 					target = "@picked#" + pm.get_string(1)
+				# "play talk of gang_members": a character's own talk (or sex) from another scene,
+				# as the player would start it there (the original's "try talking to X").
+				var cm := RegEx.create_from_string("^(talk|sex) of (\\w+)$").search(target)
+				if cm != null:
+					target = "@character:%s#%s" % [cm.get_string(2), cm.get_string(1)]
 				var ins := {"op": "play", "line": n.line, "target": target}
 				if not times.is_empty():
 					ins["times"] = times

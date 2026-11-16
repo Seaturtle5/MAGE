@@ -50,6 +50,8 @@ static func gear(game, id: String, key: String, default: String = "") -> String:
 
 
 static func arm(game, id: String, key: String, default: String = "") -> String:
+	if key in ["damage", "hit bonus"] and game.state.values.has("item.%s.%s" % [id, key]):
+		return str(game.state.values["item.%s.%s" % [id, key]])  # changed in play (~ item X damage + 1)
 	return str(sub(game, id, "weapon").get(key, default))
 
 
@@ -271,6 +273,28 @@ static func strip_text(game, slots: Array, verb: String, area: String, bare: Str
 	if items.size() == 1:
 		return "%s your %s and bare your %s" % [verb, listed, area]
 	return "%s your %s, baring your %s" % [verb, listed, area]
+
+
+## The names of the items worn on these slots (the first on each, in that order):
+## "jeans and boxers" (`[worn list waist, legs, crotch]`), "" when none is worn.
+static func worn_list(game, slots: Array) -> String:
+	var items: Array = []
+	for slot in slots:
+		for id: String in game.state.equipped:
+			if gear(game, id, "slot", "none") == str(slot).strip_edges() and item_name(game, id) not in items:
+				items.append(item_name(game, id))
+				break
+	if items.size() < 2:
+		return "" if items.is_empty() else str(items[0])
+	return ", ".join(items.slice(0, -1)) + " and " + str(items[-1])
+
+
+## 1 when the player wears something on the slot, else 0 (`worn.legs`).
+static func worn_on(game, slot: String) -> int:
+	for id: String in game.state.equipped:
+		if gear(game, id, "slot", "none") == slot:
+			return 1
+	return 0
 
 
 ## The player dressing again after a strip (Basic Functions.i7x SelfDressCrotch /

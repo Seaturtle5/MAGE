@@ -87,6 +87,9 @@ func warn(message: String) -> void:
 var _subject := ""
 var _ready_checking: Array = []  ## events whose requirements are being checked (no loops)
 var play_loops: Array = []  ## [index, count] of `play X N times` running inside a fight script
+## The debug level (`game.debug`): 0 in normal play; the start option `--debug [N]`
+## or `--set game.debug=N` raises it. Not saved, as the original's debugactive.
+var debug := 0
 
 
 func value(path: String) -> Variant:
@@ -94,8 +97,13 @@ func value(path: String) -> Variant:
 		path = _subject + path.substr(6)
 	if path == "game.turn":
 		return state.turn  # turns passed since the start, for timing in content
+	if path == "game.debug":
+		return debug
 	if path == "places.known":
 		return state.known.size()  # fast-travel places the player knows (the original's number of known fasttravel rooms)
+	if path == "places.total":
+		# Every fast-travel place, known or not (the original's number of fasttravel rooms).
+		return content.all_of("location").keys().filter(func(id: String) -> bool: return "fast travel" in content.list_field(id, "flags")).size()
 	if path == "play.index" or path == "play.count":
 		# The repetition a `play X N times` is on (from 1), and how many there are.
 		var loop: Array = play_loops[-1] if not play_loops.is_empty() else runner.play_loop()
@@ -112,6 +120,8 @@ func value(path: String) -> Variant:
 				return CompanionSystem.tamed(self).size()
 	if path.begins_with("offspring.") and path.substr(10) in ["with_you", "bunker", "roaming", "total"]:
 		return CompanionSystem.offspring(self, path.substr(10))
+	if path.begins_with("worn.") and path.substr(5) in ItemSystem.SLOTS:
+		return ItemSystem.worn_on(self, path.substr(5))  # 1 when something is worn there (worn.legs)
 	if path.begins_with("feat."):
 		return 1 if path.substr(5) in state.feats else 0  # for formulas: feat.good_teacher * 50
 	if path.begins_with("enemy.") or path.begins_with("fight."):
@@ -152,6 +162,8 @@ func value(path: String) -> Variant:
 				return ItemSystem.scale(self)
 			"heat_turns", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration":
 				return HeatSystem.computed(self, key)
+			"weapon_damage":
+				return int(ItemSystem.weapon(self).damage)  # the wielded weapon's damage (unarmed: the fists')
 		if key.ends_with(".strain_damage"):
 			# The damage of the creature whose strain a body part has (natural weapons:
 			# the original's Natural Armaments and Tail Strike read its Table row).
@@ -193,6 +205,28 @@ func character_image(id: String) -> String:
 	if state.values.has("character.%s.image" % id):
 		return str(state.values["character.%s.image" % id])
 	return content.image_of("character", id)
+
+
+## The loot item of a creature picked at random from all creatures that are not
+## banned (the original's random row of the Table of Random Critters), or "" when
+## that creature has no loot (none, an unknown item or a 0% chance).
+func random_creature_loot() -> String:
+	var pool: Array = content.all_of("creature").keys().filter(func(id: String) -> bool:
+		return filter_block(content._list(content.get_def("creature", id), "tags"), true) == "")
+	if pool.is_empty():
+		return ""
+	pool.sort()
+	return creature_loot(pool[rng.range_int(0, pool.size() - 1)])
+
+
+## A creature's loot item ("" when it has none, an unknown item or a 0% chance).
+func creature_loot(id: String) -> String:
+	if id == "":
+		return ""
+	var loot: PackedStringArray = creature_field(id, "loot").split(" ", false)
+	if loot.is_empty() or not content.has(loot[0], "item"):
+		return ""
+	return loot[0] if loot.size() < 2 or int(loot[1].trim_suffix("%")) > 0 else ""
 
 
 ## A creature field that play can change (`~ creature X found in Z`), else its definition's.
@@ -275,6 +309,9 @@ func settle_fight_values() -> void:
 
 
 func set_value(path: String, v: Variant) -> void:
+	if path == "game.debug":
+		debug = int(v)
+		return
 	if path.begins_with("enemy.") or path.begins_with("fight."):
 		_set_fight_value(path, v)
 		return
@@ -646,6 +683,8 @@ func describe(name: String) -> String:
 		return "%s %s" % [article.capitalize() if n.begins_with("A") else article, rest]
 	# "[worn feet]", "[worn waist, legs, crotch]": the item worn on the first of the
 	# slots that has one (the original's feetDesc, crotchDesc, chestDesc), else "".
+	if n.begins_with("worn list "):
+		return ItemSystem.worn_list(self, Array(n.substr(10).split(",")))  # "jeans and boxers"
 	if n.begins_with("worn "):
 		for slot in n.substr(5).split(","):
 			for id: String in state.equipped:
@@ -678,6 +717,8 @@ func describe(name: String) -> String:
 		var part: String = what.trim_suffix(" change")
 		part = BodySystem.ALIASES.get(part, part)
 		var form := str(value(who)) if "." in who else who
+		if not content.has(form, "form") and content.has(form, "creature"):
+			form = creature_field(form, "form", form)  # a creature (picked.creature): its strain
 		return BodySystem._text(self, str(BodySystem.fields(self, form, part).get("change", "")))
 	match what:
 		"name":
@@ -693,7 +734,7 @@ func describe(name: String) -> String:
 		"s", "es":
 			var count := int(value(who)) if "." in who else 0
 			return what if count > 1 else ""
-		"he", "him", "his", "hers", "He", "Him", "His", "Hers":
+		"he", "him", "his", "hers", "himself", "He", "Him", "His", "Hers", "Himself":
 			return pronoun(who, what)
 		"cock":
 			# The original's Cock of Player: the cock's descriptive word.
@@ -900,10 +941,10 @@ func pronoun(who: String, form: String) -> String:
 	if p == "by body":
 		p = "she" if body_count(who, "cunt") > 0 else ("he" if body_count(who, "cock") > 0 else "they")
 	var table := {
-		"he": {"he": "he", "him": "him", "his": "his", "hers": "his"},
-		"she": {"he": "she", "him": "her", "his": "her", "hers": "hers"},
-		"they": {"he": "they", "him": "them", "his": "their", "hers": "theirs"},
-		"it": {"he": "it", "him": "it", "his": "its", "hers": "its"},
+		"he": {"he": "he", "him": "him", "his": "his", "hers": "his", "himself": "himself"},
+		"she": {"he": "she", "him": "her", "his": "her", "hers": "hers", "himself": "herself"},
+		"they": {"he": "they", "him": "them", "his": "their", "hers": "theirs", "himself": "themselves"},
+		"it": {"he": "it", "him": "it", "his": "its", "hers": "its", "himself": "itself"},
 	}
 	var row: Dictionary = table.get(p, table["they"])
 	var word: String = row[form.to_lower()]
@@ -990,7 +1031,9 @@ func apply(e: Dictionary) -> void:
 			# A turn stamp N turns in the past or the future (the original's "turns + 8").
 			state.stamps[e.path] = state.turn + e.sign * int(Expr._num(Expr.evaluate(e.by, self)))
 		"set":
-			if e.has("range"):
+			if e.value.get("op", "") == "word" and e.value.v == "never" and content.values.get(e.path, {}).get("kind", "") == "time":
+				state.stamps.erase(e.path)  # "~ x.last_sex = never": unset again; `since` counts it as long ago
+			elif e.has("range"):
 				set_value(e.path, rng.range_int(Expr._num(Expr.evaluate(e.range[0], self)), Expr._num(Expr.evaluate(e.range[1], self))))
 			else:
 				set_value(e.path, Expr.evaluate(e.value, self))
@@ -1126,7 +1169,7 @@ func apply(e: Dictionary) -> void:
 		"lock":
 			# A door locked or unlocked in play; it stays so (saved), whatever its `locked:` says.
 			state.values["door.%s.locked" % e.door] = e.locked
-		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort":
+		"list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort":
 			_change_list(e)
 		"change_exit":
 			# "change the north exit of X to Y" (the original's map changes): saved, and
@@ -1185,7 +1228,22 @@ func apply(e: Dictionary) -> void:
 			ground[e.item] = int(ground.get(e.item, 0)) + e.count
 		"remove_from":
 			var place: String = state.location if e.place == "here" else e.place
-			ItemSystem.ground(self, place).erase(e.item)
+			var lying := ItemSystem.ground(self, place)
+			if int(e.get("count", -1)) >= 0 and int(lying.get(e.item, 0)) > int(e.count):
+				lying[e.item] = int(lying[e.item]) - int(e.count)
+			else:
+				lying.erase(e.item)
+		"random_loot":
+			var loot := creature_loot(str(state.values.get("picked.creature", ""))) if e.get("picked", false) else random_creature_loot()
+			if e.path != "":
+				set_value(e.path, loot)
+			elif loot != "":
+				apply(Effect.compile("give %s%s" % [loot, " quietly" if quiet else ""]))
+		"item_number":
+			# A weapon's damage or hit bonus from now on (saved), for every copy of the item.
+			var cur := int(ItemSystem.arm(self, e.item, e.field, "4" if e.field == "damage" else "0"))
+			var by: int = Effect.resolve_amount(e.amount, self, cur)
+			state.values["item.%s.%s" % [e.item, e.field]] = by if e.how == "=" else cur + (by if e.how == "+" else -by)
 		"item_strain":
 			# "now Strain of skunk goo is ..." (the original's strain of an infectious item).
 			state.values["item.%s.infectious" % e.item] = "" if e.form == "nothing" else e.form
@@ -1202,6 +1260,8 @@ func apply(e: Dictionary) -> void:
 		"character_image":
 			if e.image == "default":
 				state.values.erase("character.%s.image" % e.who)
+			elif e.image == "none":
+				state.values["character.%s.image" % e.who] = ""  # no portrait (the original's figure of pixel)
 			else:
 				state.values["character.%s.image" % e.who] = e.image
 		"lives_at":
@@ -1372,6 +1432,12 @@ func _change_list(e: Dictionary) -> void:
 			var at := Expr._num(Expr.evaluate(e.items[0], self))
 			if at >= 1 and at <= list.size():
 				list.remove_at(at - 1)
+		"list_set":
+			var place := Expr._num(Expr.evaluate(e.items[0], self))
+			if place >= 1 and place <= list.size():
+				list[place - 1] = Expr.evaluate(e.items[1], self)
+			else:
+				warn("%s has no entry %d (it has %d)." % [e.path, place, list.size()])
 		"list_clear":
 			list = []
 		"list_sort":
@@ -1689,8 +1755,9 @@ const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity sta
 	"after resting", "instead of resting", "game starts", "while travelling"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
-## Moments about one item: "after using water_bottle" (a use that was not cancelled).
-const HOOK_ITEM_MOMENTS := ["after using "]
+## Moments about one item: "after using water_bottle" (a use that was not cancelled),
+## "after taking trophy police_whistle" (chosen from a won fight's trophies).
+const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`
@@ -1870,8 +1937,10 @@ func quest_list() -> Array:
 		var written: Program = content.program("%s#journal" % id, "quest")
 		if written != null:
 			line = runner.render_inline(written)
-		out.append({"id": id, "name": content.field_value(id, "name", id),
-			"region": content.field_value(content.field_value(id, "region"), "name", "Other"),
+		# The quest's region by type (a region's ID may also name another definition).
+		var region := content.typed_value("quest", id, "region")
+		out.append({"id": id, "name": content.typed_value("quest", id, "name", id),
+			"region": content.typed_value("region", region, "name", region) if region != "" else "Other",
 			"stage": stage, "journal": line, "history": history,
 			"done": q.stages.find(done_at) <= idx})
 	return out
@@ -1885,9 +1954,26 @@ func travel_destinations() -> Array:
 		return out
 	for id in content.all_of("location"):
 		if id != state.location and state.known.has(id) and "fast travel" in content.list_field(id, "flags"):
-			out.append({"id": id, "name": content.field_value(id, "name", id), "region": map_group_name(map_group(id))})
-	out.sort_custom(func(a, b): return a.region + a.name < b.region + b.name)
+			var key := map_group(id)
+			out.append({"id": id, "name": content.typed_value("location", id, "name", id), "region": map_group_name(key),
+				"_order": group_order(key)})
+	# By area, in the regions' travel order (as the map's overview), then by name.
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if a._order != b._order:
+			return a._order < b._order
+		return a.region + "\n" + a.name < b.region + "\n" + b.name)
+	for d: Dictionary in out:
+		d.erase("_order")
 	return out
+
+
+## Where a map group comes in lists of areas: regions by `travel order` (those
+## without one after them), then zones, then the rest.
+func group_order(key: String) -> int:
+	if content.has(key, "region"):
+		var order := content.typed_value("region", key, "travel order")
+		return int(order) if order.is_valid_int() else 1 << 20
+	return (1 << 21) if key != "zone:" else (1 << 22)
 
 
 ## A place's ways out as [direction, exit] pairs ("north", "plaza, door gate"): its
@@ -1972,20 +2058,15 @@ func map_groups() -> Array:
 		if known == 0:
 			continue
 		var is_region := content.has(key, "region")
-		var order := content.typed_value("region", key, "travel order") if is_region else ""
 		out.append({"id": key, "name": map_group_name(key), "known": known, "fast_travel": travel,
 			"places": layout.members[key].size(), "current": key == here,
 			"image": content.image_of("region", key) if is_region else "",
-			"_rank": 0 if is_region else (1 if key != "zone:" else 2),
-			"_order": int(order) if order.is_valid_int() else 1 << 30})
+			"_order": group_order(key)})
 	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if a._rank != b._rank:
-			return a._rank < b._rank
 		if a._order != b._order:
 			return a._order < b._order
 		return a.name + a.id < b.name + b.id)
 	for g: Dictionary in out:
-		g.erase("_rank")
 		g.erase("_order")
 	return out
 

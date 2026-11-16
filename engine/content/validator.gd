@@ -9,7 +9,7 @@ extends RefCounted
 ## diagnostics with file, line and a plain message, with a "did you mean"
 ## suggestion where a close match exists.
 
-const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "He", "Him", "His", "Hers",
+const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "himself", "He", "Him", "His", "Hers", "Himself",
 	"cock", "cock size", "cup size", "strip crotch", "strip chest", "dress crotch", "dress chest", "humanity description", "species", "random encountered creature", "head species", "torso species", "skin species", "cock species", "cunt species", "tail species", "body type", "skin",
 	"picked creature", "enemy name", "the enemy", "Enemy name", "The enemy", "enemy body type", "bracket", "close bracket", "ghe", "ghis", "ghim", "ghishers", "gche", "gchis", "gchim", "gchishers", "gdragon", "gmasculine",
 	"body descriptor", "head description", "face description", "torso description", "body description",
@@ -23,9 +23,9 @@ const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "strength", "dext
 	"heat_turns", "heat_paused", "heat_starts_in", "heat_ends_in", "heat_cycle", "heat_duration",
 	"sex", "last_partner", "last_sex", "experienced", "virgin", "oral_virgin", "anal_virgin", "penile_virgin",
 	"first_anal_partner", "first_vaginal_partner", "first_oral_partner", "first_penile_partner",
-	"weight", "definition", "androgyny", "body_hair", "ass", "mouth", "clit"]
+	"weight", "definition", "androgyny", "body_hair", "ass", "mouth", "clit", "weapon_damage"]
 const SPECIAL_TARGETS := ["back", "end"]
-const LOCATION_FLAGS := ["fast travel", "private", "safe rest", "known at start", "collected"]
+const LOCATION_FLAGS := ["fast travel", "private", "safe rest", "known at start", "collected", "off map"]
 const CREATURE_GENDERS := ["neuter", "male neuter", "female neuter", "male", "female", "herm", "shemale", "male herm", "cuntboy", "variable"]
 ## The kinds of sex the original records (CreatureSexAftermath / NPCSexAftermath).
 const SEX_ACTS := ["anal", "anal_toy", "vaginal", "vaginal_toy", "oral_cock", "oral_pussy", "oral_toy", "stroking",
@@ -411,8 +411,13 @@ func _check_world() -> void:
 				_warn(found_line, "'found by: %s' is part of the format but not run by the engine yet; the event is only started by other content." % db.typed_value("event", id, "found by"))
 			"unknown":
 				_err(found_line, "Unknown 'found by'. Use 'exploring in <zones>', 'scavenging in <zones>', 'exploring or scavenging in <zones>', 'walking into <places>', 'travelling to <places>', 'arriving at <places>', 'leaving <place> <direction>' or 'nowhere', separated by ';'.")
-		if d.fields.has("requires"):
-			_check_condition_text(d.fields["requires"].value, d.fields["requires"].line, id)
+		for f in ["requires", "arrival requires", "exploring requires"]:
+			if d.fields.has(f):
+				_check_condition_text(d.fields[f].value, d.fields[f].line, id)
+		if d.fields.has("arrival requires") and found.walking.is_empty() and found.travelling.is_empty():
+			_warn(d.fields["arrival requires"].line, "'arrival requires' applies when the event is found by walking into or travelling to a place, but its 'found by' has neither; use 'requires'.")
+		if d.fields.has("exploring requires") and found.zones.is_empty():
+			_warn(d.fields["exploring requires"].line, "'exploring requires' applies when the event is found by exploring or scavenging, but its 'found by' names no zone; use 'requires'.")
 		if d.fields.has("replaces trip"):
 			if d.fields["replaces trip"].value not in ["yes", "no"]:
 				_err(d.fields["replaces trip"].line, "Replaces trip must be yes or no.")
@@ -1281,8 +1286,8 @@ func _check_programs() -> void:
 				elif ins.op not in ["text", "return", "jump", "unless"]:
 					_err(ins.line, "This description can contain text and conditions only; move actions and choices into a scene.")
 			# A text snippet is said inside other text: text, conditions and simple effects only.
-			if type == "text" and ins.op not in ["text", "return", "jump", "unless"] and not _simple_effect(ins):
-				_err(ins.line, "A text snippet can contain text, conditions and value changes only; make it a scene to do more.")
+			if type == "text" and ins.op not in ["text", "return", "jump", "unless"] and not _simple_effect(ins) and not _data_effect(ins):
+				_err(ins.line, "A text snippet can contain text, conditions and value or creature, form and item changes only; make it a scene to do more.")
 			# A creature's encounter plays as a scene before its fight: anything but another fight.
 			if type == "creature" and field == "encounter" and ins.op == "fight":
 				_err(ins.line, "An encounter plays just before its fight; it cannot start another fight.")
@@ -1321,7 +1326,14 @@ func _combat_effect(ins: Dictionary) -> bool:
 func _simple_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
 		"set", "set_time", "shift_time", "change", "survival", "feat", "condition", "meter", "infect",
-		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "child_random", "new_child"]
+		"list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "child_random", "new_child"]
+
+
+## Lasting changes to a creature's, form's or item's data, which a text snippet may
+## make as it is said (a form's change text that also changes the creature's size).
+func _data_effect(ins: Dictionary) -> bool:
+	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
+		"creature_number", "creature_change", "form_number", "form_sex", "item_strain", "item_number"]
 
 
 func _check_instruction(ins: Dictionary, owner: String) -> void:
@@ -1361,12 +1373,27 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 func _check_target(target: String, line: int) -> void:
 	if target.begins_with("@picked#") or db.has(target, "captivity"):
 		return
+	if target.begins_with("@character:"):
+		# "play talk of gang_members": the character's own talk or sex, or a hook instead of it.
+		var who := target.substr(11).get_slice("#", 0)
+		var field := target.get_slice("#", 1)
+		if not db.has(who, "character"):
+			_err(line, "Character '%s' does not exist.%s" % [who, _suggest(who, _ids("character"))])
+		elif not db.get_def("character", who).fields.has(field) and not _has_instead_hook(who, field):
+			_err(line, "%s has no %s: to play." % [who, field])
+		return
 	if target in SPECIAL_TARGETS or db.menus.has(target) or db.has(target, "scene") or db.has(target, "text"):
 		return
 	if "#" in target and db.program(target) != null:
 		return
 	var known: Array = _ids("scene") + db.menus.keys()
 	_err(line, "There is no scene or menu called '%s'.%s" % [target, _suggest(target, known)])
+
+
+## Whether a hook plays instead of talking to (or sex with) the character.
+func _has_instead_hook(who: String, field: String) -> bool:
+	var moment := ("instead of talking to " if field == "talk" else "instead of sex with ") + who
+	return db.all_of("hook").keys().any(func(id: String) -> bool: return db.typed_value("hook", id, "on") == moment)
 
 
 func _check_effect(e: Dictionary, line: int, owner: String) -> void:
@@ -1376,11 +1403,11 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
-			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain",
+			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain", "item_number", "random_loot",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
-			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort", "lock"]:
+			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	match e.op:
@@ -1401,7 +1428,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			if e.path.begins_with("player.") and not db.values.has(e.path):
 				_err(line, "~ ask stores text: give it a declared text value, not the player value '%s'." % e.path)
 			_check_template(e.prompt, line, "")
-		"list_add", "list_remove", "list_remove_entry", "list_clear", "list_sort":
+		"list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort":
 			_check_list(e.path, line)
 			for item: Dictionary in e.get("items", []):
 				_check_expr(item, line)
@@ -1414,7 +1441,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_need(e.who, "character", line)
 		"character_image":
 			_need(e.who, "character", line)
-			if e.image != "default" and not _images.has(e.image):
+			if e.image not in ["default", "none"] and not _images.has(e.image):
 				_warn(line, "Image '%s' was not found in any pack's images folder; a placeholder is shown." % e.image)
 		"choose_feat":
 			if not db.all_of("feat").keys().any(func(f): return db.typed_value("feat", f, "group") == e.group):
@@ -1465,6 +1492,17 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_need(e.item, "item", line)
 			if e.place != "here":
 				_need(e.place, "location", line)
+		"random_loot" when e.path != "":
+			_sets[e.path] = true
+			_check_path(e.path, line)
+			if db.values.get(e.path, {}).get("kind", "") not in ["", "text"]:
+				_err(line, "%s holds an item ID: declare it as text." % e.path)
+		"item_number":
+			_need(e.item, "item", line)
+			if db.has(e.item, "item") and not db.get_def("item", e.item).fields.has("weapon"):
+				_err(line, "%s is not a weapon (it has no weapon: block), so it has no %s to change." % [e.item, e.field])
+			if e.amount.has("value"):
+				_check_expr(e.amount.value, line)
 		"item_strain":
 			_need(e.item, "item", line)
 			if e.form != "nothing":
@@ -1654,7 +1692,7 @@ func _need(id: String, type: String, line: int) -> void:
 func _check_path(path: String, line: int) -> void:
 	if not _reads.has(path):
 		_reads[path] = [_path, line]
-	if db.values.has(path) or path in ["game.turn", "places.known", "picked.creature", "gift.item", "gift.to"]:
+	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to"]:
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:
@@ -1666,6 +1704,10 @@ func _check_path(path: String, line: int) -> void:
 		return  # a fight's own scratch numbers
 	if path == "play.index" or path == "play.count":
 		return  # the repetition of `play X N times` running
+	if parts[0] == "worn" and parts.size() == 2:
+		if parts[1] not in ItemSystem.SLOTS:
+			_err(line, "'%s' is not a slot. Slots: %s." % [parts[1], ", ".join(ItemSystem.SLOTS)])
+		return  # 1 when the player wears something on that slot
 	if parts[0] == "enemy" and parts.size() == 2:
 		if not (Game.ENEMY_STATE.has(parts[1]) or parts[1] in CombatSystem.ENEMY_NUMBERS or parts[1] in ["scale", "libido", "form"]):
 			_err(line, "Unknown enemy value '%s'. Known: %s." % [parts[1], ", ".join(Game.ENEMY_STATE.keys() + CombatSystem.ENEMY_NUMBERS + ["scale", "libido", "form"])])
@@ -1732,6 +1774,8 @@ func _check_set_value(path: String, value: Dictionary, line: int) -> void:
 	var decl: Dictionary = db.values.get(path, {})
 	if decl.get("kind", "") == "states" and value.get("op", "") == "word" and value.v not in decl.states:
 		_err(line, "'%s' is not a state of %s. States: %s." % [value.v, path, ", ".join(decl.states)])
+	if decl.get("kind", "") == "time" and not (value.get("op", "") == "word" and value.v in ["now", "never"]):
+		_warn(line, "%s is a time value: it is set to now, never, 'N turns ago' or 'in N turns'; any other value stamps the turn it is set (now)." % path)
 
 
 func _check_condition_text(text: String, line: int, owner: String) -> void:
@@ -2079,7 +2123,7 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			_check_path(n, line)
 			continue
 		if n.begins_with("worn "):
-			for slot in n.substr(5).split(","):
+			for slot in n.trim_prefix("worn list ").trim_prefix("worn ").split(","):
 				if slot.strip_edges() not in ItemSystem.SLOTS:
 					_err(line, "[%s]: '%s' is not a slot. Slots: %s." % [n, slot.strip_edges(), ", ".join(ItemSystem.SLOTS)])
 			continue
@@ -2091,6 +2135,18 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 			continue
 		var halves := n.split(" of ", true, 1)
 		var what := halves[0]
+		if what.ends_with(" change") and halves.size() == 2 and not db.has(what, "text"):
+			# "[head change of picked.creature]": how a part changes into the form (or the
+			# creature's strain) a value holds, or a named form or creature.
+			var part := what.trim_suffix(" change")
+			var of := halves[1].strip_edges()
+			if part not in BodySystem.PARTS and not BodySystem.ALIASES.has(part):
+				_err(line, "[%s]: '%s' is not a body part. Parts: %s." % [n, part, ", ".join(BodySystem.PARTS)])
+			elif "." in of:
+				_check_path(of, line)
+			elif not db.has(of, "form") and not db.has(of, "creature"):
+				_err(line, "[%s]: '%s' is neither a form nor a creature.%s" % [n, of, _suggest(of, _ids("form"))])
+			continue
 		if what in DESCRIPTORS or db.has(n, "text"):
 			continue
 		if halves.size() == 2 and db.has(what, "text"):

@@ -15,6 +15,8 @@ extends RefCounted
 ##                     (`character:adam#talk`)
 ##   --set PATH=VALUE  set a value before the story plays (can be repeated):
 ##                     a number, yes or no, or words
+##   --debug [N]       debug mode: `game.debug` reads N (1 when no number
+##                     follows) instead of 0, for content's debug lines
 ##
 ## Together they let a pack be tried without touching the player's saves.
 
@@ -26,6 +28,7 @@ var scenario := ""
 var start := ""
 var play := ""
 var values: Dictionary = {}
+var debug := 0
 
 
 static func parse(args: PackedStringArray) -> LaunchOptions:
@@ -37,6 +40,10 @@ static func parse(args: PackedStringArray) -> LaunchOptions:
 			"--only-packs":
 				options.only_packs = true
 				i -= 1
+			"--debug":
+				options.debug = int(value) if value.is_valid_int() else 1
+				if not value.is_valid_int():
+					i -= 1  # a switch without a number
 			"--seed":
 				options.seed = int(value)
 			"--packs":
@@ -93,6 +100,7 @@ func data_path(usual: String) -> String:
 ## Starts the game as asked: the scenario or location, then the values, then
 ## the story. Returns false when neither a scenario nor a location was given.
 func begin(game: Game) -> bool:
+	game.debug = debug
 	if scenario != "":
 		if not game.start_scenario(scenario):
 			return false
