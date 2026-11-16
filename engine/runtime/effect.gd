@@ -63,6 +63,12 @@ static var _rules: Array = [
 	# Companions (CompanionSystem): "~ tame korvin", "~ summon korvin", "~ dismiss korvin",
 	# "~ cancel summon" in a summon text, "~ level up korvin", "~ send children from with_you to bunker".
 	["tame", RegEx.create_from_string("^(tame|untame) (\\w+)$")],
+	# Every character that can follow the player can be summoned from now on.
+	["tame_all", RegEx.create_from_string("^tame all companions$")],
+	# A script played once for each companion in the party, about it (companion.*).
+	["each_companion", RegEx.create_from_string("^for each companion play (\\w[\\w.]*)$")],
+	# The hooks of a moment a pack declares (`== moment grab_bag`), played now.
+	["run_hooks", RegEx.create_from_string("^run hooks for (\\w+)$")],
 	["summon", RegEx.create_from_string("^(summon|dismiss) (\\w+)$")],
 	["cancel_companion", RegEx.create_from_string("^cancel (summon|dismiss)$")],
 	["check_level", RegEx.create_from_string("^check level$")],
@@ -96,6 +102,11 @@ static var _rules: Array = [
 	["fight_result", RegEx.create_from_string("^(lose|win) fight(?: by (lust|injury|submitting|seduction|fighting))?$")],
 	# The player's own moves from a fight's scene (a pepper spray: spray, then attack twice or flee).
 	["player_move", RegEx.create_from_string("^(attack enemy|try to flee)$")],
+	# Collections (CollectionSystem): "~ collect wolf in samples", "~ collect 2 of x.pick in samples",
+	# "~ discard wolf from samples", "~ discard all of wolf from samples", "~ discard everything from samples".
+	["collect", RegEx.create_from_string("^collect (?:(.+?) of )?(\"[^\"]*\"|[a-z0-9_.]+) in (\\w+)$")],
+	["discard_everything", RegEx.create_from_string("^discard everything from (\\w+)$")],
+	["discard", RegEx.create_from_string("^discard (?:(.+?) of )?(\"[^\"]*\"|[a-z0-9_.]+) from (\\w+)$")],
 	# Items lying in a place, and an item's infection, changed during play.
 	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
 	["remove_from", RegEx.create_from_string("^remove (\\w+)(?: (\\d+))? from (\\w+)$")],
@@ -132,7 +143,8 @@ static var _rules: Array = [
 	["infect_part", RegEx.create_from_string("^infect with player (head|torso|body|skin|tail|cock|cunt|face)$")],
 	["infect_picked", RegEx.create_from_string("^infect picked creature( keeping sex)?$")],
 	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|anywhere|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
-	["infect", RegEx.create_from_string("^infect (\\w+)(?: (.+?) times?)?( keeping sex)?$")],
+	# "~ infect collection.entry": the creature or form a value holds.
+	["infect", RegEx.create_from_string("^infect ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
 	["transform_part", RegEx.create_from_string("^transform (head|face|torso|body|back|arms|legs|ass|tail|cock|cunt|skin) into ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)$")],
 	["sex", RegEx.create_from_string("^sex (\\w+) receives (\\w+) from (\\w+)$")],
@@ -332,6 +344,12 @@ static func _match(s: String) -> Dictionary:
 					"max": int(m.get_string(2)) if m.get_string(2) != "" else 40}
 			"companion_level":
 				return {"op": "companion_level", "who": m.get_string(1)}
+			"tame_all":
+				return {"op": "tame_all"}
+			"each_companion":
+				return {"op": "each_companion", "scene": m.get_string(1)}
+			"run_hooks":
+				return {"op": "run_hooks", "moment": m.get_string(1)}
 			"send_children":
 				return {"op": "send_children", "from": m.get_string(1), "to": m.get_string(2)}
 			"condition":
@@ -399,6 +417,18 @@ static func _match(s: String) -> Dictionary:
 						return {"error": "A fight is lost by lust, injury or submitting, and won by seduction or fighting."}
 					result += " by " + how
 				return {"op": "fight_result", "result": result}
+			"collect", "discard":
+				var key_text := m.get_string(2)
+				var key := {"text": key_text.substr(1, key_text.length() - 2)} if key_text.begins_with("\"") else ({"path": key_text} if "." in key_text else {"text": key_text})
+				var how_many := m.get_string(1)
+				var amt := {}
+				if how_many != "" and how_many != "all":
+					amt = amount(how_many)
+					if amt.has("error"):
+						return {"error": amt.error}
+				return {"op": rule[0], "collection": m.get_string(3), "key": key, "amount": amt, "all": how_many == "all"}
+			"discard_everything":
+				return {"op": "discard", "collection": m.get_string(1), "everything": true, "key": {}, "amount": {}}
 			"put":
 				return {"op": "put", "item": m.get_string(1), "count": int(m.get_string(2)) if m.get_string(2) != "" else 1, "place": m.get_string(3)}
 			"remove_from":
@@ -449,6 +479,8 @@ static func _match(s: String) -> Dictionary:
 				var times := amount(m.get_string(2)) if m.get_string(2) != "" else {"value": {"op": "num", "v": 1}}
 				if times.has("error"):
 					return {"error": times.error}
+				if "." in m.get_string(1):
+					return {"op": "infect", "form": "", "form_path": m.get_string(1), "times": times, "keep_sex": m.get_string(3) != ""}
 				return {"op": "infect", "form": m.get_string(1), "times": times, "keep_sex": m.get_string(3) != ""}
 			"transform":
 				return {"op": "transform", "form": m.get_string(1)}

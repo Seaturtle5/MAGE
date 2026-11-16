@@ -70,6 +70,9 @@ func _push(target: String, extra: Dictionary) -> void:
 	if game.content.menus.has(target):
 		frames.append({"kind": "menu", "id": target, "then_leave": false, "fresh": true})
 		return
+	if game.content.has(target, "collection") and game.content.program(target) == null:
+		frames.append({"kind": "collection", "id": target})  # its list (CollectionSystem)
+		return
 	if game.content.has(target, "captivity") and not game.content.has(target, "scene"):
 		frames.append({"kind": "captivity", "id": target, "step": "start"})
 		return
@@ -386,6 +389,10 @@ func run() -> void:
 			if _shop_step(f):
 				return
 			continue
+		if f.kind == "collection":
+			if CollectionSystem.step(self, f):
+				return
+			continue
 		if f.kind == "birth":
 			# A birth (PregnancySystem): `birth`, then each child's script, then `after birth`.
 			var rid := PregnancySystem.rules(game)
@@ -551,7 +558,7 @@ func _goto(target: String) -> void:
 		"end":
 			frames.clear()
 		"back":
-			while not frames.is_empty() and frames[-1].kind != "menu":
+			while not frames.is_empty() and frames[-1].kind not in ["menu", "collection"]:
 				frames.pop_back()
 		_:
 			var extra := {}
@@ -972,6 +979,8 @@ func choose(index: int) -> bool:
 			_push_if(ShopSystem.act(game, f.id, p))
 	elif p.has("captivity"):
 		_captivity_choice(f, p)
+	elif p.has("collection"):
+		CollectionSystem.choose(self, f, p)
 	elif p.has("to"):
 		f.pc = p.to
 	elif p.has("leave"):
@@ -1143,6 +1152,8 @@ func show_location() -> void:
 		view.actions.append({"id": "actions", "label": str(settings.get("title", "Actions"))})
 	for shop in ShopSystem.here(game):
 		view.actions.append({"id": "shop", "arg": shop, "label": ShopSystem.field(game, shop, "name", shop)})
+	for box in StorageSystem.here(game):
+		view.actions.append({"id": "storage", "arg": box, "label": StorageSystem.field(game, box, "name", box)})
 	# The player's own commands (`== command`), wherever they are, while their `when` holds.
 	for cmd in available_commands():
 		view.actions.append({"id": "command", "arg": cmd, "label": db.typed_value("command", cmd, "name", cmd),
@@ -1215,7 +1226,8 @@ func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
 	if action not in ["go", "talk", "sex", "smell", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
-			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
+			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"] \
+			and action not in StorageSystem.ACTIONS:
 		return false
 	game.state.action_pending = true
 	_dispatching_action = true
@@ -1359,6 +1371,12 @@ func _act(action: String, arg: String) -> bool:
 			if ok and status == "idle" and frames.is_empty():
 				show_location()
 			return ok
+		"stash", "stash_all", "retrieve", "retrieve_all", "stash_everything", "retrieve_everything":
+			# A storage here (StorageSystem): "storage:item", or the storage for everything.
+			var stored := StorageSystem.act(game, action, arg)
+			if stored and status == "idle" and frames.is_empty():
+				show_location()
+			return stored
 		"summon", "dismiss":
 			# A tamed companion joins the party, or one following is sent away.
 			if not db.has(arg, "character") or not CompanionSystem.is_companion(game, arg):
