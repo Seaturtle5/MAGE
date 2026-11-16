@@ -624,6 +624,19 @@ func _check_status_bar() -> void:
 			_check_path("player." + d.fields.currency.value, d.fields.currency.line)
 		for k in db._list(d, "sheet"):
 			_check_path("player." + str(k), d.fields.sheet.line)
+		if d.fields.has("details"):
+			# `Label: text` rows for the character sheet; `Heading:` alone starts a group.
+			var lines: Array = d.fields.details.children.filter(func(l: FscParser.Line) -> bool: return not l.is_blank())
+			for i in lines.size():
+				var l: FscParser.Line = lines[i]
+				var pair := l.text.split(":", true, 1)
+				if pair.size() != 2 or pair[0].strip_edges() == "":
+					_err(l.number, "A detail is written 'Label: text', or 'Heading:' with its details indented under it.")
+				elif pair[1].strip_edges() == "":
+					if i + 1 >= lines.size() or (lines[i + 1] as FscParser.Line).indent <= l.indent:
+						_warn(l.number, "Detail '%s' has no text and no details indented under it." % pair[0].strip_edges())
+				else:
+					_check_text_field(pair[1].strip_edges(), l.number, "status_bar:" + id)
 
 
 ## Character creation (CreationSystem): its questions are menus, its free feats exist.

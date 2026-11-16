@@ -38,7 +38,8 @@ use:
     ~ heal 10
 
 // Clothing: `equipment:` makes an item wearable. `slot` is where it goes (one
-// item per slot); `armor` protects; `worn text` joins the player's description.
+// item per slot); `armor` protects where `placement` says (head, body or shield);
+// `worn text` joins the player's description.
 == item wool_coat
 name: wool coat
 description: A heavy coat that smells faintly of woodsmoke.
@@ -46,6 +47,7 @@ weight: 3
 category: clothing
 equipment:
     slot: chest
+    placement: body
     armor: 2
     worn text: You wear a heavy wool coat.
 
@@ -57,6 +59,7 @@ category: clothing
 equipment:
     slot: feet
     plural: yes
+    placement: body
     armor: 1
     worn text: Sturdy hiking boots keep your feet dry.
 

@@ -280,6 +280,8 @@
 // == status_bar my_bar
 // meters: hp, hunger, thirst
 // currency: coins
+// details:                            (rows on the character sheet; a row whose text is empty is hidden)
+//     Size: [if player.scale > 3]tall[else if player.scale < 3]small[else]ordinary[end if]
 //
 // ---------------------------------------------------------------- adding to another place
 // == extend location other_place

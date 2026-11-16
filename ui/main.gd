@@ -43,6 +43,7 @@ const INVENTORY_TABS := [["all", "All"], ["equipment", "Wearables"], ["armaments
 	["consumables", "Consumables"], ["other", "Other"]]
 const BAG_COLUMNS := 6
 const BAG_TILE := 92
+const SHEET_TAG := 82  ## width of the small labels in the character sheet's right column
 const EXIT_ORDER := ["north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest",
 	"up", "down", "inside", "outside"]
 const ACTION_INFO := {
@@ -119,6 +120,7 @@ var new_game: NewGameScreen  ## the new-game screen while it is open
 var overlay_scroll: ScrollContainer
 var overlay_footer: HBoxContainer  ## buttons below an overlay's scrolling content
 var inv_selected := ""  ## the item shown in the inventory's detail pane
+var sheet_scroll: ScrollContainer  ## the character sheet's right column, for screenshots
 var inv_filter := "all"  ## the inventory tab
 var inv_bag_scroll: ScrollContainer
 
@@ -1482,13 +1484,13 @@ func _close_overlay() -> void:
 ## slots in the middle, and the selected item with its actions on the right.
 func _open_inventory() -> void:
 	var view := get_viewport_rect().size
-	var box := _open_overlay("Inventory", true, Vector2(minf(1240, view.x - 60), minf(720, view.y - 60)))
+	var box := _open_overlay("Inventory", true, Vector2(minf(1240, view.x - 60), minf(780, view.y - 60)))
 	var items := game.inventory_list()
 	if items.filter(func(it): return it.id == inv_selected).is_empty():
 		inv_selected = str(items[0].id) if not items.is_empty() else ""
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 26)
-	body.custom_minimum_size = Vector2(0, 540)
+	body.custom_minimum_size = Vector2(0, minf(600, view.y - 300))
 	box.add_child(body)
 	body.add_child(_equipment_column(items))
 	body.add_child(FsTheme.rule_v())
@@ -1684,7 +1686,7 @@ func _bag_tile(grid: GridContainer, it: Dictionary) -> void:
 func _item_details(items: Array) -> Control:
 	var col := VBoxContainer.new()
 	col.custom_minimum_size = Vector2(330, 0)
-	col.add_theme_constant_override("separation", 10)
+	col.add_theme_constant_override("separation", 8)
 	var found: Array = items.filter(func(x): return x.id == inv_selected)
 	if found.is_empty():
 		col.add_child(FsTheme.label("Select an item to see what it is and what you can do with it.", 15, FsTheme.TEXT_FAINT))
@@ -1693,9 +1695,9 @@ func _item_details(items: Array) -> Control:
 	var frame := PanelContainer.new()
 	var mat := FsTheme.box(FsTheme.BG, 3, FsTheme.BORDER, 10)
 	frame.add_theme_stylebox_override("panel", mat)
-	frame.custom_minimum_size = Vector2(0, 150)
+	frame.custom_minimum_size = Vector2(0, 104)
 	var center := CenterContainer.new()
-	center.add_child(_item_icon(str(it.id), 112))
+	center.add_child(_item_icon(str(it.id), 84))
 	frame.add_child(center)
 	col.add_child(frame)
 	var item_links := HBoxContainer.new()
@@ -1708,20 +1710,24 @@ func _item_details(items: Array) -> Control:
 	var tags: PackedStringArray = [{"equipment": "Wearable", "armaments": "Weapon", "consumables": "Consumable"}.get(it.section, str(it.category).capitalize())]
 	if it.slot not in ["", "none"]:
 		tags.append(str(it.slot))
-	var pounds: int = it.weight
-	tags.append(("%d lb%s" % [pounds, "" if pounds == 1 else "s"]) if pounds > 0 else "weightless")
 	if int(it.count) > 1:
 		tags.append("×%d carried" % it.count)
 	col.add_child(FsTheme.heading("  ·  ".join(tags), 12, FsTheme.ACCENT))
 	if it.worn or it.wielded:
 		col.add_child(FsTheme.label("Cursed: it won't come off." if it.cursed and it.worn else ("You are wearing this." if it.worn else "You have this in hand."),
 			14, FsTheme.BAD if it.cursed and it.worn else FsTheme.GOOD))
+	# Its numbers first, then its description; both scroll when long.
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var inner := VBoxContainer.new()
+	inner.size_flags_horizontal = SIZE_EXPAND_FILL
+	inner.add_theme_constant_override("separation", 10)
+	inner.add_child(_item_stats(str(it.id)))
 	var text := FsTheme.label(str(it.description), 15, FsTheme.TEXT_DIM)
 	text.size_flags_horizontal = SIZE_EXPAND_FILL
-	scroll.add_child(text)
+	inner.add_child(text)
+	scroll.add_child(inner)
 	col.add_child(scroll)
 	var id: String = it.id
 	var idle: bool = game.runner.status == "idle"
@@ -1773,6 +1779,34 @@ func _item_details(items: Array) -> Control:
 		row.add_child(b)
 	col.add_child(row)
 	return col
+
+
+## An item's numbers (ItemSystem.stats): a label, its value, and below it the
+## difference to the gear in use, green when better and red when worse.
+func _item_stats(id: String) -> Control:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 2)
+	for row: Dictionary in ItemSystem.stats(game, id):
+		var tag := FsTheme.heading(str(row.label), 11, FsTheme.TEXT_FAINT)
+		tag.custom_minimum_size = Vector2(96, 0)
+		tag.size_flags_vertical = SIZE_SHRINK_BEGIN
+		grid.add_child(tag)
+		var cell := VBoxContainer.new()
+		cell.add_theme_constant_override("separation", 0)
+		cell.size_flags_horizontal = SIZE_EXPAND_FILL
+		var better := int(row.better)
+		var tone := FsTheme.TEXT if better == 0 or str(row.compare) != "" else (FsTheme.GOOD if better > 0 else FsTheme.BAD)
+		var v := FsTheme.label(str(row.value), 14, tone)
+		v.size_flags_horizontal = SIZE_EXPAND_FILL
+		cell.add_child(v)
+		if str(row.compare) != "":
+			var c := FsTheme.label(str(row.compare), 13, FsTheme.GOOD if better > 0 else FsTheme.BAD)
+			c.size_flags_horizontal = SIZE_EXPAND_FILL
+			cell.add_child(c)
+		grid.add_child(cell)
+	return grid
 
 
 ## Runs an inventory action and keeps the inventory open unless a scene started.
@@ -1908,7 +1942,7 @@ func _open_travel() -> void:
 ## player looks in words in the middle, body parts and gear on the right.
 func _open_character() -> void:
 	var view := get_viewport_rect().size
-	var box := _open_overlay(str(game.value("player.name")), true, Vector2(minf(1240, view.x - 60), minf(660, view.y - 60)))
+	var box := _open_overlay(str(game.value("player.name")), true, Vector2(minf(1240, view.x - 60), minf(780, view.y - 60)))
 	var s := game.status_snapshot()
 	var st: Dictionary = s.stats
 	var changed := BodySystem.view(game).any(func(p): return p.form_id != "human")
@@ -1917,9 +1951,15 @@ func _open_character() -> void:
 	box.add_child(FsTheme.heading("Level %d  ·  %s  ·  %s" % [int(st.level), species, mind], 13, FsTheme.ACCENT))
 	var body := HBoxContainer.new()
 	body.add_theme_constant_override("separation", 26)
-	body.custom_minimum_size = Vector2(0, 520)
+	body.custom_minimum_size = Vector2(0, minf(620, view.y - 280))
 	box.add_child(body)
-	body.add_child(_sheet_stats(s))
+	var left := ScrollContainer.new()
+	left.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.custom_minimum_size = Vector2(300, 0)
+	var stats := _sheet_stats(s)
+	stats.size_flags_horizontal = SIZE_EXPAND_FILL
+	left.add_child(stats)
+	body.add_child(left)
 	body.add_child(FsTheme.rule_v())
 	body.add_child(_sheet_appearance())
 	body.add_child(FsTheme.rule_v())
@@ -1936,22 +1976,35 @@ func _sheet_stats(s: Dictionary) -> Control:
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
+	var applied: Dictionary = game.applied_bonuses().attributes
 	for k: String in ["strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]:
 		var v := int(st[k])
+		var a: Dictionary = applied[k]
+		var raised := v - int(a.base)  # what active conditions add now (Well Rested, a drink ...)
 		var block := PanelContainer.new()
-		block.add_theme_stylebox_override("panel", FsTheme.box(FsTheme.SURFACE_2, FsTheme.RADIUS, Color.TRANSPARENT, 10))
+		block.add_theme_stylebox_override("panel", FsTheme.box(FsTheme.SURFACE_2, FsTheme.RADIUS,
+			Color.TRANSPARENT if raised == 0 else FsTheme.recede(FsTheme.GOOD if raised > 0 else FsTheme.BAD, 0.5), 10))
 		block.size_flags_horizontal = SIZE_EXPAND_FILL
-		block.tooltip_text = "%s %d (modifier %+d)" % [k.capitalize(), v, (v - 10) / 2]
+		var tip := "%s %d (modifier %+d)" % [k.capitalize(), v, (v - 10) / 2]
+		for src: Dictionary in a.sources:
+			tip += "\n%s from %s" % [src.delta, src.name]
+		if raised != 0:
+			tip += "\nWithout them: %d" % int(a.base)
+		block.tooltip_text = tip
 		var inner := VBoxContainer.new()
 		inner.add_theme_constant_override("separation", 0)
 		inner.alignment = BoxContainer.ALIGNMENT_CENTER
 		var abbr := FsTheme.heading(k.substr(0, 3), 12, FsTheme.TEXT_FAINT)
 		abbr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(abbr)
-		var num := FsTheme.title(str(v), 28)
+		var num := FsTheme.title(str(v), 28, FsTheme.TEXT if raised == 0 else (FsTheme.GOOD if raised > 0 else FsTheme.BAD))
 		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(num)
-		var mod := FsTheme.heading("%+d" % ((v - 10) / 2), 12, FsTheme.ACCENT if v > 12 else FsTheme.TEXT_FAINT)
+		var note := "%+d" % ((v - 10) / 2)
+		if raised != 0:
+			note += "  ·  %s%d" % ["▲" if raised > 0 else "▼", absi(raised)]
+		var mod := FsTheme.heading(note, 12, FsTheme.ACCENT if v > 12 and raised == 0 else
+			(FsTheme.TEXT_FAINT if raised == 0 else (FsTheme.GOOD if raised > 0 else FsTheme.BAD)))
 		mod.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		inner.add_child(mod)
 		block.add_child(inner)
@@ -1988,9 +2041,15 @@ func _sheet_stats(s: Dictionary) -> Control:
 		col.add_child(FsTheme.section("Conditions"))
 		var conds := HFlowContainer.new()
 		conds.add_theme_constant_override("h_separation", 6)
+		conds.add_theme_constant_override("v_separation", 6)
 		for id: String in s.conditions:
-			conds.add_child(_chip(game.content.typed_value("condition", id, "name", id),
-				game.content.typed_value("condition", id, "description"), FsTheme.INFO))
+			var tip: String = game.content.typed_value("condition", id, "description")
+			if tip == "":
+				tip = game.content.typed_value("condition", id, "shows")
+			var turns := int(game.state.conditions[id].get("remaining", 0))
+			if turns > 0 and turns < 1 << 29:
+				tip += ("\n" if tip != "" else "") + "%d turn%s left" % [turns, "" if turns == 1 else "s"]
+			conds.add_child(_chip(game.content.typed_value("condition", id, "name", id), tip, FsTheme.INFO))
 		col.add_child(conds)
 	return col
 
@@ -2094,65 +2153,104 @@ func _ally_row(id: String) -> Control:
 	return row
 
 
+## The right column of the sheet: the game's details about the body (its
+## status bar's `details:`), the strain of each part, the gear in use and what
+## adds to the player's numbers, the game's other detail groups and the allies.
+## It scrolls when long.
 func _sheet_body() -> Control:
+	var outer := VBoxContainer.new()
+	outer.custom_minimum_size = Vector2(330, 0)
+	outer.add_theme_constant_override("separation", 8)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	outer.add_child(scroll)
 	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(300, 0)
+	col.size_flags_horizontal = SIZE_EXPAND_FILL
 	col.add_theme_constant_override("separation", 3)
+	scroll.add_child(col)
+	var details := game.sheet_details()
+	sheet_scroll = scroll
 	col.add_child(FsTheme.section("Body"))
 	col.add_child(_gap(4))
+	for group: Dictionary in details:
+		if str(group.heading) == "":
+			for row: Dictionary in group.rows:
+				col.add_child(_sheet_row(str(row.label), str(row.text)))
+	if details.any(func(g: Dictionary) -> bool: return str(g.heading) == ""):
+		col.add_child(_gap(8))
+	col.add_child(FsTheme.heading("Strains", 11, FsTheme.TEXT_FAINT))
+	# The strain of each part, one row per strain: "Human  head, torso, arms ...".
+	var forms := {}  # form id -> {name, parts, tips}
 	for part: Dictionary in BodySystem.view(game):
 		if part.id in ["cock", "cunt"] and not game.adjective("player", "male" if part.id == "cock" else "female"):
 			continue
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		row.tooltip_text = str(part.description).capitalize() if str(part.description) != "" else ""
+		if not forms.has(part.form_id):
+			forms[part.form_id] = {"name": str(part.form), "parts": [], "tips": []}
+		forms[part.form_id].parts.append(str(part.id))
+		if str(part.description) != "":
+			forms[part.form_id].tips.append("%s: %s" % [str(part.part), str(part.description)])
+	for form: String in forms:
+		var row := _sheet_row(str(forms[form].name), ", ".join(forms[form].parts), "", FsTheme.ACCENT if form != "human" else FsTheme.TEXT_DIM)
+		_pass_clicks(row)
+		row.tooltip_text = "\n".join(forms[form].tips)
 		row.mouse_filter = MOUSE_FILTER_STOP
-		var tag := FsTheme.heading(part.part, 12, FsTheme.TEXT_FAINT)
-		tag.custom_minimum_size = Vector2(62, 0)
-		tag.mouse_filter = MOUSE_FILTER_IGNORE
-		row.add_child(tag)
-		var changed: bool = part.form_id != "human"
-		var form := _plain_label(part.form, 15, FsTheme.ACCENT if changed else FsTheme.TEXT_DIM)
-		form.mouse_filter = MOUSE_FILTER_IGNORE
-		row.add_child(form)
-		var pad := _padded(12, 4)
-		pad.add_child(row)
-		col.add_child(pad)
+		col.add_child(row)
 	col.add_child(_gap(10))
 	col.add_child(FsTheme.section("Gear"))
 	var gear := game.gear_summary()
-	col.add_child(_gear_line("Weapon", str(gear.weapon) if gear.weapon != "" else "Unarmed"))
 	var worn: Array = gear.worn.map(func(w): return str(w.name).capitalize())
-	col.add_child(_gear_line("Wearing", ", ".join(worn) if not worn.is_empty() else "Nothing special"))
-	col.add_child(_gear_line("Load", "%d / %d lbs%s" % [gear.weight, gear.capacity, "  ·  overburdened" if gear.overburdened else ""]))
+	col.add_child(_sheet_row("Wearing", ", ".join(worn) if not worn.is_empty() else "Nothing special"))
+	col.add_child(_sheet_row("Load", "%d / %d lbs%s" % [gear.weight, gear.capacity, "  ·  overburdened" if gear.overburdened else ""]))
+	# What adds to the player's numbers now, and where each part comes from.
+	for row: Dictionary in game.applied_bonuses().rows:
+		var from: PackedStringArray = []
+		for src: Dictionary in row.sources:
+			from.append(("%s %s" % [src.name, src.delta]).strip_edges())
+		col.add_child(_sheet_row(str(row.label), str(row.value), "  ·  ".join(from)))
+	for group: Dictionary in details:
+		if str(group.heading) == "":
+			continue
+		col.add_child(_gap(10))
+		col.add_child(FsTheme.section(str(group.heading)))
+		for row: Dictionary in group.rows:
+			col.add_child(_sheet_row(str(row.label), str(row.text)))
 	var allies := CompanionSystem.tamed(game)
 	if not allies.is_empty():
 		col.add_child(_gap(10))
 		col.add_child(FsTheme.section("Allies  ·  %d of %d with you" % [game.state.companions.size(), CompanionSystem.limit(game)]))
 		for ally: String in allies:
 			col.add_child(_ally_row(ally))
-	var fill := Control.new()
-	fill.size_flags_vertical = SIZE_EXPAND_FILL
-	col.add_child(fill)
 	var inv := Button.new()
 	inv.text = "Open inventory"
 	_button_icon(inv, "inventory")
 	inv.pressed.connect(_open_inventory)
-	col.add_child(inv)
-	return col
+	outer.add_child(inv)
+	return outer
 
 
-func _gear_line(name: String, value: String) -> Control:
+## A row of the sheet's right column: a small label, the value, and an optional
+## faint note under it (where a bonus comes from).
+func _sheet_row(name: String, value: String, note: String = "", color: Color = FsTheme.TEXT) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var tag := FsTheme.heading(name, 12, FsTheme.TEXT_FAINT)
-	tag.custom_minimum_size = Vector2(62, 0)
+	tag.custom_minimum_size = Vector2(SHEET_TAG, 0)
 	tag.size_flags_vertical = SIZE_SHRINK_BEGIN
+	tag.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	row.add_child(tag)
-	var v := FsTheme.label(value, 15, FsTheme.TEXT)
+	var cell := VBoxContainer.new()
+	cell.add_theme_constant_override("separation", 0)
+	cell.size_flags_horizontal = SIZE_EXPAND_FILL
+	var v := FsTheme.label(value, 15, color)
 	v.size_flags_horizontal = SIZE_EXPAND_FILL
-	row.add_child(v)
-	var pad := _padded(12, 4)
+	cell.add_child(v)
+	if note != "":
+		var n := FsTheme.label(note, 13, FsTheme.TEXT_FAINT)
+		n.size_flags_horizontal = SIZE_EXPAND_FILL
+		cell.add_child(n)
+	row.add_child(cell)
+	var pad := _padded(12, 3)
 	pad.add_child(row)
 	return pad
 
@@ -3012,7 +3110,11 @@ func _take_screenshot() -> void:
 				_set_theme(arg == "light")
 			"scroll":
 				# "scroll end" shows the bottom of the open overlay.
-				if arg == "actions" and sidebar_scroll != null:
+				if arg == "sheet" and is_instance_valid(sheet_scroll):
+					for _i in 3:
+						await get_tree().process_frame
+					sheet_scroll.scroll_vertical = int(sheet_scroll.get_v_scroll_bar().max_value)
+				elif arg == "actions" and sidebar_scroll != null:
 					for _i in 3:
 						await get_tree().process_frame
 					sidebar_scroll.scroll_vertical = int(sidebar_scroll.get_v_scroll_bar().max_value)
@@ -3020,6 +3122,15 @@ func _take_screenshot() -> void:
 					for _i in 3:
 						await get_tree().process_frame
 					overlay_scroll.scroll_vertical = int(overlay_scroll.get_v_scroll_bar().max_value)
+			"effect":
+				# "effect give pocketknife", "effect player.cocks = 1": one effect line, as in content.
+				var e := Effect.compile(arg)
+				if not e.has("error"):
+					game.apply(e)
+					_drain()
+			"select":
+				# "select pocketknife": the item the inventory shows (open it after).
+				inv_selected = arg
 			"reveal":
 				# "reveal": every place counts as known (to see whole maps).
 				for id: String in game.content.all_of("location"):

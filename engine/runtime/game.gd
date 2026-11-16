@@ -1909,6 +1909,159 @@ func gear_summary() -> Dictionary:
 		"wielded": state.wielded, "weapon": content.typed_value("item", state.wielded, "name", "") if state.wielded != "" else ""}
 
 
+## Feat fields that add to a player number (`feat_bonus`), as the sheet names them.
+const FEAT_BONUSES := ["carry bonus", "exploration bonus", "encounter bonus", "scavenge bonus", "loot bonus"]
+
+
+## What changes the player's numbers now and where it comes from, for the
+## character sheet. "attributes": for each of the six attributes {value, base
+## (without the changes of active conditions), sources}; "rows": the gear in
+## use, other values active conditions change, and feat bonuses, each
+## {label, value, sources}. A source is {name, delta} (delta is "" for
+## sources that add no number, such as a style).
+func applied_bonuses() -> Dictionary:
+	var attributes := {}
+	for k: String in ATTRIBUTES:
+		attributes[k] = {"value": int(value("player." + k)), "base": int(value("player." + k)), "sources": []}
+	var changed := {}  # other values: path -> [sources]
+	var order: Array = []
+	for id: String in state.conditions:
+		var name := content.typed_value("condition", id, "name", id)
+		for u: Dictionary in state.conditions[id].get("undo", []):
+			if not u.has("delta") or int(u.delta) == 0:
+				continue
+			var path := str(u.path)
+			var key := path.trim_prefix("player.")
+			if path.begins_with("player.") and attributes.has(key):
+				attributes[key].base = int(attributes[key].base) - int(u.delta)
+				attributes[key].sources.append({"name": name, "delta": "%+d" % int(u.delta)})
+				continue
+			if not changed.has(path):
+				changed[path] = []
+				order.append(path)
+			changed[path].append({"name": name, "delta": "%+d" % int(u.delta)})
+	var rows: Array = []
+	# The weapon in hand, and what adds to hitting and damage.
+	var w := ItemSystem.weapon(self)
+	var wid := str(w.id)
+	rows.append({"label": "Weapon", "value": "%s: damage %d, %s" % [content.typed_value("item", wid, "name", wid) if wid != "" else "unarmed",
+		int(w.damage), str(w.type)], "sources": []})
+	var hit: Array = []
+	if int(w.hit) != 0:
+		hit.append({"name": content.typed_value("item", wid, "name", wid), "delta": "%+d" % int(w.hit)})
+	if int(w.penalty) != 0:
+		hit.append({"name": "weapon size", "delta": "%+d" % -int(w.penalty)})
+	if not hit.is_empty():
+		rows.append({"label": "Hit bonus", "value": "%+d" % (int(w.hit) - int(w.penalty)), "sources": hit})
+	var stat_name := "perception" if w.type == "ranged" else "strength"
+	var damage: Array = [{"name": stat_name, "delta": "%+d" % ((int(value("player." + stat_name)) - 10) / 2)}]
+	damage.append_array(_gear_sources("damage bonus"))
+	rows.append({"label": "Damage bonus", "value": "%+d" % _sum(damage), "sources": damage})
+	for place: String in ["head", "body", "shield"]:
+		var armor: Array = []
+		for id: String in state.equipped:
+			var ac := int(ItemSystem.gear(self, id, "armor", "0"))
+			if ac != 0 and ItemSystem.gear(self, id, "placement", "end") == place:
+				armor.append({"name": content.typed_value("item", id, "name", id), "delta": str(ac)})
+		if not armor.is_empty():
+			rows.append({"label": "Shield" if place == "shield" else "Armor, " + place, "value": str(_sum(armor)), "sources": armor})
+	for key: String in ["dodge bonus", "flee bonus"]:
+		var from := _gear_sources(key)
+		if not from.is_empty():
+			rows.append({"label": key.left(1).to_upper() + key.substr(1), "value": "%+d" % _sum(from), "sources": from})
+	for key: String in FEAT_BONUSES:
+		var from: Array = []
+		for id: String in state.feats:
+			var n := int(content.typed_value("feat", id, key, "0"))
+			if n != 0:
+				from.append({"name": content.typed_value("feat", id, "name", id), "delta": "%+d" % n})
+		for id: String in settings.mode:
+			if content.has(id, "game_mode") and int(content.typed_value("game_mode", id, key, "0")) != 0:
+				from.append({"name": content.typed_value("game_mode", id, "name", id), "delta": "%+d" % int(content.typed_value("game_mode", id, key, "0"))})
+		if key == "carry bonus":
+			from.append_array(_gear_sources(key))
+		if not from.is_empty():
+			rows.append({"label": key.left(1).to_upper() + key.substr(1), "value": "%+d" % _sum(from), "sources": from})
+	var look := _gear_sources("gender look")
+	if not look.is_empty():
+		rows.append({"label": "Gender look", "value": "%+d" % _sum(look), "sources": look})
+	var looks := ItemSystem.looks(self)
+	var styles: PackedStringArray = []
+	for s: String in looks:
+		if s != "gender_look" and int(looks[s]) > 0:
+			styles.append("%s %d" % [s, int(looks[s])])
+	if not styles.is_empty():
+		var from: Array = []
+		for id: String in state.equipped:
+			var st := ItemSystem.gear(self, id, "style")
+			if st != "":
+				from.append({"name": "%s (%s)" % [content.typed_value("item", id, "name", id), st.replace(",", ", ").replace("  ", " ")], "delta": ""})
+		rows.append({"label": "Style", "value": ", ".join(styles), "sources": from})
+	for path: String in order:
+		var meter := MeterSystem.owner_of(self, path)
+		var label: String = content.typed_value("meter", meter, "name", "") if meter != "" else ""
+		if label == "":
+			label = path.trim_prefix("player.").replace("_", " ").replace(".", " ").capitalize()
+		rows.append({"label": label, "value": "%+d" % _sum(changed[path]), "sources": changed[path]})
+	return {"attributes": attributes, "rows": rows}
+
+
+## Worn gear with a number in an equipment field: [{name, delta}].
+func _gear_sources(key: String) -> Array:
+	var out: Array = []
+	for id: String in state.equipped:
+		var n := int(ItemSystem.gear(self, id, key, "0"))
+		if n != 0:
+			out.append({"name": content.typed_value("item", id, "name", id), "delta": "%+d" % n})
+	return out
+
+
+static func _sum(sources: Array) -> int:
+	var total := 0
+	for s: Dictionary in sources:
+		total += int(s.delta) if str(s.delta).is_valid_int() else 0
+	return total
+
+
+## The game's own details about the player for the character sheet: the
+## `details:` of its `== status_bar`, each `Label: text` line rendered; a line
+## `Heading:` with lines indented under it starts a group. Returns
+## [{heading, rows: [{label, text}]}], leaving out rows whose text is empty and
+## groups without rows. Showing them changes nothing (no dice, no variations).
+func sheet_details() -> Array:
+	var out: Array = []
+	var defs: Dictionary = content.all_of("status_bar")
+	if defs.is_empty():
+		return out
+	var d := content.get_def("status_bar", defs.keys()[0])
+	if d == null or not d.fields.has("details"):
+		return out
+	var saved_rng := rng.get_state()
+	var saved_variations := state.variations.duplicate(true)
+	var lines: Array = d.fields["details"].children.filter(func(l: FscParser.Line) -> bool: return not l.is_blank())
+	var base := 1 << 30
+	for l: FscParser.Line in lines:
+		base = mini(base, l.indent)
+	var group := {}
+	for l: FscParser.Line in lines:
+		var pair := l.text.split(":", true, 1)
+		var label := pair[0].strip_edges()
+		var text := pair[1].strip_edges() if pair.size() == 2 else ""
+		if l.indent == base and text == "":
+			group = {"heading": label, "rows": []}
+			out.append(group)
+			continue
+		if group.is_empty() or (l.indent == base and str(group.heading) != ""):
+			group = {"heading": "", "rows": []}
+			out.append(group)
+		var shown := TextTemplate.plain(render(TextTemplate.compile(text))).strip_edges()
+		if shown != "":
+			group.rows.append({"label": label, "text": shown})
+	rng.set_state(saved_rng)
+	state.variations = saved_variations
+	return out.filter(func(g: Dictionary) -> bool: return not g.rows.is_empty())
+
+
 ## Items lying at the player's location: [{id, name, count}].
 func ground_list() -> Array:
 	var out: Array = []

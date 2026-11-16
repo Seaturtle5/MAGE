@@ -73,6 +73,146 @@ static func item_name(game, id: String) -> String:
 	return game.content.typed_value("item", id, "name", id)
 
 
+# --- Stats for the interface --------------------------------------------------
+
+## The numbers and yes/no fields of an item, for the inventory: a row
+## {label, value, compare, better} for each field the item has. Where gear of
+## the same slot (or the wielded weapon) is in use and this item is not it,
+## `compare` says the difference ("+3 compared with your pocketknife") and
+## `better` is 1 when it is an improvement, -1 when worse, else 0.
+static func stats(game, id: String) -> Array:
+	var rows: Array = []
+	var d: FscParser.Definition = game.content.get_def("item", id)
+	if d == null:
+		return rows
+	if is_weapon(game, id):
+		var w := sub(game, id, "weapon")
+		var held: String = game.state.wielded if game.state.wielded != id and count(game, game.state.wielded) > 0 else ""
+		var base := int(w.get("damage", "4"))
+		var damage := int(arm(game, id, "damage", "4"))
+		var row := _stat("Damage", str(damage) if damage == base else "%d (base %d)" % [damage, base])
+		if held != "":
+			_compare(game, row, damage - int(arm(game, held, "damage", "4")), held)
+		rows.append(row)
+		var type := arm(game, id, "type", "melee")
+		rows.append(_stat("Type", "%s, %s adds damage" % [type, "perception" if type == "ranged" else "strength"]))
+		rows.append(_weapon_fit(game, id))
+		if w.has("hit bonus") or game.state.values.has("item.%s.hit bonus" % id) or (held != "" and int(arm(game, held, "hit bonus", "0")) != 0):
+			var hit := int(arm(game, id, "hit bonus", "0"))
+			row = _stat("Hit bonus", "%+d" % hit)
+			if held != "":
+				_compare(game, row, hit - int(arm(game, held, "hit bonus", "0")), held)
+			rows.append(row)
+	if is_wearable(game, id):
+		var g := sub(game, id, "equipment")
+		var slot := str(g.get("slot", "none"))
+		# What is worn on the same slot now (gear without a slot is never in the way).
+		var other := ""
+		if slot != "none" and id not in game.state.equipped:
+			for e: String in game.state.equipped:
+				if gear(game, e, "slot", "none") == slot:
+					other = e
+					break
+		rows.append(_stat("Slot", slot if slot != "none" else "no slot"))
+		var armor := int(g.get("armor", "0"))
+		if g.has("armor") or (other != "" and int(gear(game, other, "armor", "0")) != 0):
+			var row := _stat("Armor", str(armor))
+			if other != "":
+				_compare(game, row, armor - int(gear(game, other, "armor", "0")), other)
+			rows.append(row)
+		if g.has("effectiveness"):
+			var row := _stat("Effectiveness", "%d%%" % int(g.effectiveness))
+			if other != "" and int(gear(game, other, "armor", "0")) > 0:
+				_compare(game, row, int(g.effectiveness) - int(gear(game, other, "effectiveness", "0")), other, "%")
+			rows.append(row)
+		if armor > 0:
+			var place := str(g.get("placement", "end"))
+			var where := _stat("Protects", {"head": "the head", "body": "the body", "shield": "as a shield"}.get(place,
+				"nothing: armor counts with placement head, body or shield"))
+			where.better = 0 if place in ["head", "body", "shield"] else -1
+			rows.append(where)
+		rows.append(_gear_fit(game, id, slot))
+		for key: String in ["dodge bonus", "damage bonus", "flee bonus", "carry bonus"]:
+			if g.has(key) or (other != "" and int(gear(game, other, key, "0")) != 0):
+				var row := _stat(key.left(1).to_upper() + key.substr(1), "%+d" % int(g.get(key, "0")))
+				if other != "":
+					_compare(game, row, int(g.get(key, "0")) - int(gear(game, other, key, "0")), other)
+				rows.append(row)
+		if g.has("gender look"):
+			var look := int(g["gender look"])
+			rows.append(_stat("Gender look", "%+d (%s)" % [look, "feminine" if look < 0 else "masculine" if look > 0 else "neutral"]))
+		if str(g.get("style", "")) != "":
+			rows.append(_stat("Style", ", ".join(Array(str(g["style"]).split(",")).map(func(s: String) -> String: return s.strip_edges()))))
+		if g.has("taur compatible"):
+			rows.append(_stat("Taur compatible", str(g["taur compatible"])))
+		if str(g.get("cursed", "no")) == "yes":
+			var row := _stat("Cursed", "yes, it won't come off")
+			row.better = -1
+			rows.append(row)
+	var pounds := int(game.content.typed_value("item", id, "weight", "0"))
+	rows.append(_stat("Weight", ("%d lb%s" % [pounds, "" if pounds == 1 else "s"]) if pounds > 0 else "weightless"))
+	if game.content.typed_value("item", id, "in combat", "no") == "yes":
+		rows.append(_stat("In combat", "can be used in a fight"))
+	if d.fields.has("use") or d.fields.has("use action"):
+		if game.content.typed_value("item", id, "consumed", "yes") == "no":
+			rows.append(_stat("Used up", "no"))
+	if game.content.typed_value("item", id, "rest") != "":
+		rows.append(_stat("Bedding", game.content.typed_value("item", id, "rest")))
+	if game.content.typed_value("item", id, "keep", "no") == "yes":
+		rows.append(_stat("Kept", "can't be junked or dropped with the rest"))
+	return rows
+
+
+static func _stat(label: String, value: String) -> Dictionary:
+	return {"label": label, "value": value, "compare": "", "better": 0}
+
+
+## Fills in a stat row's difference against the item in use (bigger is better).
+static func _compare(game, row: Dictionary, diff: int, against: String, unit: String = "") -> void:
+	if diff != 0:
+		row.compare = "%+d%s compared with your %s" % [diff, unit, item_name(game, against)]
+	row.better = 1 if diff > 0 else -1
+
+
+## How a weapon suits the player's size (Basic Functions.i7x:1099-1130):
+## one category off costs 2 to hit, two cost 5, three or more can't be wielded.
+static func _weapon_fit(game, id: String) -> Dictionary:
+	var diff := scale(game) - int(arm(game, id, "size", "3"))
+	var way := "small" if diff > 0 else "big"
+	var row := _stat("Size", "right for you")
+	match absi(diff):
+		0:
+			pass
+		1:
+			row.value = "a little %s for you: -2 to hit" % way
+			row.better = -1
+		2:
+			row.value = "too %s for you: -5 to hit" % way
+			row.better = -1
+		_:
+			row.value = "too %s for you to wield" % way
+			row.better = -1
+	return row
+
+
+## Whether worn gear fits the player (the checks of `wear`).
+static func _gear_fit(game, id: String, slot: String) -> Dictionary:
+	var row := _stat("Size", "fits any size")
+	var tags := _body_tags(game)
+	if slot in ["feet", "legs", "waist"] and ("taur" in tags or "no_legs" in tags):
+		row.value = "doesn't fit your body type"
+		row.better = -1
+		return row
+	var size := int(gear(game, id, "size", "3"))
+	if size <= 0:
+		return row
+	var diff := scale(game) - size
+	row.value = {1: "a little small for you", 0: "fits you", -1: "a little big for you"}.get(diff,
+		"too small for you to wear" if diff > 1 else "too big for you to wear")
+	row.better = -1 if absi(diff) > 1 else 0
+	return row
+
+
 ## Items named in the plural ("wild berries", pants, boots): the item's own
 ## `plural: yes`, or its equipment's.
 static func plural(game, id: String) -> bool:

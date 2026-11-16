@@ -145,7 +145,7 @@ const SCHEMA := {
 	"level": {"name": "text", "description": "text", "default": "text", "options": "fields", "from": "text", "source": "meta"},
 	"tag": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
 	"ending": {"name": "text", "type": "text", "priority": "text", "when": "text", "play": "script", "source": "meta"},
-	"status_bar": {"meters": "list", "currency": "text", "currency names": "list", "sheet": "list", "source": "meta"},
+	"status_bar": {"meters": "list", "currency": "text", "currency names": "list", "sheet": "list", "details": "fields", "source": "meta"},
 	"shop": {"name": "text", "at": "list", "run by": "text", "open when": "text", "closed": "script", "intro": "script",
 		"currency": "text", "currency names": "list", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
 		"trade bonus when": "text", "trade bonus chance": "text", "source": "meta"},
