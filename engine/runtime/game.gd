@@ -799,7 +799,13 @@ func describe(name: String) -> String:
 		"body descriptor":
 			# The original's bodydesc (Infections.i7x:982-984, 1072).
 			var form := part_form(who, "torso")
-			var words: Array = Array(content.typed_value("form", form, "descriptor").split(",", false)).map(func(w): return str(w).strip_edges())
+			var descriptor := content.typed_value("form", form, "descriptor")
+			if "[" in descriptor:  # "[one of]slender[or]wiry[at random]", "alluring, [if player is male]handsome[else]sultry[end if]"
+				var d := TextTemplate.compile(descriptor)
+				if not d.has("error"):
+					descriptor = TextTemplate.plain(render(d))
+			var words: Array = Array(descriptor.split(",", false)).map(func(w): return str(w).strip_edges())
+			words = words.filter(func(w): return w != "")
 			if words.is_empty():
 				words = ["average", "normal", "unchanged"]
 			return str(words[variation("body descriptor", words.size(), "at random")])

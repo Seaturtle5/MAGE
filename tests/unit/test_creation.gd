@@ -106,6 +106,21 @@ found in: woods
 form: mote
 research bypass: yes
 
+== form jelly
+name: Jelly
+body type: [one of]gooey[or]slimy[at random]
+descriptor: [one of]wobbly[or]wet[as decreasingly likely outcomes]
+torso:
+    description: a jelly body
+    change: your body turns to jelly
+
+== form glow
+name: Glow
+descriptor: bright, [if player is male]bold[else]soft[end if]
+torso:
+    description: a glowing body
+    change: your body starts to glow
+
 == infection_rules test_rules
 blocked when: scenario is lab_start and not infection.bypass
 
@@ -209,6 +224,17 @@ func test_pick_any_creature_skips_those_found_nowhere() -> void:
 	for _i in 20:
 		game.apply(Effect.compile("pick random creature anywhere"))
 		assert_true(str(game.value("picked.creature")) in ["slime", "mote"], "never the ghost")
+
+
+func test_body_type_and_descriptor_render_their_markup() -> void:
+	game.apply(Effect.compile("transform into jelly"))
+	for i in 10:
+		assert_has(["gooey", "slimy"], game.describe("body type"))
+		assert_has(["wobbly", "wet"], game.describe("body descriptor"), "a descriptor written as one variation")
+	game.apply(Effect.compile("transform into glow"))
+	for i in 10:
+		assert_has(["bright", "bold", "soft"], game.describe("body descriptor"), "a list with a conditional word")
+	assert_eq(game.warnings, [])
 
 
 func test_creation_rules_are_validated() -> void:
