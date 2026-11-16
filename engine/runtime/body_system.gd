@@ -225,7 +225,7 @@ static func form_scale(game, form: String) -> int:
 static func _attributes(game, form: String) -> void:
 	game.state.values.erase("player.scale")
 	var target := form_scale(game, form)
-	var tags: Array = game.content.form_tags(form)
+	var tags: Array = CreatureChangeSystem.form_tags(game, form)
 	if "taur" in tags or "no_legs" in tags:
 		for id: String in game.state.equipped.duplicate():
 			if ItemSystem.gear(game, id, "taur compatible", "no") != "yes":

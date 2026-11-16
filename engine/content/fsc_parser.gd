@@ -20,7 +20,10 @@ static var _choice_suffix_re := RegEx.create_from_string("\\s*\\[(if [^\\[\\]]+|
 ## "fight wolf:", "fight goblin (female):", and fights in a row: "fight leopardman 2 times:",
 ## "fight pink_gel, blue_gel, purple_gel:" (until one is lost or fled).
 static var _fight_re := RegEx.create_from_string("^fight\\s+([a-z0-9_.]+(?:\\s*,\\s*[a-z0-9_]+)*)(?:\\s*\\(([^)]*)\\))?(?:\\s+(\\S+)\\s+times)?\\s*:$")
-static var _outcome_re := RegEx.create_from_string("^(won|lost|fled|won by seduction|lost by submitting)\\s*:$")
+static var _outcome_re := RegEx.create_from_string("^(won|lost|fled|won by seduction|lost by submitting|ended)\\s*:$")
+## "fight random in zoo, campus:" (a random creature of one of those zones, or of the zone a
+## text value holds), optionally "N times".
+static var _fight_zone_re := RegEx.create_from_string("^fight random in ([a-z0-9_.]+(?:\\s*,\\s*[a-z0-9_.]+)*)(?:\\s+(\\S+)\\s+times)?\\s*:$")
 
 
 ## One physical line of a file.
@@ -329,12 +332,18 @@ class _ScriptParser:
 
 	func fight(l: Line) -> Dictionary:
 		var m := FscParser._fight_re.search(l.text)
+		var zm := FscParser._fight_zone_re.search(l.text)
+		if zm != null:
+			# The zones of "fight random in zoo, campus:" (FightControlSystem.random_zone).
+			m = FscParser._fight_re.search("fight random%s:" % ((" %s times" % zm.get_string(2)) if zm.get_string(2) != "" else ""))
 		if m == null:
 			result.error(l.number, "A fight must look like 'fight creature_id:' or 'fight creature_id (variant):'.")
 			children(l)
 			return {"kind": "text", "line": l.number, "text": ""}
 		var creatures: Array = Array(m.get_string(1).split(",")).map(func(c): return c.strip_edges())
 		var node := {"kind": "fight", "line": l.number, "creature": creatures[0], "variant": m.get_string(2), "outcomes": {}}
+		if zm != null:
+			node["zones"] = Array(zm.get_string(1).split(",")).map(func(z): return z.strip_edges())
 		if creatures.size() > 1 and m.get_string(3) != "":
 			result.error(l.number, "Fights in a row name one creature with 'N times' or several creatures, not both.")
 		if creatures.size() > 1:
@@ -356,7 +365,7 @@ class _ScriptParser:
 				continue
 			var om := FscParser._outcome_re.search(o.text)
 			if om == null:
-				result.error(o.number, "Inside a fight, use 'won:', 'lost:' or 'fled:' blocks.")
+				result.error(o.number, "Inside a fight, use 'won:', 'lost:', 'fled:' or 'ended:' blocks.")
 				pos += 1
 				continue
 			pos += 1

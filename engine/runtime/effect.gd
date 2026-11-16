@@ -167,6 +167,18 @@ static var _rules: Array = [
 	["shift_time", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) (earlier|later) by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
+	# Fights and creatures changed in play (FightControlSystem): "~ end fight" (no winner),
+	# "~ no second fight", "~ cancel blow", "~ this fight counts as won by seduction",
+	# "~ enemy becomes dragon_two", "~ creature wolf tag + no_vore", "~ form husky tag - bipedal",
+	# "~ creature husky attack -> hunter_bite" (or "-> default"), "~ creature reindeer loot chance + 3 to 10".
+	["fight:end", RegEx.create_from_string("^end fight$")],
+	["fight:no_second", RegEx.create_from_string("^no second fight$")],
+	["fight:cancel_blow", RegEx.create_from_string("^cancel blow$")],
+	["fight:counts_as", RegEx.create_from_string("^this fight counts as (won by fighting|won by seduction|lost by injury|lost by lust|lost by submitting)$")],
+	["fight:becomes", RegEx.create_from_string("^enemy becomes (\\w+)$")],
+	["fight:tag", RegEx.create_from_string("^(creature|form) (\\w+) tags? ([+-]) ([a-z0-9_]+(?:\\s*,\\s*[a-z0-9_]+)*)$")],
+	["fight:script", RegEx.create_from_string("^creature (\\w+) (attack|miss|before attack|after attack|each round) -> ([a-z0-9_.]+)$")],
+	["fight:loot", RegEx.create_from_string("^creature (\\w+) loot chance ([+=-]) (.+)$")],
 ]
 ## The rules worth trying for an effect, by its first word: the rules whose
 ## sentence starts with that word ("give one of ..." -> "give") and the rules
@@ -415,7 +427,8 @@ static func _match(s: String) -> Dictionary:
 				if how != "":
 					if (result == "lost") != (how in ["lust", "injury", "submitting"]):
 						return {"error": "A fight is lost by lust, injury or submitting, and won by seduction or fighting."}
-					result += " by " + how
+					# Won by fighting and lost by injury are the plain results ("won", "lost").
+					result += "" if how in ["fighting", "injury"] else " by " + how
 				return {"op": "fight_result", "result": result}
 			"collect", "discard":
 				var key_text := m.get_string(2)
@@ -584,6 +597,8 @@ static func _match(s: String) -> Dictionary:
 				if amt.has("error"):
 					return {"error": amt.error}
 				return {"op": "change", "path": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
+			_ when str(rule[0]).begins_with("fight:"):
+				return FightControlSystem.compile_effect(rule[0], m)
 	return {"error": "unknown effect '%s'" % s}
 
 
