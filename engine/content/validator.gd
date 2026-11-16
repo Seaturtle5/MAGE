@@ -41,6 +41,7 @@ var _sets: Dictionary = {}  ## value paths a script sets or changes
 var _item_tag_list: Array = []
 var _moments_raised: Dictionary = {}  ## moments a scene raises with `~ moment <name>`
 var _moments_heard: Dictionary = {}  ## a game's own moments hooks listen to -> [path, line]
+var _fight_scenes: Dictionary = {}  ## scenes a fight's script plays or hands over to
 
 
 static func run(content: ContentDB) -> void:
@@ -1331,6 +1332,9 @@ func _check_programs() -> void:
 			if o.condition != "":
 				_path = menu.def.path
 				_check_condition_text(o.condition, o.line, menu_id)
+	_find_fight_scenes(pids)
+	for id: String in db.all_of("creature"):
+		_check_before_fight("creature:%s#encounter" % id, id, 0, {})
 	for k in pids.size():
 		if k % 250 == 0:
 			db._set_progress("Checking content", "Scenes and scripts", k, pids.size())
@@ -1351,7 +1355,12 @@ func _check_programs() -> void:
 			if (type == "location" and field in ["description", "presence", "scent"]) or (type == "quest" and field == "journal") or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules", "help"]:
 				# A creature's combat scripts may also change values as they land (a roll, lust, a blow).
 				var effects_ok: bool = combat_script and field not in ["escape", "struggle"]
-				if ins.op == "goto":
+				if ins.op == "goto" and effects_ok:
+					# A fight's script may hand over to a scene made of what it may hold itself.
+					var bad_goto := _combat_unsafe(str(ins.target), 0)
+					if bad_goto != "":
+						_err(ins.line, "A fight's script can only hand over to scenes of text, conditions and value or fight effects ('%s' %s)." % [ins.target, bad_goto])
+				elif ins.op == "goto":
 					# A text field may hand over to a scene made of text and conditions only.
 					var target := db.program(ins.target)
 					if target != null:
@@ -1359,8 +1368,8 @@ func _check_programs() -> void:
 							if t_ins.op not in ["text", "return", "jump", "unless"] and not (effects_ok and _simple_effect(t_ins)):
 								_err(ins.line, "This description hands over to '%s', which must contain text and conditions only (line %d does more)." % [ins.target, t_ins.line])
 								break
-				elif effects_ok and (_simple_effect(ins) or _combat_effect(ins)):
-					pass
+				elif effects_ok and (_simple_effect(ins) or _combat_effect(ins) or ins.op == "page"):
+					pass  # a fight's script may also break the page (shown after Continue)
 				elif effects_ok and ins.op == "play":
 					# A combat script may play a scene made of what it may hold itself.
 					var bad := _combat_unsafe(str(ins.target), 0)
@@ -1376,6 +1385,94 @@ func _check_programs() -> void:
 				_err(ins.line, "An encounter plays just before its fight; it cannot start another fight.")
 
 
+## A scene an effect plays at once for each of several things (`~ for each companion
+## play X`, `~ for each child play X`): it cannot stop for the player, so a choice
+## list in it, or in a scene it plays, would play its first option without asking,
+## and a fight in it would not start. Warns at the effect's line.
+func warn_played_at_once(pid: String, line: int, effect: String) -> void:
+	var found := _waits_for_player(pid, 0, {})
+	if found != "":
+		_warn(line, "'~ %s %s' plays the scene at once, without stopping for the player: %s. Ask in a scene played before or after it." % [effect, pid, found])
+
+
+func _waits_for_player(pid: String, depth: int, seen: Dictionary) -> String:
+	var prog := db.program(pid)
+	if prog == null or depth > 8 or seen.has(pid):
+		return ""
+	seen[pid] = true
+	for ins in prog.code:
+		match ins.op:
+			"choices":
+				return "the choices at line %d of '%s' would play their first option without asking" % [ins.line, pid]
+			"fight":
+				return "the fight at line %d of '%s' would not start" % [ins.line, pid]
+			"play", "goto":
+				var inner := _waits_for_player(str(ins.target), depth + 1, seen)
+				if inner != "":
+					return inner
+	return ""
+
+
+## Whether the scripts of `owner` run during a fight: a fight's own scripts
+## (FightControlSystem.fight_owner) or a scene one of them plays or hands over to
+## (`attack: -> tree_attack`).
+func in_fight(owner: String) -> bool:
+	return FightControlSystem.fight_owner(db, owner) or _fight_scenes.has(owner)
+
+
+## The scenes reached by `play` or `->` from a script that runs inside a fight: a
+## creature's combat scripts and `attacks:`, fight actions, fight hooks, the combat
+## rules and a companion's attack.
+func _find_fight_scenes(pids: Array) -> void:
+	_fight_scenes = {}
+	for pid: String in pids:
+		var type: String = pid.get_slice(":", 0) if ":" in pid else ""
+		var unqualified: String = pid.get_slice(":", 1) if ":" in pid else pid
+		var owner: String = unqualified.split("#")[0].split("@")[0]
+		var field := pid.get_slice("#", 1)
+		if type == "" and "#" not in pid and "@" not in pid:
+			continue  # a scene of its own
+		var fighting: bool = (type == "creature" and field in COMBAT_SCRIPTS) or (type == "character" and field == "companion attack") \
+			or pid.contains(".attacks@") or pid.contains(".fight actions@") or type == "combat_rules" \
+			or (type == "hook" and FightControlSystem.fight_owner(db, owner))
+		if fighting:
+			_mark_fight_scenes(pid, 0)
+
+
+## A creature's encounter plays before its fight starts (the fight's numbers do
+## not exist yet), so `enemy.*` and `fight.*` cannot change there, nor in the
+## scenes it plays; the original's description that does so belongs in `fight starts:`.
+func _check_before_fight(pid: String, creature: String, depth: int, seen: Dictionary) -> void:
+	var prog := db.program(pid)
+	if prog == null or depth > 8 or seen.has(pid):
+		return
+	seen[pid] = true
+	for ins in prog.code:
+		if ins.op in ["play", "goto"]:
+			_check_before_fight(str(ins.target), creature, depth + 1, seen)
+		elif ins.op == "effect" and not ins.effect.has("error"):
+			var path := str(ins.effect.get("path", ""))
+			var fight_value: bool = ins.effect.op in ["set", "change", "set_time"] and (path.begins_with("enemy.") or path.begins_with("fight."))
+			if fight_value or ins.effect.op in ["enemy_attack", "enemy_strike", "end_fight", "cancel_blow", "enemy_becomes"]:
+				var saved := _path
+				_path = prog.path
+				var what: String = path if fight_value else "'%s'" % str(ins.effect.op).replace("_", " ")
+				var where: String = "in the encounter of %s" % creature if depth == 0 else "in '%s', played by the encounter of %s" % [pid, creature]
+				var said: String = ("%s cannot change %s" if fight_value else "%s does nothing %s") % [what, where]
+				_warn(ins.line, "%s: an encounter plays before the fight starts. Do it in the creature's 'fight starts:'." % said)
+				_path = saved
+
+
+func _mark_fight_scenes(pid: String, depth: int) -> void:
+	var prog := db.program(pid)
+	if prog == null or depth > 8:
+		return
+	for ins in prog.code:
+		if ins.op in ["play", "goto"] and db.has(str(ins.target), "scene") and not _fight_scenes.has(str(ins.target)):
+			_fight_scenes[str(ins.target)] = true
+			_mark_fight_scenes(str(ins.target), depth + 1)
+
+
 ## A creature's scripts that run during its turn in a fight.
 const COMBAT_SCRIPTS := ["attack", "grapple", "escape", "struggle", "each round", "before attack", "after attack", "miss",
 	"hump", "pounce", "breath warning", "breath direct", "breath partial", "breath miss", "fight starts"]
@@ -1387,7 +1484,7 @@ func _combat_unsafe(pid: String, depth: int) -> String:
 	if prog == null or depth > 8:
 		return ""
 	for ins in prog.code:
-		if ins.op in ["text", "return", "jump", "unless"] or _simple_effect(ins) or _combat_effect(ins):
+		if ins.op in ["text", "return", "jump", "unless", "page"] or _simple_effect(ins) or _combat_effect(ins):
 			continue
 		if ins.op in ["play", "goto"] and str(ins.target) not in ["back", "end"]:
 			var inner := _combat_unsafe(str(ins.target), depth + 1)
@@ -1398,10 +1495,12 @@ func _combat_unsafe(pid: String, depth: int) -> String:
 	return ""
 
 
-## Effects only a fight's scripts can run: the creature's blows and the result.
+## Effects only a fight's scripts can run: the creature's blows and the result,
+## and items given or taken as a blow lands (the original's ItemGain in an attack).
 func _combat_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"enemy_attack", "enemy_strike", "fight_result", "player_move", "creature_number", "creature_change", "sex", "form_sex", "form_number"] + FightControlSystem.OPS
+		"enemy_attack", "enemy_strike", "fight_result", "player_move", "creature_number", "creature_change", "sex", "form_sex", "form_number",
+		"give", "give_one", "take", "take_all"] + FightControlSystem.OPS
 
 
 ## Effects a text can run while it is shown (an attack landing): values, survival
@@ -1416,7 +1515,7 @@ func _simple_effect(ins: Dictionary) -> bool:
 ## make as it is said (a form's change text that also changes the creature's size).
 func _data_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"creature_number", "creature_change", "form_number", "form_sex", "item_strain", "item_number"]
+		"creature_number", "creature_change", "form_number", "form_sex", "item_strain", "gear_number"]
 
 
 func _check_instruction(ins: Dictionary, owner: String) -> void:
@@ -1491,7 +1590,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
-			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain", "item_number", "random_loot",
+			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain", "random_loot",
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
@@ -1552,6 +1651,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_err(line, "No feat has group '%s'." % e.group)
 		"each_companion":
 			_check_target(e.scene, line)
+			warn_played_at_once(e.scene, line, "for each companion play")
 		"companion_level" when e.who == "player" or e.who == "companion":
 			pass
 		"tame", "summon", "dismiss", "companion_level":
@@ -1569,6 +1669,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_err(line, "A self-impregnation has no father: leave out 'by %s'." % e.father)
 		"each_child":
 			_need(e.scene, "scene", line)
+			warn_played_at_once(e.scene, line, "for each child play")
 		"form_sex":
 			_need(e.form, "form", line)
 		"form_number":
@@ -1605,18 +1706,12 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_check_path(e.path, line)
 			if db.values.get(e.path, {}).get("kind", "") not in ["", "text"]:
 				_err(line, "%s holds an item ID: declare it as text." % e.path)
-		"item_number":
-			_need(e.item, "item", line)
-			if db.has(e.item, "item") and not db.get_def("item", e.item).fields.has("weapon"):
-				_err(line, "%s is not a weapon (it has no weapon: block), so it has no %s to change." % [e.item, e.field])
-			if e.amount.has("value"):
-				_check_expr(e.amount.value, line)
 		"item_strain":
 			_need(e.item, "item", line)
 			if e.form != "nothing":
 				_need(e.form, "form", line)
 		"enemy_attack", "enemy_strike", "fight_result":
-			if not FightControlSystem.fight_owner(db, owner):
+			if not in_fight(owner):
 				_warn(line, "'%s' only works during a fight (a creature's combat scripts or attacks)." % e.op.replace("_", " "))
 		"creature_change":
 			_need(e.creature, "creature", line)
@@ -2043,7 +2138,12 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"lives_at", "is_at":
 			if c.who != "player":
 				_need(c.who, "character", line)
-			_need(c.place, "location", line)
+			if c.op == "is_at" and c.place == "nowhere":
+				# "fang is at nowhere": taken out of play or never placed.
+				if c.who == "player":
+					_err(line, "The player is always somewhere; 'at nowhere' is for characters taken out of play (~ move X to nowhere).")
+			else:
+				_need(c.place, "location", line)
 		"knows", "visited":
 			_need(c.place, "location", line)
 		"species_contains":

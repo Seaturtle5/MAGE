@@ -229,6 +229,7 @@ static func check_effect(v, e: Dictionary, line: int) -> void:
 				v._err(line, "No event has the tag '%s', so ~ resolve every event tagged %s resolves nothing." % [e.tag, e.tag])
 		"each_companion_of":
 			v._check_target(str(e.scene), line)
+			v.warn_played_at_once(str(e.scene), line, "for each tamed companion play" if e.scope == "tamed" else "for all companions play")
 
 
 static func events_tagged_db(db: ContentDB, tag: String) -> Array:

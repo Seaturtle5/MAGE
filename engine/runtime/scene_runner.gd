@@ -227,7 +227,20 @@ func run() -> void:
 		if guard > 100000:
 			game.warn("Scene runner stopped: too many steps (a loop in content?)")
 			break
+		if hold_fight_page():
+			return
 		var f: Dictionary = frames[-1]
+		if f.kind == "fight_page":
+			# What a fight's script said after its page break, shown after Continue.
+			frames.pop_back()
+			game.output.append_array(f.events)
+			game.fight_paged = true  # the held part may break the page again
+			if hold_fight_page(str(f.then)):
+				return
+			if f.then == "combat":
+				status = "combat"
+				return
+			continue
 		if f.kind == "epilogue":
 			if not _epilogue_step(f):
 				return
@@ -316,6 +329,8 @@ func run() -> void:
 				if game.state.combat.result != "" or CombatSystem.auto_fight(game):
 					_finish_fight()
 					continue
+				if hold_fight_page("combat"):
+					return
 				status = "combat"
 				return
 			_pop()
@@ -334,6 +349,8 @@ func run() -> void:
 				_finish_fight()
 				continue
 			CombatSystem.show(game)
+			if hold_fight_page("combat"):
+				return
 			status = "combat"
 			return
 		if f.kind == "combat_end":
@@ -507,6 +524,8 @@ func run() -> void:
 					if game.state.combat.result != "" or CombatSystem.auto_fight(game):
 						_finish_fight()
 						continue
+					if hold_fight_page("combat"):
+						return
 					status = "combat"
 					return
 				if ins.creature == "random":
@@ -531,6 +550,8 @@ func run() -> void:
 				continue
 			"return":
 				_pop()
+	if hold_fight_page():
+		return
 	if game.state.ending != "":
 		status = "ended"  # the epilogue has played; nothing more happens
 		return
@@ -1025,10 +1046,31 @@ func combat_action(action: String) -> bool:
 		return false
 	var result: String = game.state.combat.result
 	if result == "":
+		hold_fight_page("combat")
 		return true
 	_finish_fight()
 	run()
 	return true
+
+
+## A page break in a fight's script (`---` in an attack text, CombatSystem._play):
+## the turn has played out at once, but what was said after the break waits for
+## Continue. Cuts the output there into a "fight_page" frame and stops for
+## Continue; `then` is "combat" when the fight goes on after it.
+func hold_fight_page(then: String = "") -> bool:
+	if not game.fight_paged:
+		return false
+	game.fight_paged = false
+	var out: Array = game.output
+	for i in out.size():
+		var e: Dictionary = out[i]
+		if e.get("type") == "page_break" and e.get("fight", false):
+			e.erase("fight")
+			frames.append({"kind": "fight_page", "events": out.slice(i + 1), "then": then})
+			out.resize(i + 1)
+			status = "continue"
+			return true
+	return false
 
 
 func _finish_fight() -> void:
@@ -1982,5 +2024,6 @@ func load_frames(saved: Array) -> void:
 		if f.kind == "ask" or f.kind == "item_choice":
 			f.shown = false  # asked again after loading
 			f.max = int(f.get("max", 40))
-	if not game.state.combat.is_empty() and game.state.combat.get("result", "") == "":
+	if not game.state.combat.is_empty() and game.state.combat.get("result", "") == "" \
+			and (frames.is_empty() or frames[-1].kind != "fight_page"):
 		status = "combat"

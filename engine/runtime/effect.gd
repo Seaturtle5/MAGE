@@ -112,9 +112,6 @@ static var _rules: Array = [
 	["put", RegEx.create_from_string("^put (\\w+)(?: (\\d+))? in (\\w+)$")],
 	["remove_from", RegEx.create_from_string("^remove (\\w+)(?: (\\d+))? from (\\w+)$")],
 	["item_strain", RegEx.create_from_string("^item (\\w+) infects as (\\w+)$")],
-	# A weapon's numbers changed in play: "~ item abyssal_edge damage + 1" (the original's
-	# "increase weapon damage of X by 1"); also "= 8" and "hit bonus".
-	["item_number", RegEx.create_from_string("^item (\\w+) (damage|hit bonus) ([+=-]) (.+)$")],
 	["creature_number", RegEx.create_from_string("^creature (\\w+) (damage|level|hp|libido|hit bonus|dodge bonus|scale|strength|dexterity|stamina|perception|intelligence|charisma) ([+=-]) (.+)$")],
 	["take_all", RegEx.create_from_string("^take all (\\w+)$")],
 	["take", RegEx.create_from_string("^take ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+))?$")],
@@ -172,7 +169,8 @@ static var _rules: Array = [
 	# "~ unborn child head, torso look like \"Seal Toy\"" (the original's "now HeadName of Child is ...").
 	["unborn_looks", RegEx.create_from_string("^unborn child(?: ([a-z, ]+?))? looks? like (.+)$")],
 	# Weapons and armor (GearSystem): "~ ask x.pick as weapon or armor: Which one?",
-	# "~ item x.pick armor + 5 up to 100" (also damage, hit bonus, effectiveness; an item ID or a value).
+	# "~ item x.pick armor + 5 up to 100" (also damage, hit bonus, effectiveness; an item ID or a value;
+	# the original's "increase weapon damage of X by 1": "~ item abyssal_edge damage + 1").
 	["ask_gear", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:an? )?(weapon or armor|armor or weapon|weapon|armor):\\s*(.+)$")],
 	["gear_number", RegEx.create_from_string("^item ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*) (damage|hit bonus|armor|effectiveness) ([+=-]) (.+)$")],
 	# Fights and creatures changed in play (FightControlSystem): "~ end fight" (no winner),
@@ -481,11 +479,6 @@ static func _match(s: String) -> Dictionary:
 					"count": int(m.get_string(2)) if m.get_string(2) != "" else -1}
 			"item_strain":
 				return {"op": "item_strain", "item": m.get_string(1), "form": m.get_string(2)}
-			"item_number":
-				var amt := amount(m.get_string(4))
-				if amt.has("error"):
-					return {"error": amt.error}
-				return {"op": "item_number", "item": m.get_string(1), "field": m.get_string(2), "how": m.get_string(3), "amount": amt}
 			"creature_number":
 				var amt := amount(m.get_string(4))
 				if amt.has("error"):

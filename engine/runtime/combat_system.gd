@@ -519,7 +519,8 @@ static func _script(game, id: String, field: String) -> void:
 
 ## Runs a combat script in order: each paragraph is shown as it is reached and
 ## its effects report as usual (`quietly` keeps them silent), so "~ enemy strike"
-## before a line lets the line say [fight.damage].
+## before a line lets the line say [fight.damage]. A page break (`---`) marks
+## where the shown turn pauses for Continue.
 static func _play(game, prog: Program, depth: int = 0) -> void:
 	if prog == null or depth > 8:
 		return
@@ -533,6 +534,14 @@ static func _play(game, prog: Program, depth: int = 0) -> void:
 			"text":
 				if not ins.text.has("error"):
 					game.emit({"type": "paragraph", "spans": game.render(ins.text)})
+			"page":
+				# `---` in a fight's script: the turn plays out at once, but the
+				# runner shows what follows the break only after Continue
+				# (SceneRunner.hold_fight_page). Outside a fight it does nothing.
+				var c: Dictionary = game.state.combat
+				if not c.is_empty() and str(c.get("result", "")) == "":
+					game.emit({"type": "page_break", "fight": true})
+					game.fight_paged = true
 			"jump":
 				pc = ins.to
 			"unless":

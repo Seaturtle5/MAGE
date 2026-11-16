@@ -177,7 +177,7 @@ static func check_effect(v, e: Dictionary, line: int, owner: String) -> void:
 				v._check_expr(e.amount.value, line)
 		"enemy_becomes":
 			v._need(e.creature, "creature", line)
-	if e.op in ["end_fight", "cancel_blow", "enemy_becomes"] and not fight_owner(v.db, owner):
+	if e.op in ["end_fight", "cancel_blow", "enemy_becomes"] and not v.in_fight(owner):
 		v._warn(line, "'%s' only works during a fight (a creature's combat scripts or attacks, a fight action or a fight hook)." % e.op.replace("_", " "))
 
 

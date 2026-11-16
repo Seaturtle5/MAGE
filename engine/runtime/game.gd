@@ -34,6 +34,7 @@ var settings := default_settings()
 var last_fight := ""  ## outcome of the most recent fight ("won", "lost" ...)
 var use_cancelled := false
 var fight_cancelled := false  # set by `~ no fight` in an encounter
+var fight_paged := false  # a fight's script broke the page (SceneRunner.hold_fight_page)
 var continue_moving := false  ## '~ continue moving': a leaving event lets the player walk on
 ## '~ end captivity' ("end") or '~ escape captivity' ("escape", a turn passes): the
 ## captivity ends when the current script is done.
@@ -515,6 +516,9 @@ func ask(node: Dictionary) -> bool:
 		"lives_at":
 			return state.residence.get(node.who, content.field_value(node.who, "lives at")) == node.place
 		"is_at":
+			if node.place == "nowhere":
+				# Taken out of play (`~ move X to nowhere`) or never placed (the original's off-stage).
+				return node.who != "player" and where(node.who) in ["", "nowhere"]
 			return where(node.who) == node.place
 		"knows":
 			return state.known.has(node.place)
@@ -1328,11 +1332,6 @@ func apply(e: Dictionary) -> void:
 				set_value(e.path, loot)
 			elif loot != "":
 				apply(Effect.compile("give %s%s" % [loot, " quietly" if quiet else ""]))
-		"item_number":
-			# A weapon's damage or hit bonus from now on (saved), for every copy of the item.
-			var cur := int(ItemSystem.arm(self, e.item, e.field, "4" if e.field == "damage" else "0"))
-			var by: int = Effect.resolve_amount(e.amount, self, cur)
-			state.values["item.%s.%s" % [e.item, e.field]] = by if e.how == "=" else cur + (by if e.how == "+" else -by)
 		"item_strain":
 			# "now Strain of skunk goo is ..." (the original's strain of an infectious item).
 			state.values["item.%s.infectious" % e.item] = "" if e.form == "nothing" else e.form

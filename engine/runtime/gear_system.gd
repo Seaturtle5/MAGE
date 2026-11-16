@@ -129,6 +129,6 @@ static func check_item(v, id: String, what: String, line: int) -> void:
 	if not v.db.has(id, "item"):
 		v._err(line, "Unknown item '%s'.%s" % [id, v._suggest(id, v._ids("item"))])
 		return
-	var field := "weapon" if what in ["damage", "hit bonus"] else "equipment"
-	if not v.db.get_def("item", id).fields.has(field):
-		v._err(line, "'%s' has no %s field, so it has no %s." % [id, field, what])
+	var weapon: bool = what in ["damage", "hit bonus"]
+	if not v.db.get_def("item", id).fields.has("weapon" if weapon else "equipment"):
+		v._err(line, "'%s' has no %s field, so it is not %s and has no %s to change." % [id, "weapon" if weapon else "equipment", "a weapon" if weapon else "gear", what])
