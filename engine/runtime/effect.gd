@@ -75,6 +75,8 @@ static var _rules: Array = [
 	["ask", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+)(?: up to (\\d+) letters)?:\\s*(.+)$")],
 	["companion_level", RegEx.create_from_string("^level up (\\w+)$")],
 	["send_children", RegEx.create_from_string("^send children from (\\w+) to (\\w+)$")],
+	# "~ moment masturbating": the hooks `on: masturbating` play here (a moment of the game's own).
+	["moment", RegEx.create_from_string("^moment ([a-z0-9_]+(?: [a-z0-9_]+)*)$")],
 	["condition", RegEx.create_from_string("^condition (\\w+) for (\\d+) (hours?|turns?)$")],
 	["spend", RegEx.create_from_string("^spend (\\d+) turns?$")],
 	["schedule", RegEx.create_from_string("^schedule ([a-z0-9_.]+) after (\\d+) actions?$")],
@@ -334,6 +336,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "companion_level", "who": m.get_string(1)}
 			"send_children":
 				return {"op": "send_children", "from": m.get_string(1), "to": m.get_string(2)}
+			"moment":
+				return {"op": "moment", "moment": m.get_string(1)}
 			"condition":
 				var n := int(m.get_string(2))
 				var turns := n if m.get_string(3).begins_with("turn") else int(ceil(n / 3.0))

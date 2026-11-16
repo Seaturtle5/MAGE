@@ -55,6 +55,7 @@ const ACTION_INFO := {
 	"hunt": ["Hunt", "Look for a particular creature.", "1 turn"],
 	"actions": ["Actions", "Things you can do here.", ""],
 	"shop": ["Shop", "Buy, sell and trade.", ""],
+	"smell_place": ["Smell", "Take in the scents around you.", ""],
 }
 
 var game: Game
@@ -123,6 +124,7 @@ var inv_selected := ""  ## the item shown in the inventory's detail pane
 var sheet_scroll: ScrollContainer  ## the character sheet's right column, for screenshots
 var inv_filter := "all"  ## the inventory tab
 var inv_bag_scroll: ScrollContainer
+var help_selected := ""  ## the topic the Help screen shows
 
 
 func _ready() -> void:
@@ -423,6 +425,7 @@ func _nav_bar() -> Control:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
 	row.add_child(spacer)
+	_bar_button(row, "Help", "help", "H", _open_help)
 	_bar_button(row, "Settings", "settings", "", _open_settings)
 	_bar_button(row, "Save", "save", "F5", func(): _open_saves(true))
 	_bar_button(row, "Load", "load", "", func(): _open_saves(false))
@@ -693,7 +696,7 @@ func _person_card(p: Dictionary) -> Control:
 	var id: String = p.id
 	# Talk, then the character's other doings: its actions menu, giving an item, sex, scent and look.
 	for spec in [["talk", "Talk", "talk"], ["actions", "Actions", "use"], ["give", "Give", "inventory"], ["sex", "Sex", "libido"],
-			["smell", "Smell", "observe"], ["look", "Look", "character"]]:
+			["smell", "Smell", "smell"], ["look", "Look", "character"]]:
 		if not p.get(spec[0], false):
 			continue
 		var b := Button.new()
@@ -1075,6 +1078,8 @@ func _refresh_panels() -> void:
 	_link_button(nav_links, "Map", "map", "M", _open_map, false)
 	for a in e.get("actions", []):
 		_action_tile(a.id, busy, str(a.get("label", "")), str(a.get("arg", "")), str(a.get("description", "")))
+		if a.id == "wait" and e.get("smell", false):
+			_action_tile("smell_place", busy)  # the place's scents, after Wait
 	if e.get("actions", []).is_empty():
 		actions_box.add_child(FsTheme.label("Nothing to do here right now.", 15, FsTheme.TEXT_FAINT))
 	nav_panel.modulate.a = 0.45 if busy else 1.0
@@ -1125,7 +1130,7 @@ func _action_tile(id: String, busy: bool, label: String = "", arg: String = "", 
 		info[0] = label  # the menu's own title, or the command's name
 	if id == "command":
 		info[1] = description
-	var icon_name := id if _icon(id) != null else "use"
+	var icon_name := id if _icon(id) != null else ("smell" if id == "smell_place" else "use")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	var icon := _icon_view(icon_name, 22, FsTheme.ACCENT)
@@ -1422,6 +1427,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_character()
 	elif key == KEY_L:
 		_open_log()
+	elif key == KEY_H:
+		_open_help()
 
 
 # --- Overlays ---------------------------------------------------------------
@@ -1751,7 +1758,8 @@ func _item_details(items: Array) -> Control:
 		var action: String = a[1]
 		b.pressed.connect(func(): _inventory_act(action, id))
 		col.add_child(b)
-	var minor: Array = [["Drop", "drop"]]
+	var minor: Array = [["Smell", "smell_item"]] if SmellSystem.can_smell(game, "item", id) else []
+	minor.append(["Drop", "drop"])
 	if it.count > 1:
 		minor.append(["Drop all", "drop_all"])
 	if not it.keep:
@@ -1811,15 +1819,71 @@ func _item_stats(id: String) -> Control:
 
 ## Runs an inventory action and keeps the inventory open unless a scene started.
 func _inventory_act(action: String, id: String) -> void:
-	if action == "use":
+	if action in ["use", "smell_item"]:
 		_close_overlay()
-		_act("use", id)
+		_act(action, id)
 		return
 	_act(action, id)
 	if game.runner.status == "idle":
 		_open_inventory()
 	else:
 		_close_overlay()
+
+
+## The help topics the packs offer (HelpSystem): their titles on the left, the
+## chosen topic's text on the right.
+func _open_help(topic: String = "") -> void:
+	if game == null:
+		return
+	var view := get_viewport_rect().size
+	var box := _open_overlay("Help", true, Vector2(minf(1100, view.x - 60), minf(720, view.y - 60)))
+	var topics := HelpSystem.topics(game)
+	if topics.is_empty():
+		box.add_child(FsTheme.label("The loaded content has no help topics.", 17, FsTheme.TEXT_DIM))
+		return
+	if topic != "":
+		help_selected = topic
+	if topics.filter(func(t): return t.id == help_selected).is_empty():
+		help_selected = str(topics[0].id)
+	var body := HBoxContainer.new()
+	body.add_theme_constant_override("separation", 26)
+	body.custom_minimum_size = Vector2(0, minf(590, view.y - 210))
+	body.size_flags_vertical = SIZE_EXPAND_FILL
+	box.add_child(body)
+	# The titles and the text scroll on their own, so a long list stays beside the text.
+	var list_scroll := ScrollContainer.new()
+	list_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	list_scroll.custom_minimum_size = Vector2(290, 0)
+	var list := VBoxContainer.new()
+	list.size_flags_horizontal = SIZE_EXPAND_FILL
+	list.add_theme_constant_override("separation", 2)
+	list_scroll.add_child(list)
+	for t: Dictionary in topics:
+		var b := Button.new()
+		b.text = str(t.title)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.toggle_mode = true
+		b.button_pressed = t.id == help_selected
+		b.add_theme_stylebox_override("normal", FsTheme.box(Color.TRANSPARENT))
+		var id: String = t.id
+		b.pressed.connect(func(): _open_help(id))
+		list.add_child(b)
+	body.add_child(list_scroll)
+	body.add_child(FsTheme.rule_v())
+	var text_scroll := ScrollContainer.new()
+	text_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	text_scroll.size_flags_horizontal = SIZE_EXPAND_FILL
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 12)
+	text_scroll.add_child(text)
+	var chosen: Dictionary = topics.filter(func(t): return t.id == help_selected)[0]
+	text.add_child(FsTheme.title(str(chosen.title), 22))
+	for p in HelpSystem.text(game, help_selected):
+		var r := _rich(_bbcode(p))
+		r.add_theme_font_size_override("normal_font_size", 17)
+		text.add_child(r)
+	body.add_child(text_scroll)
 
 
 func _open_journal() -> void:
@@ -1844,6 +1908,77 @@ func _open_journal() -> void:
 				if h != "":
 					v.add_child(FsTheme.label("·  " + h, 14, FsTheme.TEXT_DIM))
 			box.add_child(card)
+	_journal_notes(box)
+
+
+## The player's own notes (NotesSystem) at the back of the journal: the list by
+## date with a button to cross each out, a box to write a new one, and a way to
+## tear them all out.
+func _journal_notes(box: VBoxContainer) -> void:
+	if not NotesSystem.enabled(game):
+		return
+	box.add_child(FsTheme.section("Notes"))
+	if not NotesSystem.available(game):
+		var missing := NotesSystem.text(game, "missing")
+		if missing != "":
+			box.add_child(FsTheme.label(missing, 16, FsTheme.TEXT_FAINT))
+		return
+	var entries := NotesSystem.entries(game)
+	var intro := NotesSystem.text(game, "browse" if not entries.is_empty() else "none")
+	if intro != "":
+		box.add_child(FsTheme.label(intro, 16, FsTheme.TEXT_DIM))
+	for n: Dictionary in entries:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		var cross := Button.new()
+		cross.text = NotesSystem.field(game, "cross out label", "Cross out")
+		cross.add_theme_font_size_override("font_size", 14)
+		cross.size_flags_vertical = SIZE_SHRINK_BEGIN
+		var number: int = n.number
+		cross.pressed.connect(func(): _note_done(NotesSystem.cross_out(game, number)))
+		row.add_child(cross)
+		var line := FsTheme.label("(%d) %s: %s" % [number, n.date, n.text], 16, FsTheme.TEXT)
+		line.size_flags_horizontal = SIZE_EXPAND_FILL
+		row.add_child(line)
+		box.add_child(row)
+	var prompt := NotesSystem.text(game, "write")
+	if prompt != "":
+		box.add_child(FsTheme.label(prompt, 15, FsTheme.ACCENT))
+	var write_row := HBoxContainer.new()
+	write_row.add_theme_constant_override("separation", 10)
+	var field := LineEdit.new()
+	field.max_length = NotesSystem.longest(game)
+	field.size_flags_horizontal = SIZE_EXPAND_FILL
+	write_row.add_child(field)
+	var write := Button.new()
+	write.text = NotesSystem.field(game, "write label", "Write")
+	_button_icon(write, "journal")
+	var submit := func(_t: String = "") -> void:
+		if NotesSystem.write(game, field.text):
+			_note_done("")
+	write.pressed.connect(submit)
+	field.text_submitted.connect(submit)
+	write_row.add_child(write)
+	box.add_child(write_row)
+	if not entries.is_empty():
+		var tear := Button.new()
+		var label := NotesSystem.field(game, "tear out label", "Tear out all notes")
+		tear.text = label
+		tear.size_flags_horizontal = SIZE_SHRINK_BEGIN
+		tear.pressed.connect(func():
+			if tear.text == label:
+				tear.text = "Confirm: " + label.to_lower()
+				return
+			_note_done(NotesSystem.tear_out(game)))
+		box.add_child(tear)
+
+
+## After a note was written, crossed out or torn out: what the game says, and the journal again at its end.
+func _note_done(said: String) -> void:
+	if said != "":
+		_toast(said)
+	_open_journal()
+	_restore_scroll.call_deferred(overlay_scroll, 1 << 20)
 
 
 ## The map of one group of places (the player's own by default), with a way
@@ -2121,6 +2256,16 @@ func _sheet_appearance() -> Control:
 		var r := _rich(_esc(p))
 		r.add_theme_font_size_override("normal_font_size", 17)
 		text.add_child(r)
+	if SmellSystem.can_smell(game, "player"):
+		var sniff := Button.new()
+		sniff.text = "Smell yourself"
+		_button_icon(sniff, "smell")
+		sniff.size_flags_horizontal = SIZE_SHRINK_BEGIN
+		sniff.disabled = game.runner.status != "idle"
+		sniff.pressed.connect(func():
+			_close_overlay()
+			_act("smell_self", ""))
+		col.add_child(sniff)
 	return col
 
 
@@ -2805,7 +2950,7 @@ func _open_pause() -> void:
 	box.add_child(FsTheme.label("%s · %s · Day %d, %s" % [str(game.value("player.name")),
 		game.save_summary().location, game.day(), game.time_slot()], 17, FsTheme.TEXT_DIM))
 	for spec in [["Resume", _close_overlay], ["Save game", func(): _open_saves(true)], ["Load game", func(): _open_saves(false)],
-			["Settings", _open_settings], ["Credits", _open_credits], ["Main menu", _to_main_menu], ["Quit", _quit]]:
+			["Help", _open_help], ["Settings", _open_settings], ["Credits", _open_credits], ["Main menu", _to_main_menu], ["Quit", _quit]]:
 		var b := Button.new()
 		b.text = spec[0]
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -3128,6 +3273,9 @@ func _take_screenshot() -> void:
 				if not e.has("error"):
 					game.apply(e)
 					_drain()
+			"note":
+				# "note Bob owes me soap": a note written in the journal, as in its text box.
+				NotesSystem.write(game, arg)
 			"select":
 				# "select pocketknife": the item the inventory shows (open it after).
 				inv_selected = arg
@@ -3151,6 +3299,7 @@ func _take_screenshot() -> void:
 					"saves": _open_saves(true)
 					"load": _open_saves(false)
 					"credits": _open_credits()
+					"help": _open_help()
 					"menu": _open_pause()
 					"content":
 						if new_game != null and is_instance_valid(new_game):

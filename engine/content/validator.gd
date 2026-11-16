@@ -15,7 +15,7 @@ const DESCRIPTORS := ["name", "sir", "s", "es", "he", "him", "his", "hers", "him
 	"body descriptor", "head description", "face description", "torso description", "body description",
 	"back description", "arms description", "legs description", "ass description", "tail description",
 	"cock description", "cunt description", "skin description", "upper breast curve", "second breast curve",
-	"lower breast curve", "marks", "gear description", "companions description"]
+	"lower breast curve", "marks", "gear description", "companions description", "story title"]
 const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "strength", "dexterity", "stamina",
 	"charisma", "intelligence", "perception", "hunger", "thirst",
 	"cocks", "cunts", "nipples", "name", "heat", "pregnancy", "balls", "cock", "cunt", "sterile", "fatigue",
@@ -39,6 +39,8 @@ var _path := ""
 var _reads: Dictionary = {}  ## value path -> [file, line] where it is first used
 var _sets: Dictionary = {}  ## value paths a script sets or changes
 var _item_tag_list: Array = []
+var _moments_raised: Dictionary = {}  ## moments a scene raises with `~ moment <name>`
+var _moments_heard: Dictionary = {}  ## a game's own moments hooks listen to -> [path, line]
 
 
 static func run(content: ContentDB) -> void:
@@ -51,11 +53,12 @@ static func run(content: ContentDB) -> void:
 		["Heat and pregnancy", v._check_pregnancy], ["Captivity", v._check_captivity], ["Endings", v._check_endings],
 		["Status bar", v._check_status_bar], ["Companions", v._check_companions], ["Levels", v._check_levels],
 		["Vore", v._check_vore], ["Scavenging", v._check_scavenge_rules], ["World", v._check_world],
-		["Filters", v._check_filters], ["Conditions", v._check_conditions]]
+		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help]]
 	for i in steps.size():
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
 	v._check_programs()
+	v._check_moments()
 	v._check_resolutions()
 
 
@@ -443,9 +446,11 @@ func _check_world() -> void:
 			_need(about, "character", d.fields["on"].line)
 		elif item_about != "":
 			_need(item_about, "item", d.fields["on"].line)
+		elif on == "":
+			_err(d.line, "A hook needs 'on:' with one of: %s, or a moment a scene raises with '~ moment <name>'." % ", ".join(Game.HOOK_MOMENTS))
 		elif on not in Game.HOOK_MOMENTS:
-			_err(d.fields["on"].line if d.fields.has("on") else d.line, "A hook needs 'on:' with one of: %s, or %s." % [", ".join(Game.HOOK_MOMENTS),
-				" or ".join(Game.HOOK_CHARACTER_MOMENTS.map(func(m): return "'%s<character>'" % m))])
+			# A moment of the game's own (`on: masturbating`): some scene must raise it (`~ moment masturbating`).
+			_moments_heard[on] = [d.path, d.fields["on"].line if d.fields.has("on") else d.line]
 		if d.fields.has("when"):
 			_check_condition_text(d.fields["when"].value, d.fields["when"].line, id)
 		var inc := db.typed_value("hook", id, "while incapacitated", "run")
@@ -639,6 +644,55 @@ func _check_status_bar() -> void:
 						_warn(l.number, "Detail '%s' has no text and no details indented under it." % pair[0].strip_edges())
 				else:
 					_check_text_field(pair[1].strip_edges(), l.number, "status_bar:" + id)
+
+
+## Smell rules (SmellSystem), notes rules (NotesSystem), help topics (HelpSystem)
+## and the calendar's start date.
+func _check_smell_notes_help() -> void:
+	for type in ["smell_rules", "notes_rules"]:
+		var defs: Dictionary = db.all_of(type)
+		if defs.size() > 1:
+			var later: FscParser.Definition = db.get_def(type, defs.keys()[1])
+			_path = later.path
+			_warn(later.line, "Only one %s is used: %s's." % [type.replace("_", " "), defs.keys()[0]])
+	for id in db.all_of("notes_rules"):
+		var d: FscParser.Definition = db.get_def("notes_rules", id)
+		_path = d.path
+		if d.fields.has("when"):
+			_check_condition_text(d.fields.when.value, d.fields.when.line, id)
+		for k in ["missing", "write", "browse", "none", "date", "crossed out", "torn out", "write label", "cross out label", "tear out label"]:
+			if d.fields.has(k):
+				_check_text_field(d.fields[k].value, d.fields[k].line, "notes_rules:" + id)
+		if d.fields.has("longest") and not (d.fields.longest.value.is_valid_int() and int(d.fields.longest.value) > 0):
+			_err(d.fields.longest.line, "'longest' is the most letters a note may have: a whole number above 0.")
+	for id in db.all_of("help"):
+		var d: FscParser.Definition = db.get_def("help", id)
+		_path = d.path
+		if not d.fields.has("title"):
+			_err(d.line, "A help topic needs a 'title:'.")
+		if not d.fields.has("text"):
+			_err(d.line, "A help topic needs a 'text:'.")
+		if d.fields.has("order") and not d.fields.order.value.is_valid_int():
+			_err(d.fields.order.line, "'order' is a whole number (lower comes first).")
+	for id in db.all_of("status_bar"):
+		var d: FscParser.Definition = db.get_def("status_bar", id)
+		if d.fields.has("start date"):
+			_path = d.path
+			var parts: PackedStringArray = d.fields["start date"].value.split("-")
+			var ok := parts.size() == 3 and Array(parts).all(func(p: String) -> bool: return p.is_valid_int())
+			if ok:
+				ok = int(parts[1]) >= 1 and int(parts[1]) <= 12 and int(parts[2]) >= 1 and int(parts[2]) <= Game._month_days(int(parts[0]), int(parts[1]))
+			if not ok:
+				_err(d.fields["start date"].line, "'start date' is the date of the first day, written YYYY-MM-DD (2008-04-11).")
+
+
+## Hooks for a moment of the game's own need a scene that raises it (`~ moment <name>`).
+func _check_moments() -> void:
+	for on: String in _moments_heard:
+		if not _moments_raised.has(on):
+			_path = str(_moments_heard[on][0])
+			_err(int(_moments_heard[on][1]), "A hook needs 'on:' with one of: %s, %s, or a moment a scene raises with '~ moment <name>' (no scene raises '%s')." % [
+				", ".join(Game.HOOK_MOMENTS), ", ".join((Game.HOOK_CHARACTER_MOMENTS + Game.HOOK_ITEM_MOMENTS).map(func(m): return "'%s<id>'" % m)), on])
 
 
 ## Character creation (CreationSystem): its questions are menus, its free feats exist.
@@ -1280,7 +1334,7 @@ func _check_programs() -> void:
 			# A creature's combat scripts, and the options of its `attacks:` menu.
 			var combat_script: bool = (type == "creature" and field in COMBAT_SCRIPTS) or (type == "character" and field == "companion attack") or \
 				(str(pid).contains(".attacks@") and db.has(str(pid).get_slice(".attacks@", 0), "creature"))
-			if (type == "location" and field in ["description", "presence", "scent"]) or (type == "quest" and field == "journal") or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules"]:
+			if (type == "location" and field in ["description", "presence", "scent"]) or (type == "quest" and field == "journal") or combat_script or (type == "condition" and field == "rest refusal") or type in ["door", "rest_rules", "help"]:
 				# A creature's combat scripts may also change values as they land (a roll, lust, a blow).
 				var effects_ok: bool = combat_script and field not in ["escape", "struggle"]
 				if ins.op == "goto":
@@ -1422,9 +1476,12 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"trigger_ending", "end_state", "ending_reason", "ending_flag", "exclude_endings",
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
-			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock"]:
+			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
+			"moment"]:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
+	if e.op == "moment":
+		_moments_raised[e.moment] = true
 	match e.op:
 		"ask" when e.get("number", false):
 			_check_path(e.path, line)
@@ -1707,7 +1764,8 @@ func _need(id: String, type: String, line: int) -> void:
 func _check_path(path: String, line: int) -> void:
 	if not _reads.has(path):
 		_reads[path] = [_path, line]
-	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to"]:
+	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to",
+			"smell.thing", "smell.kind", "notes.count", "date.year", "date.month", "date.day", "note.year", "note.month", "note.day", "note.number"]:
 		return
 	for m in db.all_of("meter"):
 		if db.typed_value("meter", m, "value") == path:

@@ -1117,7 +1117,7 @@ func show_location() -> void:
 				"talk": fields.has("talk") or (game.has_hook("instead of talking to " + c) and game.hook_instead("instead of talking to " + c) != ""),
 				"sex": fields.has("sex") or (game.has_hook("instead of sex with " + c) and game.hook_instead("instead of sex with " + c) != ""),
 				"give": can_give(c),
-				"smell": fields.has("scent"), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
+				"smell": SmellSystem.can_smell(game, "character", c), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
 				"companion": c in game.state.companions,
 				"tamed": CompanionSystem.is_companion(game, c) and Condition._truthy(game.value("%s.tamed" % c))})
 			# A character's presence line ("Wren is whittling by the lean-to.") joins the description.
@@ -1136,6 +1136,7 @@ func show_location() -> void:
 	if can_rest():
 		view.actions.append({"id": "rest", "label": "Rest"})
 	view.actions.append({"id": "wait", "label": "Wait"})
+	view["smell"] = SmellSystem.can_smell(game, "location")  # the place can be smelled (action smell_place)
 	if db.menus.has("%s.observe" % loc):
 		view.actions.append({"id": "observe", "label": "Observe"})
 	if db.menus.has("%s.actions" % loc):
@@ -1214,7 +1215,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "sex", "smell", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "smell_item", "smell_place", "smell_self", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"]:
 		return false
 	game.state.action_pending = true
@@ -1280,9 +1281,11 @@ func _act(action: String, arg: String) -> bool:
 			emit_title("Giving to %s" % db.typed_value("character", arg, "name", arg), arg)
 			give_to(arg)
 			return true
-		"sex", "smell", "look":
-			# A character here: its sex scene, scent or description.
-			var field: String = {"sex": "sex", "smell": "scent", "look": "description"}[action]
+		"smell", "smell_item", "smell_place", "smell_self":
+			return SmellSystem.smell(game, action, arg)  # a character here, a carried item, the place, the player
+		"sex", "look":
+			# A character here: its sex scene or description.
+			var field: String = {"sex": "sex", "look": "description"}[action]
 			if not db.has(arg, "character") or game.where(arg) != loc:
 				return false
 			var sex_instead: String = game.hook_instead("instead of sex with " + arg) if action == "sex" else ""
@@ -1333,9 +1336,22 @@ func _act(action: String, arg: String) -> bool:
 			start("%s#use" % arg, extra)
 			return true
 		"take", "take_all":
+			var lying: Dictionary = ItemSystem.ground(game, loc).duplicate()
 			var ok := ItemSystem.pick_up(game, arg) if action == "take" else ItemSystem.pick_up_all(game)
 			if ok:
-				show_location()
+				# Hooks "after picking up <item>" for what was taken (the original's "check grabbing X").
+				var after: Dictionary = ItemSystem.ground(game, loc)
+				var scripts: Array = []
+				for it: String in lying:
+					if int(after.get(it, 0)) < int(lying[it]):
+						scripts.append_array(game.hooks_for("after picking up " + it))
+				if scripts.is_empty():
+					show_location()
+				else:
+					scripts.reverse()
+					for pid: String in scripts:
+						_push(pid, {})
+					run()
 			return ok
 		"wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify":
 			var ok := false

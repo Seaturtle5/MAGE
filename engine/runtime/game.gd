@@ -125,6 +125,12 @@ func value(path: String) -> Variant:
 				return CompanionSystem.tamed(self).size()
 	if path.begins_with("offspring.") and path.substr(10) in ["with_you", "bunker", "roaming", "total"]:
 		return CompanionSystem.offspring(self, path.substr(10))
+	if path == "notes.count":
+		return NotesSystem.count(self)  # the player's own notes
+	if path.begins_with("date.") and path.substr(5) in ["year", "month", "day"]:
+		return date_of(state.turn)[["year", "month", "day"].find(path.substr(5))]  # today, by the calendar
+	if (path == "smell.thing" or path == "smell.kind") and not state.values.has(path):
+		return ""
 	if path.begins_with("worn.") and path.substr(5) in ItemSystem.SLOTS:
 		return ItemSystem.worn_on(self, path.substr(5))  # 1 when something is worn there (worn.legs)
 	if path.begins_with("feat."):
@@ -811,6 +817,8 @@ func describe(name: String) -> String:
 			if words.is_empty():
 				words = ["average", "normal", "unchanged"]
 			return str(words[variation("body descriptor", words.size(), "at random")])
+		"story title":
+			return str(content.branding().get("title", ""))  # the game pack's title
 		"bracket":
 			return "["  # a literal bracket, which markup would otherwise read as a substitution
 		"close bracket":
@@ -1147,6 +1155,11 @@ func apply(e: Dictionary) -> void:
 				runner.ask_text(e.path, e.prompt, e.max)
 		"send_children":
 			CompanionSystem.move_children(self, e.from, e.to)
+		"moment":
+			# "~ moment masturbating": the hooks `on: masturbating` play here, in pack load order.
+			runner.frames.append({"kind": "hooks", "moment": e.moment})
+			if runner.status == "idle":
+				runner.run()
 		"quest":
 			var path := "quest.%s" % e.quest
 			set_value(path, e.stage)
@@ -1769,8 +1782,9 @@ const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity sta
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),
-## "after taking trophy police_whistle" (chosen from a won fight's trophies).
-const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy "]
+## "after taking trophy police_whistle" (chosen from a won fight's trophies),
+## "after picking up porn_collection" (taken from the ground).
+const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy ", "after picking up "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`
@@ -1824,6 +1838,40 @@ func _hook_applies(id: String, moment: String) -> bool:
 
 func day() -> int:
 	return 1 + state.turn / 8
+
+
+## The game's day number (from 1) of a turn.
+func day_of(turn: int) -> int:
+	return 1 + turn / 8
+
+
+## The calendar date of a turn's day, [year, month, day]: the status bar's
+## `start date:` (YYYY-MM-DD, the first day) plus the days since. Without a
+## start date, [0, 0, day number].
+func date_of(turn: int) -> Array:
+	var start := ""
+	for id: String in content.all_of("status_bar"):
+		start = content.typed_value("status_bar", id, "start date")
+		break
+	var parts := start.split("-")
+	if parts.size() != 3 or not (parts[0].is_valid_int() and parts[1].is_valid_int() and parts[2].is_valid_int()):
+		return [0, 0, day_of(turn)]
+	var y := int(parts[0])
+	var m := int(parts[1])
+	var d := int(parts[2]) + day_of(turn) - 1
+	while d > _month_days(y, m):
+		d -= _month_days(y, m)
+		m += 1
+		if m > 12:
+			m = 1
+			y += 1
+	return [y, m, d]
+
+
+static func _month_days(y: int, m: int) -> int:
+	if m == 2:
+		return 29 if (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 else 28
+	return 30 if m in [4, 6, 9, 11] else 31
 
 
 func status_snapshot() -> Dictionary:

@@ -26,6 +26,13 @@ const SCHEMA := {
 	# Character creation (CreationSystem): the new-game choices and the scripts around them.
 	"creation_rules": {"choices": "list", "feats": "fields", "before": "script", "after": "script", "source": "meta"},
 	"command": {"name": "text", "description": "text", "when": "text", "play": "script", "source": "meta"},
+	# Smelling (SmellSystem), the player's own notes (NotesSystem) and the help topics (HelpSystem).
+	"smell_rules": {"smelling": "script", "smelling person": "script", "no scent": "script", "no place scent": "script",
+		"yourself": "script", "source": "meta"},
+	"notes_rules": {"when": "text", "missing": "text", "write": "text", "browse": "text", "none": "text", "date": "text",
+		"crossed out": "text", "torn out": "text", "write label": "text", "cross out label": "text", "tear out label": "text",
+		"longest": "text", "source": "meta"},
+	"help": {"title": "text", "text": "script", "order": "text", "source": "meta"},
 	"game_mode": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text", "scavenge bonus": "text", "carry bonus": "text", "loot bonus": "text", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
 		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "body text": "text", "group": "text", "available when": "text",
@@ -145,7 +152,7 @@ const SCHEMA := {
 	"level": {"name": "text", "description": "text", "default": "text", "options": "fields", "from": "text", "source": "meta"},
 	"tag": {"name": "text", "group": "text", "description": "text", "from": "text", "source": "meta"},
 	"ending": {"name": "text", "type": "text", "priority": "text", "when": "text", "play": "script", "source": "meta"},
-	"status_bar": {"meters": "list", "currency": "text", "currency names": "list", "sheet": "list", "details": "fields", "source": "meta"},
+	"status_bar": {"meters": "list", "currency": "text", "currency names": "list", "sheet": "list", "details": "fields", "start date": "text", "source": "meta"},
 	"shop": {"name": "text", "at": "list", "run by": "text", "open when": "text", "closed": "script", "intro": "script",
 		"currency": "text", "currency names": "list", "stock": "fields", "buys": "fields", "trades": "text", "bought": "script", "sold": "script",
 		"trade bonus when": "text", "trade bonus chance": "text", "source": "meta"},
@@ -159,7 +166,7 @@ const LOOKUP_PRIORITY := ["creation_rules", "game_mode", "location", "character"
 	"region", "zone", "door", "values", "pack", "shop", "feat", "ending", "epilogue", "filter", "level", "form",
 	"condition", "meter", "image", "hook", "scenario", "rest_rules", "survival_rules", "scavenge_rules", "tag",
 	"heat", "heat_rules", "captivity", "pregnancy_rules", "status_bar", "companion_rules", "level_rules", "combat_rules", "infection_rules", "vore_rules",
-	"interest", "hunt_rules"]
+	"interest", "hunt_rules", "smell_rules", "notes_rules", "help"]
 
 var _form_tags: Dictionary = {}  # form id -> tags (form_tags)
 var definitions: Dictionary = {}  ## type -> {id -> FscParser.Definition}
