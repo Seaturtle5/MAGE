@@ -1177,7 +1177,11 @@ func render_paragraphs(prog: Program, depth: int = 0, run_effects: bool = false)
 		match ins.op:
 			"text":
 				if not ins.text.has("error"):
-					paras.append(game.render(ins.text))
+					var spans: Array = game.render(ins.text)
+					if not paras.is_empty() and TextTemplate.continues(spans):
+						paras[-1] = paras[-1] + spans
+					else:
+						paras.append(spans)
 			"jump":
 				pc = ins.to
 			"unless":

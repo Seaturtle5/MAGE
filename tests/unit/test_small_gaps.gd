@@ -189,3 +189,18 @@ func test_items_lying_in_a_place() -> void:
 	assert_false(Condition.evaluate(has, game), "taken")
 	assert_true(Condition.evaluate(Condition.compile("player has rope"), game))
 	assert_true(Condition.evaluate(Condition.compile("hall does not have rope"), game))
+
+
+func _para(text: String) -> Dictionary:
+	return {"type": "paragraph", "spans": [{"text": text, "bold": false, "italic": false, "class": ""}]}
+
+
+func test_a_sentence_split_by_a_condition_stays_one_paragraph() -> void:
+	game.take_output()
+	game.emit(_para("This is quite a view"))
+	game.emit(_para(". Watching him turns you on."))
+	game.emit(_para("A new paragraph."))
+	game.emit(_para("...and an ellipsis starts its own."))
+	game.emit(_para(".'"))
+	assert_eq(_text(), "This is quite a view. Watching him turns you on.\nA new paragraph.\n...and an ellipsis starts its own..'")
+	assert_false(TextTemplate.continues([{"text": "...well."}]), "an ellipsis is not a continuation")

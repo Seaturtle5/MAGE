@@ -216,6 +216,14 @@ static func _emit(spans: Array, text: String, style: Dictionary) -> void:
 
 
 ## Plain text of rendered spans (for transcripts and tests).
+## A prose line that starts with a punctuation mark (". Then she leaves.",
+## ", he adds", ".'") goes on with the paragraph before it: the sentence was split
+## by a condition. An ellipsis ("...") starts a paragraph of its own.
+static func continues(spans: Array) -> bool:
+	var s := plain(spans)
+	return s != "" and ".,;:!?".contains(s[0]) and not s.begins_with("..")
+
+
 static func plain(spans: Array) -> String:
 	var s := ""
 	for sp in spans:

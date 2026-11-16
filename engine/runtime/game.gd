@@ -61,6 +61,11 @@ func dispose() -> void:
 
 
 func emit(event: Dictionary) -> void:
+	# The rest of a sentence split by a condition joins the paragraph it belongs to.
+	if event.get("type") == "paragraph" and not output.is_empty() and output[-1].get("type") == "paragraph" \
+			and TextTemplate.continues(event.spans):
+		output[-1].spans = output[-1].spans + event.spans
+		return
 	output.append(event)
 
 
