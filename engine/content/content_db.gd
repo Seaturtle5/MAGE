@@ -228,10 +228,12 @@ func load_folders(folders: Array) -> void:
 		var dir := DirAccess.open(folder)
 		if dir == null:
 			continue
-		var subs := Array(dir.get_directories())
+		# A folder of packs, or one pack's own folder (it holds a pack.fsc).
+		var single := FileAccess.file_exists(str(folder).path_join("pack.fsc"))
+		var subs := [""] if single else Array(dir.get_directories())
 		subs.sort()
 		for sub in subs:
-			var pack_path: String = folder.path_join(sub)
+			var pack_path: String = str(folder).path_join(sub) if not single else str(folder).trim_suffix("/")
 			var manifest := pack_path.path_join("pack.fsc")
 			if not FileAccess.file_exists(manifest):
 				continue

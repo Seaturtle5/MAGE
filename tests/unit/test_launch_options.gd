@@ -74,3 +74,11 @@ func test_begin_plays_an_event() -> void:
 	assert_eq(game.warnings, [])
 	assert_ne(game.runner.status, "", "the event's story runs")
 	game.dispose()
+
+func test_a_pack_folder_can_be_given_by_itself() -> void:
+	var all := ContentDB.new()
+	all.load_folders(["res://tests/packs"])
+	var one := ContentDB.new()
+	one.load_folders(["res://tests/packs/" + str(all.packs[0].path).get_file()])
+	assert_eq(one.packs.size(), 1, "the folder that holds a pack.fsc is loaded as one pack")
+	assert_eq(str(one.packs[0].id), str(all.packs[0].id))

@@ -3,7 +3,8 @@ extends RefCounted
 ## What the game is asked to do on the command line (after `--`).
 ##
 ##   --seed N          fix the random seed
-##   --packs DIR       also load packs from this folder (can be repeated)
+##   --packs DIR       also load packs from this folder, or the one pack
+##                     whose folder this is (can be repeated)
 ##   --only-packs      load packs from the --packs folders only
 ##   --data DIR        keep saves and remembered settings in this folder
 ##                     instead of the player's own

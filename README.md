@@ -90,7 +90,7 @@ Options go after `--`:
 
 | Option | Effect |
 |---|---|
-| `--packs DIR` | Load packs from this folder (can be repeated) |
+| `--packs DIR` | Load packs from this folder, or the one pack whose folder this is (can be repeated) |
 | `--test-content` | Load the test pack from `tests/packs` |
 | `--only-packs` | Load packs from the `--packs` folders only |
 | `--data DIR` | Keep saves and remembered settings in this folder instead of the player's own |
