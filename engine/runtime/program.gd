@@ -148,6 +148,8 @@ func _choices(n: Dictionary) -> void:
 func _fight(n: Dictionary) -> void:
 	var instr := {"op": "fight", "line": n.line, "creature": n.creature, "variant": n.variant, "outcomes": {}, "after": -1}
 	var at := _emit(instr)
+	if n.has("zones"):
+		instr["zones"] = n.zones
 	if n.has("creatures"):
 		instr["creatures"] = n.creatures
 	if n.has("times"):

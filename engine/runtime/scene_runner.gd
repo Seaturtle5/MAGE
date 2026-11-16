@@ -497,8 +497,8 @@ func run() -> void:
 					status = "combat"
 					return
 				if ins.creature == "random":
-					# The original's plain Fight: a random creature of this zone.
-					var zone: String = game.zone_here()
+					# The original's plain Fight: a random creature of this zone (or of a named one).
+					var zone: String = FightControlSystem.random_zone(game, ins)
 					var pool := encounter_pool("outside" if zone in ["", "none"] else zone)
 					if pool.is_empty():
 						f.pc = ins.after
@@ -1006,6 +1006,8 @@ func proceed() -> bool:
 func combat_action(action: String) -> bool:
 	if status == "combat" and action.begins_with("use "):
 		return _combat_item(action.substr(4))
+	if status == "combat" and action.begins_with("do "):
+		return FightActionSystem.start(self, action.substr(3))  # a fight action (its key)
 	if status != "combat" or not CombatSystem.act(game, action):
 		return false
 	var result: String = game.state.combat.result
@@ -1037,7 +1039,7 @@ func _finish_fight() -> void:
 		else:
 			f.erase("row")
 	f.erase("fight")
-	frames.append({"kind": "combat_end", "creature": ins.creature, "result": result})
+	frames.append({"kind": "combat_end", "creature": ins.creature, "result": result, "outcomes": ins.outcomes, "after": ins.after})
 	# Trophies the player may take one of, offered first (the original's trophy list).
 	var trophies: Array = CombatSystem.roll_trophies(game, ins.creature) if fallback == "won" else []
 	if fallback == "won":
@@ -1824,10 +1826,11 @@ func _queue_second_fight(pool: Array) -> void:
 	var when := db_value("combat_rules", id, "second fight when", "")
 	if when == "" or not Condition.evaluate(Condition.compile(when), game):
 		return
-	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true})
+	# Marked "second", so a scene can call it off (`~ no second fight`).
+	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true, "second": true})
 	var intro: Program = game.content.program("combat_rules:%s#second fight" % id)
 	if intro != null:
-		frames.append({"kind": "script", "pid": intro.id, "pc": 0})
+		frames.append({"kind": "script", "pid": intro.id, "pc": 0, "second": true})
 
 
 func db_value(type: String, id: String, field: String, fallback: String) -> String:
@@ -1869,9 +1872,9 @@ func pick_creature(tag: String, zone: String, favoring: Array, with_outside: boo
 		for id: String in game.content.all_of("creature"):
 			if game.creature_field(id, "infectious", "yes") == "no" or game.creature_field(id, "found in", "nowhere") in ["", "nowhere"]:
 				continue
-			if game.filter_block(game.content._list(game.content.get_def("creature", id), "tags"), true) != "":
+			if game.filter_block(CreatureChangeSystem.creature_tags(game, id), true) != "":
 				continue
-			if tag != "" and tag not in game.content._list(game.content.get_def("creature", id), "tags"):
+			if tag != "" and tag not in CreatureChangeSystem.creature_tags(game, id):
 				continue
 			any.append(id)
 		any.sort()
@@ -1894,8 +1897,8 @@ func pick_creature(tag: String, zone: String, favoring: Array, with_outside: boo
 				if id not in ids:
 					ids.append(id)
 		for id: String in ids:
-			if tag != "" and tag not in game.content._list(game.content.get_def("creature", id), "tags") \
-					and tag not in game.content.form_tags(game.content.typed_value("creature", id, "form", id)):
+			if tag != "" and tag not in CreatureChangeSystem.creature_tags(game, id) \
+					and tag not in CreatureChangeSystem.form_tags(game, game.content.typed_value("creature", id, "form", id)):
 				continue
 			pool.append(id)
 			if id in favoring:
@@ -1913,12 +1916,11 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 	var out: Array = []
 	var limit := CombatSystem.level_limit(game)  # combat rules' `level limit`
 	for id in game.content.all_of("creature"):
-		var d: FscParser.Definition = game.content.get_def("creature", id)
 		if zone not in Array(game.creature_field(id, "found in").split(",")).map(func(z): return z.strip_edges()):
 			continue
 		# Variants answer for their own filters (a goblin with banned males is met as a female).
 		var skip := VariantSystem.all_filters(game.content, id)
-		if game.filter_block(game.content._list(d, "tags").filter(func(t): return t not in skip), hunted) != "":
+		if game.filter_block(CreatureChangeSystem.creature_tags(game, id).filter(func(t): return t not in skip), hunted) != "":
 			continue
 		if not VariantSystem.meetable(game, id, hunted):
 			continue

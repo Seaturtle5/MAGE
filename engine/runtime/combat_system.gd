@@ -82,6 +82,8 @@ static func begin(game, id: String) -> void:
 		game.notice("The creature gets the drop on you!", false)
 		_retaliate(game)
 	if game.state.combat.result == "":
+		FightActionSystem.turn_starts(game)  # hooks `on: player's turn`
+	if game.state.combat.result == "":
 		show(game)
 
 
@@ -97,6 +99,7 @@ static func show(game) -> void:
 		"hp": int(c.hp), "maxhp": int(c.maxhp), "lust": maxi(0, int(c.libido) - int(c.penalty)),
 		"round": int(c.round), "grappled": c.grappled,
 		"actions": ["struggle"] if c.grappled else ["attack", "seduce", "flee", "submit", "pass", "throw"],
+		"fight_actions": FightActionSystem.offered(game),  # the player's extra choices (`fight actions:`)
 		"text": "Round %d" % int(c.round)})
 
 
@@ -180,11 +183,13 @@ static func act(game, action: String) -> bool:
 				return false
 		if action in ["attack", "seduce"] and c.result == "":
 			CompanionSystem.act_in_fight(game, id)
+		FightActionSystem.check_below(game)  # hooks `on: enemy below N%`
 		if c.result == "":
 			player_round_end(game)
 		if c.result == "":
 			_retaliate(game)
 	c.round = int(c.round) + 1
+	FightActionSystem.turn_starts(game)  # hooks `on: player's turn`
 	if c.result == "":
 		show(game)
 	return true
@@ -282,10 +287,13 @@ static func after_item(game) -> void:
 	if int(game.value("player.hp")) <= 0:
 		c.result = "lost"
 		return
-	player_round_end(game)
+	FightActionSystem.check_below(game)
+	if c.result == "":
+		player_round_end(game)
 	if c.result == "":
 		_retaliate(game)
 	c.round = int(c.round) + 1
+	FightActionSystem.turn_starts(game)
 
 
 ## The creature's turn (Alt Combat.i7x, retaliate and the Table of Critter
@@ -296,6 +304,7 @@ static func after_item(game) -> void:
 static func _retaliate(game) -> void:
 	var c: Dictionary = game.state.combat
 	var id: String = c.creature
+	c.get("vars", {}).erase("blow_cancelled")  # `~ cancel blow` counts for this turn's blow only
 	_script(game, id, "each round")
 	if c.result == "" and not _check_end(game):
 		var option := _pick_attack(game, id)
@@ -316,7 +325,7 @@ static func _standard_turn(game, id: String) -> void:
 	if c.result != "":
 		return
 	if not hit_roll(game, game.creature_field(id, "strike with", "dexterity")):
-		if game.content.program(id + "#miss") != null:
+		if CreatureChangeSystem.combat_script(game, id, "miss") != null:
 			_script(game, id, "miss")
 		else:
 			game.notice(TextTemplate.plain(game.render(TextTemplate.compile("[The enemy] misses."))), false)
@@ -406,6 +415,8 @@ static func roll_damage(game, id: String, percent: int) -> int:
 ## Damage to the player from the creature. `armor`: "normal", "no shield"
 ## (pinned: the shield can't help), "no armor" or "area" (armor counts half).
 static func strike(game, damage: int, armor: String = "normal", say: bool = true) -> void:
+	if FightControlSystem.take_cancelled_blow(game):
+		return  # the attack text said `~ cancel blow`
 	var result := ItemSystem.absorb(game, damage, 100, armor != "no shield")
 	var taken := int(result.taken)
 	if armor == "no armor":
@@ -503,7 +514,7 @@ static func _hold_armor(game, id: String) -> String:
 
 ## Plays one of the creature's combat scripts, if it has it.
 static func _script(game, id: String, field: String) -> void:
-	_play(game, game.content.program("%s#%s" % [id, field], "creature"))
+	_play(game, CreatureChangeSystem.combat_script(game, id, field))  # its own, or one put in its place in play
 
 
 ## Runs a combat script in order: each paragraph is shown as it is reached and
@@ -636,7 +647,7 @@ static func aftermath(game, id: String, result: String) -> void:
 		var infectious: bool = id != "" and game.creature_field(id, "infectious", "yes") != "no"
 		var form: String = game.creature_field(id, "form")
 		var cross: String = game.creature_field(id, "cross infection")
-		if cross != "" and game.filter_block(game.content.form_tags(cross), true) == "":
+		if cross != "" and game.filter_block(CreatureChangeSystem.form_tags(game, cross), true) == "":
 			form = cross
 		if infectious and form != "":
 			game.state.values["infection.bypass"] = game.creature_field(id, "research bypass", "no") == "yes"

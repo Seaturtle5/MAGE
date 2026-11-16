@@ -273,7 +273,7 @@ static func _father_form(game, father: String) -> String:
 	if father == "random":
 		var pool: Array = []
 		for id in game.content.all_of("creature"):
-			if game.creature_field(id, "infectious", "yes") != "no" and game.filter_block(game.content._list(game.content.get_def("creature", id), "tags"), true) == "" \
+			if game.creature_field(id, "infectious", "yes") != "no" and game.filter_block(CreatureChangeSystem.creature_tags(game, id), true) == "" \
 					and game.creature_field(id, "form") != "":
 				pool.append(id)
 		if pool.is_empty():
@@ -530,7 +530,7 @@ static func after_sex(game, taker: String, act: String) -> void:
 		return
 	if act == "anal":
 		var tag := _rule(game, "sire anal tag", "mpreg")
-		var tags: Array = game.content._list(game.content.get_def("creature", taker), "tags") + game.content.form_tags(game.creature_field(taker, "form", taker))
+		var tags: Array = CreatureChangeSystem.creature_tags(game, taker) + CreatureChangeSystem.form_tags(game, game.creature_field(taker, "form", taker))
 		if tag not in tags:
 			return
 	game.state.values["pregnancy.partner"] = taker

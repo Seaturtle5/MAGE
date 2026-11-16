@@ -231,7 +231,7 @@ func character_image(id: String) -> String:
 ## that creature has no loot (none, an unknown item or a 0% chance).
 func random_creature_loot() -> String:
 	var pool: Array = content.all_of("creature").keys().filter(func(id: String) -> bool:
-		return filter_block(content._list(content.get_def("creature", id), "tags"), true) == "")
+		return filter_block(CreatureChangeSystem.creature_tags(self, id), true) == "")
 	if pool.is_empty():
 		return ""
 	pool.sort()
@@ -511,7 +511,7 @@ func ask(node: Dictionary) -> bool:
 		"part_is":
 			return part_form(node.who, node.part) == node.form
 		"part_tagged":
-			return node.tag in content.form_tags(part_form(node.who, node.part))
+			return node.tag in CreatureChangeSystem.form_tags(self, part_form(node.who, node.part))
 		"at_flagged":
 			var at := state.location if node.who == "player" else where(node.who)
 			return at != "" and node.flag in content.list_field(at, "flags")
@@ -611,6 +611,9 @@ func adjective(who: String, adj: String) -> bool:
 		"fighting":
 			# The original's inafight: true while a fight is going on.
 			return who == "player" and not state.combat.is_empty() and str(state.combat.get("result", "")) == ""
+		"hunting":
+			# The original's ishunting: the meeting going on came from a hunt for that creature.
+			return who == "player" and FightControlSystem.hunting(self)
 		"resolved", "active":
 			var ev: Dictionary = state.events.get(who, {})
 			if ev.has(adj):
@@ -1279,7 +1282,7 @@ func apply(e: Dictionary) -> void:
 			match e.op:
 				"enemy_attack":
 					if CombatSystem.hit_roll(self, creature_field(id, "strike with", "dexterity")):
-						for spans in runner.render_paragraphs(content.program(id + "#attack", "creature"), 0, true):
+						for spans in runner.render_paragraphs(CreatureChangeSystem.combat_script(self, id, "attack"), 0, true):
 							emit({"type": "paragraph", "spans": spans})
 						CombatSystem.strike(self, CombatSystem.roll_damage(self, id, e.percent))
 					else:
@@ -1489,6 +1492,8 @@ func apply(e: Dictionary) -> void:
 			EndingSystem.flag(self, e.flag)
 		"exclude_endings":
 			EndingSystem.exclude(self, e.type)
+		_ when e.op in FightControlSystem.OPS:
+			FightControlSystem.apply(self, e)
 		_:
 			warn("Effect '%s' is not supported yet." % e.op)
 			emit({"type": "notice", "text": "[effect '%s' not implemented yet]" % e.op})
@@ -1833,7 +1838,7 @@ func pass_turn() -> void:
 
 ## The moments hooks can run at (`on:` of a hook).
 const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
-	"after resting", "instead of resting", "game starts", "while travelling", "infection"]
+	"after resting", "instead of resting", "game starts", "while travelling", "infection", "player's turn"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),

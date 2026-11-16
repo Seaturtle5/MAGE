@@ -54,7 +54,8 @@ static func run(content: ContentDB) -> void:
 		["Status bar", v._check_status_bar], ["Companions", v._check_companions], ["Levels", v._check_levels],
 		["Vore", v._check_vore], ["Scavenging", v._check_scavenge_rules], ["World", v._check_world],
 		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help],
-		["Storage", StorageSystem.check.bind(v)], ["Collections", CollectionSystem.check.bind(v)]]
+		["Storage", StorageSystem.check.bind(v)], ["Collections", CollectionSystem.check.bind(v)],
+		["Fights", FightActionSystem.check.bind(v)]]
 	for i in steps.size():
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
@@ -449,7 +450,7 @@ func _check_world() -> void:
 			_need(item_about, "item", d.fields["on"].line)
 		elif on == "":
 			_err(d.line, "A hook needs 'on:' with one of: %s, or a moment a scene raises with '~ moment <name>'." % ", ".join(Game.HOOK_MOMENTS))
-		elif on not in Game.HOOK_MOMENTS:
+		elif on not in Game.HOOK_MOMENTS and not on.begins_with(FightActionSystem.BELOW_MOMENT):
 			# A moment of the game's own (`on: masturbating`): some scene must raise it (`~ moment masturbating`).
 			_moments_heard[on] = [d.path, d.fields["on"].line if d.fields.has("on") else d.line]
 		if d.fields.has("when"):
@@ -1388,7 +1389,7 @@ func _combat_unsafe(pid: String, depth: int) -> String:
 ## Effects only a fight's scripts can run: the creature's blows and the result.
 func _combat_effect(ins: Dictionary) -> bool:
 	return ins.op == "effect" and not ins.effect.has("error") and ins.effect.op in [
-		"enemy_attack", "enemy_strike", "fight_result", "player_move", "creature_number", "creature_change", "sex"]
+		"enemy_attack", "enemy_strike", "fight_result", "player_move", "creature_number", "creature_change", "sex", "form_sex", "form_number"] + FightControlSystem.OPS
 
 
 ## Effects a text can run while it is shown (an attack landing): values, survival
@@ -1420,6 +1421,11 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 					_err(ins.line, "Creature '%s' does not exist.%s" % [c, _suggest(c, _ids("creature"))])
 			if ins.has("times"):
 				_check_expr(ins.times, ins.line)
+			for zone: String in ins.get("zones", []):
+				if "." in zone:
+					_check_path(zone, ins.line)  # a text value holding a zone ID
+				else:
+					_need(zone, "zone", ins.line)
 		"show":
 			if ins.image != "" and not _images.has(ins.image):
 				_warn(ins.line, "Image '%s' was not found in any pack's images folder." % ins.image)
@@ -1478,11 +1484,13 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
-			"moment", "collect", "discard", "tame_all", "each_companion", "unborn_looks", "ask_gear", "gear_number"]:
+			"moment", "collect", "discard", "tame_all", "each_companion", "unborn_looks", "ask_gear", "gear_number"] + FightControlSystem.OPS:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	if e.op == "moment":
 		_moments_raised[e.moment] = true
+	if e.op in FightControlSystem.OPS:
+		FightControlSystem.check_effect(self, e, line, owner)
 	match e.op:
 		"collect", "discard":
 			CollectionSystem.check_effect(self, e, line)
@@ -1587,7 +1595,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			if e.form != "nothing":
 				_need(e.form, "form", line)
 		"enemy_attack", "enemy_strike", "fight_result":
-			if not db.has(owner, "creature") and not (owner.ends_with(".attacks") and db.has(owner.trim_suffix(".attacks"), "creature")):
+			if not FightControlSystem.fight_owner(db, owner):
 				_warn(line, "'%s' only works during a fight (a creature's combat scripts or attacks)." % e.op.replace("_", " "))
 		"creature_change":
 			_need(e.creature, "creature", line)
@@ -1991,7 +1999,7 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_err(line, "'%s is ready' tests an event's requirements, but %s is not an event." % [c.who, c.who])
 				return
 			if c.adjective not in ["male", "female", "herm", "neuter", "resolved", "active", "ready", "companion", "lonely", "here", "virgin", "oral virgin", "anal virgin", "penile virgin", "collected",
-					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred", LooksSystem.LOOKING]:
+					"naked", "barefoot", "barecrotch", "barechest", "overburdened", "fighting", "pregnant", "in heat", "in female heat", "in mpreg heat", "vulnerable to heat", "heat paused", "creature picked", "captive", "dead", "imprisoned", "gone", "arrived by walking", "arrived by travelling", "in an event", "pure", "male preferred", "female preferred", "herm preferred", LooksSystem.LOOKING, "hunting"]:
 				_check_path("%s.%s" % [c.who, c.adjective.replace(" ", "_")], line)
 		"lives_at", "is_at":
 			if c.who != "player":

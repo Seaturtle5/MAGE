@@ -83,9 +83,9 @@ static func excluded(game, creature: String, kind: String) -> bool:
 static func tags_of(game, creature: String) -> Array:
 	if creature == "" or not game.content.has(creature, "creature"):
 		return []
-	var tags: Array = game.content._list(game.content.get_def("creature", creature), "tags")
-	var form: FscParser.Definition = game.content.get_def("form", game.creature_field(creature, "form", creature))
-	return tags + (game.content._list(form, "tags") if form != null else [])
+	# With the tags added or removed in play (CreatureChangeSystem).
+	var tags: Array = CreatureChangeSystem.creature_tags(game, creature)
+	return tags + CreatureChangeSystem.own_tags(game, "form", game.creature_field(creature, "form", creature))
 
 
 ## What a won fight offers: {"vore": bool, "unbirth": bool}. Only a win by

@@ -106,7 +106,7 @@ static func _pregnancy(game, taker: String, act: String, giver: String) -> void:
 		var form := _strain(game, giver)
 		if form == "" or (game.content.has(giver, "character") and Condition._truthy(game.value("%s.sterile" % giver))):
 			return
-		var eggs: bool = "ovi_impregnator" in game.content.form_tags(form)
+		var eggs: bool = "ovi_impregnator" in CreatureChangeSystem.form_tags(game, form)
 		PregnancySystem.attempt(game, "female" if act == "vaginal" else "male", form, eggs, false)
 	elif game.content.has(taker, "character"):
 		# The character's own pregnancy (the original's ImpregFunction): a fertile giver.

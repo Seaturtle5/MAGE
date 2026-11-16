@@ -2931,6 +2931,19 @@ func _show_combat(event: Dictionary) -> void:
 			game.runner.combat_action("use " + item_id)
 			_drain())
 		buttons.add_child(item_button)
+	# The player's extra choices (`fight actions:` of the creature, the party, items, feats and the rules).
+	for fa: Dictionary in event.get("fight_actions", []):
+		var fa_button := Button.new()
+		fa_button.text = str(fa.label)
+		fa_button.tooltip_text = str(fa.description)
+		fa_button.disabled = not fa.enabled
+		fa_button.custom_minimum_size = Vector2(180, 46)
+		var key: String = fa.key
+		fa_button.pressed.connect(func():
+			_new_page()
+			game.runner.combat_action("do " + key)
+			_drain())
+		buttons.add_child(fa_button)
 	choices_box.add_child(buttons)
 
 
