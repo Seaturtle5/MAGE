@@ -156,6 +156,11 @@ static var _rules: Array = [
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
 ]
+## The rules worth trying for an effect, by its first word: the rules whose
+## sentence starts with that word ("give one of ..." -> "give") and the rules
+## that start with a pattern, still in the order above. "" holds the rules for
+## any other first word.
+static var _rules_by_word: Dictionary = _index_rules(_rules)
 static var _limit_re := RegEx.create_from_string("^(.*?) (up to|down to) (-?\\d+)$")
 static var _range_re := RegEx.create_from_string("^(-?\\d+) to (-?\\d+)$")
 static var _percent_re := RegEx.create_from_string("^(\\d+)%$")
@@ -177,8 +182,52 @@ static func compile(text: String) -> Dictionary:
 	return node
 
 
+static func _index_rules(rules: Array) -> Dictionary:
+	var words: Array = [""]
+	for rule: Array in rules:
+		var w := _first_word((rule[1] as RegEx).get_pattern())
+		if w not in words:
+			words.append(w)
+	var out := {}
+	for w: String in words:
+		out[w] = rules.filter(func(rule: Array) -> bool:
+			var own := _first_word((rule[1] as RegEx).get_pattern())
+			return own == "" or own == w)
+	return out
+
+
+## The word a rule's sentence must start with: the plain letters after "^" up
+## to a space ("^give one of (...)" -> "give"), or "" when the pattern starts
+## differently, the word is optional or the pattern has a choice outside brackets.
+static func _first_word(pattern: String) -> String:
+	if not pattern.begins_with("^"):
+		return ""
+	var depth := 0
+	var k := 0
+	while k < pattern.length():
+		var c := pattern[k]
+		if c == "\\":
+			k += 1
+		elif c == "(":
+			depth += 1
+		elif c == ")":
+			depth -= 1
+		elif c == "|" and depth == 0:
+			return ""
+		elif c == "[":
+			while k < pattern.length() and pattern[k] != "]":
+				k += 2 if pattern[k] == "\\" else 1
+		k += 1
+	var end := 1
+	while end < pattern.length() and "abcdefghijklmnopqrstuvwxyz0123456789_".contains(pattern[end]):
+		end += 1
+	if end == 1 or end + 1 >= pattern.length() or pattern[end] != " " or "?*+{".contains(pattern[end + 1]):
+		return ""
+	return pattern.substr(1, end - 1)
+
+
 static func _match(s: String) -> Dictionary:
-	for rule in _rules:
+	for rule in _rules_by_word.get(s.get_slice(" ", 0), _rules_by_word[""]):
 		var m: RegExMatch = rule[1].search(s)
 		if m == null:
 			continue

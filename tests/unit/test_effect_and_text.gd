@@ -39,6 +39,37 @@ func test_unknown_effect_is_error() -> void:
 	assert_true(Effect.compile("dance wildly").has("error"))
 	assert_true(Effect.compile("schedule timer.first after 0 actions").has("error"))
 
+func test_effect_rules_are_tried_by_first_word() -> void:
+	assert_eq(Effect._first_word("^give one of ([a-z0-9_, ]+)$"), "give")
+	assert_eq(Effect._first_word("^cancel use$"), "cancel")
+	assert_eq(Effect._first_word("^(lock|unlock) (\\w+)$"), "")  # starts with a choice
+	assert_eq(Effect._first_word("^resolve(?: (\\w+))?$"), "")  # the word may go on
+	assert_eq(Effect._first_word("^turns? left$"), "")
+	assert_eq(Effect._first_word("^go ?home$"), "")  # the space is optional
+	assert_eq(Effect._first_word("^go home|stay$"), "")  # a choice of whole sentences
+	assert_eq(Effect._first_word("^go [|] home$"), "go")
+	# Every rule is tried for the first word it needs, and rules without one for every word.
+	for rule: Array in Effect._rules:
+		var word := Effect._first_word((rule[1] as RegEx).get_pattern())
+		assert_true(Effect._rules_by_word[word].has(rule), str(rule[0]))
+		if word == "":
+			for w: String in Effect._rules_by_word:
+				assert_true(Effect._rules_by_word[w].has(rule), "%s for %s" % [rule[0], w])
+	assert_eq(Effect.compile("give food 2").op, "give")
+	assert_eq(Effect.compile("give.count = 2").op, "set")
+
+func test_text_tokens() -> void:
+	var tok := func(text: String) -> String:
+		return " ".join(PackedStringArray(TextTemplate._tokenize(text).map(func(t: Dictionary) -> String: return "%s(%s)" % [t.k, t.v])))
+	assert_eq(tok.call(""), "")
+	assert_eq(tok.call("plain words"), "lit(plain words)")
+	assert_eq(tok.call("a [ if x ] b[end if]"), "lit(a ) tag(if x) lit( b) tag(end if)")
+	assert_eq(tok.call("**bold** *it* *"), "em(bold) lit(bold) em(bold) lit( ) em(italic) lit(it) em(italic) lit( ) em(italic)")
+	# A "[" with no "]" after it is prose, and so is every later "["; a tag may hold "*" and "[".
+	assert_eq(tok.call("x [a*b] y [z *w* [v"), "lit(x ) tag(a*b) lit( y [z ) em(italic) lit(w) em(italic) lit( [v)")
+	assert_eq(tok.call("[[a]]"), "tag([a) lit(])")
+	assert_eq(tok.call("é[ü]中*文"), "lit(é) tag(ü) lit(中) em(italic) lit(文)")
+
 func test_text_markup_renders() -> void:
 	var g := FakeGame.new()
 	var t := TextTemplate.compile("Hi [if player is male]sir[else]madam[end if], [one of]a[or]b[cycling] **bold** [cock of player].")

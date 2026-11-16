@@ -13,6 +13,7 @@ const PARTS := ["head", "torso", "back", "arms", "legs", "ass", "tail", "cock", 
 const COMPARATORS := [">=", "<=", "!=", ">", "<", "="]
 
 static var _cache: Dictionary = {}
+static var _words_re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|!=|[()<>=!]|[^\\s()<>=!]+")
 
 # Sentence forms, tried in order. Each regex matches the whole predicate.
 static var _rules: Array = [
@@ -103,8 +104,7 @@ static func compile(text: String) -> Dictionary:
 
 static func _words(text: String) -> PackedStringArray:
 	var out: PackedStringArray = []
-	var re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|!=|[()<>=!]|[^\\s()<>=!]+")
-	for m in re.search_all(text):
+	for m in _words_re.search_all(text):
 		out.append(m.get_string())
 	return out
 

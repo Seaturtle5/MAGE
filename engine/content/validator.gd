@@ -25,6 +25,8 @@ const PLAYER_VALUES := ["hp", "maxhp", "xp", "level", "score", "strength", "dext
 	"first_anal_partner", "first_vaginal_partner", "first_oral_partner", "first_penile_partner",
 	"weight", "definition", "androgyny", "body_hair", "ass", "mouth", "clit", "weapon_damage"]
 const SPECIAL_TARGETS := ["back", "end"]
+static var _children_re := RegEx.create_from_string("^children at (\\w+) as (\\w+)$")
+static var _name_re := RegEx.create_from_string("^\\w+$")
 const LOCATION_FLAGS := ["fast travel", "private", "safe rest", "known at start", "collected", "off map"]
 const CREATURE_GENDERS := ["neuter", "male neuter", "female neuter", "male", "female", "herm", "shemale", "male herm", "cuntboy", "variable"]
 ## The kinds of sex the original records (CreatureSexAftermath / NPCSexAftermath).
@@ -1688,7 +1690,7 @@ func _check_outcome_list(d: FscParser.Definition) -> void:
 	for entry in db.list_field(d.id, "outcomes"):
 		var parts: PackedStringArray = entry.split("=", true, 1)
 		var name := parts[0].strip_edges()
-		if not RegEx.create_from_string("^\\w+$").search(name):
+		if not _name_re.search(name):
 			_err(d.fields.outcomes.line, "Outcome '%s' is not a name; outcomes are names, optionally with a number: 'fed = 1, chased_off = 2'." % entry)
 		elif parts.size() == 2 and not parts[1].strip_edges().is_valid_int():
 			_err(d.fields.outcomes.line, "Outcome %s's number must be a whole number: '%s = 1'." % [name, name])
@@ -2140,7 +2142,7 @@ func _check_template(t: Dictionary, line: int, owner: String) -> void:
 				if slot.strip_edges() not in ItemSystem.SLOTS:
 					_err(line, "[%s]: '%s' is not a slot. Slots: %s." % [n, slot.strip_edges(), ", ".join(ItemSystem.SLOTS)])
 			continue
-		var cm := RegEx.create_from_string("^children at (\\w+) as (\\w+)$").search(n)
+		var cm := _children_re.search(n)
 		if cm != null:
 			# "[children at bunker as offspring_line]": a snippet once per child living there.
 			if not db.has(cm.get_string(2), "text"):

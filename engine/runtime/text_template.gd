@@ -45,37 +45,44 @@ static func compile(text: String, key: String = "") -> Dictionary:
 
 
 ## Tokens: {"k": "lit"|"tag"|"em", "v": String}
+## Jumps from one markup character to the next and copies the prose between
+## them in one piece. A "[" with no "]" after it is prose, and so is every
+## later "[" (none of them can have a "]" after it either).
 static func _tokenize(text: String) -> Array:
 	var out: Array = []
-	var buf := ""
-	var i := 0
-	while i < text.length():
-		var c := text[i]
-		if c == "[":
-			var close := text.find("]", i)
-			if close > i:
-				if buf != "":
-					out.append({"k": "lit", "v": buf})
-					buf = ""
-				out.append({"k": "tag", "v": text.substr(i + 1, close - i - 1).strip_edges()})
-				i = close + 1
+	var prose := 0  ## where the prose not yet added starts
+	var open := text.find("[")
+	var star := text.find("*")
+	while open != -1 or star != -1:
+		var at := star if open == -1 or (star != -1 and star < open) else open
+		var after := at + 1  ## where the scan goes on after this mark
+		if at == open:
+			var close := text.find("]", open)
+			if close == -1:
+				open = -1
 				continue
-		if c == "*":
-			if buf != "":
-				out.append({"k": "lit", "v": buf})
-				buf = ""
-			if i + 1 < text.length() and text[i + 1] == "*":
+			_add_prose(out, text, prose, at)
+			out.append({"k": "tag", "v": text.substr(at + 1, close - at - 1).strip_edges()})
+			after = close + 1
+		else:
+			_add_prose(out, text, prose, at)
+			if at + 1 < text.length() and text[at + 1] == "*":
 				out.append({"k": "em", "v": "bold"})
-				i += 2
+				after = at + 2
 			else:
 				out.append({"k": "em", "v": "italic"})
-				i += 1
-			continue
-		buf += c
-		i += 1
-	if buf != "":
-		out.append({"k": "lit", "v": buf})
+		prose = after
+		if open != -1 and open < after:
+			open = text.find("[", after)
+		if star != -1 and star < after:
+			star = text.find("*", after)
+	_add_prose(out, text, prose, text.length())
 	return out
+
+
+static func _add_prose(out: Array, text: String, from: int, to: int) -> void:
+	if to > from:
+		out.append({"k": "lit", "v": text.substr(from, to - from)})
 
 
 class _P:

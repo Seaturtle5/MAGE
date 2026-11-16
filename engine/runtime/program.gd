@@ -28,6 +28,11 @@ var path: String
 var code: Array = []
 var errors: Array = []
 
+## "play rampage_round 3 to 10 times", "play picked creature victory", "play talk of gang_members".
+static var _times_re := RegEx.create_from_string("^(\\S+(?: creature \\w+)?) (.+) times?$")
+static var _picked_re := RegEx.create_from_string("^picked creature (victory|defeated|encounter)$")
+static var _character_re := RegEx.create_from_string("^(talk|sex) of (\\w+)$")
+
 
 static func compile(program_id: String, nodes: Array, source_path: String = "") -> Program:
 	var p := Program.new()
@@ -72,19 +77,19 @@ func _block(nodes: Array) -> void:
 				var target: String = n.target
 				var times := {}
 				# "play rampage_round 3 to 10 times": the scene again and again, a set number of times.
-				var tm := RegEx.create_from_string("^(\\S+(?: creature \\w+)?) (.+) times?$").search(target)
+				var tm := _times_re.search(target)
 				if tm != null:
 					target = tm.get_string(1)
 					times = Effect.amount(tm.get_string(2))
 					if times.has("error"):
 						_error(n.line, times.error)
 						times = {}
-				var pm := RegEx.create_from_string("^picked creature (victory|defeated|encounter)$").search(target)
+				var pm := _picked_re.search(target)
 				if pm != null:
 					target = "@picked#" + pm.get_string(1)
 				# "play talk of gang_members": a character's own talk (or sex) from another scene,
 				# as the player would start it there (the original's "try talking to X").
-				var cm := RegEx.create_from_string("^(talk|sex) of (\\w+)$").search(target)
+				var cm := _character_re.search(target)
 				if cm != null:
 					target = "@character:%s#%s" % [cm.get_string(2), cm.get_string(1)]
 				var ins := {"op": "play", "line": n.line, "target": target}

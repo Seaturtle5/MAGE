@@ -673,9 +673,11 @@ func roll_check(label: String, bonus: int, target: int, stat: String = "") -> bo
 
 # --- Text -------------------------------------------------------------------
 
+static var _children_re := RegEx.create_from_string("^children at (\\w+) as (\\w+)$")
+
 func describe(name: String) -> String:
 	# "[children at bunker as offspring_line]": a text snippet once per recorded child living there.
-	var cm := RegEx.create_from_string("^children at (\\w+) as (\\w+)$").search(name)
+	var cm := _children_re.search(name)
 	if cm != null:
 		return PregnancySystem.describe_children(self, cm.get_string(1), cm.get_string(2))
 	var n := name.strip_edges()

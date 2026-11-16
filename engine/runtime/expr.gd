@@ -15,6 +15,7 @@ extends RefCounted
 ##   {"op": "bool", "v": true}        {"op": "path", "v": "player.libido"}
 ##   {"op": "word", "v": "camp"}      {"op": "+", "a": ..., "b": ...}
 
+static var _text_expr_re := RegEx.create_from_string("[-+*/%]|\\b(min|max|sqrt)\\s*\\(|^(entry|count of|random entry of) ")
 static var _token_re := RegEx.create_from_string("\\s*(\"[^\"]*\"|-?\\d+(?:\\.\\d+)?|[A-Za-z_][A-Za-z0-9_.]*|[-+*/%(),])")
 
 
@@ -239,7 +240,7 @@ static func has_words(node: Dictionary) -> bool:
 ## its compiled expression, or {} when the text is something else (a descriptor,
 ## a snippet, a plain path). All names in it must be value paths.
 static func text_expression(text: String) -> Dictionary:
-	if not RegEx.create_from_string("[-+*/%]|\\b(min|max|sqrt)\\s*\\(|^(entry|count of|random entry of) ").search(text):
+	if not _text_expr_re.search(text):
 		return {}
 	var e := parse(text)
 	if e.has("error") or is_simple(e) or has_words(e):

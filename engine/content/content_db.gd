@@ -565,6 +565,8 @@ func _index_level(d: FscParser.Definition) -> void:
 	levels[d.id] = lv
 
 
+static var _when_re := RegEx.create_from_string("^when (raised|lowered): *(.+)$")
+static var _role_re := RegEx.create_from_string("^role: *(\\w+)$")
 static var _number_re := RegEx.create_from_string("^number(?: (-?\\d+))?(?: \\((-?\\d+) to (-?\\d+)(?:, up to (-?\\d+) in fights)?\\))?$")
 ## Engine roles a pack gives its values (`role: sanity` under a value): the
 ## engine systems read the value playing a role, and skip what no value plays.
@@ -575,18 +577,19 @@ var roles: Dictionary = {}  ## role -> value path ("sanity" -> "player.humanity"
 func _index_values(d: FscParser.Definition, f: FscParser.Field, r: FscParser.Result) -> void:
 	var owner := d.id
 	var last := ""  # the value the following metadata lines belong to
+	var top := _min_indent(f.children)
 	for l in f.children:
 		if l.is_blank():
 			continue
 		# Only lines at the first level declare values; deeper lines are metadata (from:, role:).
-		if l.indent > _min_indent(f.children):
+		if l.indent > top:
 			# "when raised: <text>" / "when lowered: <text>": said when a change raises or lowers it.
-			var wm := RegEx.create_from_string("^when (raised|lowered): *(.+)$").search(l.text.strip_edges())
+			var wm := _when_re.search(l.text.strip_edges())
 			if wm != null and last != "":
 				values[last][wm.get_string(1)] = wm.get_string(2)
 				values[last][wm.get_string(1) + "_line"] = l.number
 				continue
-			var rm := RegEx.create_from_string("^role: *(\\w+)$").search(l.text.strip_edges())
+			var rm := _role_re.search(l.text.strip_edges())
 			if rm != null and last != "":
 				var role := rm.get_string(1)
 				if role not in ROLES:

@@ -122,12 +122,11 @@ static func _split_lines(text: String, result: Result) -> Array[Line]:
 			continue
 		if stripped.begins_with("//"):
 			continue
-		var indent := 0
-		var j := 0
-		while j < s.length() and (s[j] == " " or s[j] == "\t"):
-			indent += TAB_WIDTH if s[j] == "\t" else 1
-			j += 1
-		out.append(Line.new(i + 1, indent, s.substr(j).strip_edges(false, true)))
+		# Indentation: a space counts 1, a tab TAB_WIDTH.
+		var rest := s.lstrip(" \t")
+		var j := s.length() - rest.length()
+		var indent := j + s.left(j).count("\t") * (TAB_WIDTH - 1)
+		out.append(Line.new(i + 1, indent, rest.strip_edges(false, true)))
 	return out
 
 
