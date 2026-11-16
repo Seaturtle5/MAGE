@@ -1774,7 +1774,8 @@ func _item_details(items: Array) -> Control:
 		b.text = a[0]
 		if a[2] != "":
 			_button_icon(b, a[2])
-		b.disabled = not idle or (a[1] == "remove" and it.cursed)
+		# Cursed gear won't come off; with a `cursed text:` the button tries (and says why not).
+		b.disabled = not idle or (a[1] == "remove" and it.cursed and not it.get("cursed_text", false))
 		if a[1] == "remove" and it.cursed:
 			b.tooltip_text = "It won't come off."
 		var action: String = a[1]
@@ -1841,7 +1842,9 @@ func _item_stats(id: String) -> Control:
 
 ## Runs an inventory action and keeps the inventory open unless a scene started.
 func _inventory_act(action: String, id: String) -> void:
-	if action in ["use", "smell_item"]:
+	# Trying to take off cursed gear with a `cursed text:` tells why on the page, as a use does.
+	var stuck: bool = action == "remove" and id in game.state.equipped and WorldSystem.cursed(game, id) and WorldSystem.has_cursed_text(game, id)
+	if action in ["use", "smell_item"] or stuck:
 		_close_overlay()
 		_act(action, id)
 		return
@@ -2384,7 +2387,7 @@ func _ally_row(id: String) -> Control:
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 0)
 	info.size_flags_horizontal = SIZE_EXPAND_FILL
-	var name := FsTheme.label(game.content.field_value(id, "name", id) + ("  ·  with you" if following else ""), 16,
+	var name := FsTheme.label(WorldSystem.companion_name(game, id) + ("  ·  with you" if following else ""), 16,
 		FsTheme.TEXT if following else FsTheme.TEXT_DIM)
 	name.autowrap_mode = TextServer.AUTOWRAP_OFF
 	info.add_child(name)

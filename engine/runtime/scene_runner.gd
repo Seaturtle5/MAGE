@@ -398,6 +398,10 @@ func run() -> void:
 			if SmellSystem.step(self, f):
 				return
 			continue
+		if f.kind == WorldSystem.FRAME:
+			if WorldSystem.step(self, f):  # picking up after `before picking up` hooks
+				return
+			continue
 		if f.kind == "birth":
 			# A birth (PregnancySystem): `birth`, then each child's script, then `after birth`.
 			var rid := PregnancySystem.rules(game)
@@ -879,7 +883,7 @@ func give_to(who: String) -> void:
 	var db: ContentDB = game.content
 	game.set_value("gift.to", who)
 	frames.append({"kind": "gift", "who": who})
-	var name := db.typed_value("character", who, "name", who)
+	var name := WorldSystem.character_name(game, who)
 	var prompt := db.typed_value("character", who, "gift prompt", "Give what to %s?" % name)
 	frames.append({"kind": "item_choice", "path": "gift.item", "ids": StorySystem.gift_choices(self, who),
 		"prompt": TextTemplate.compile(prompt), "shown": false})
@@ -914,7 +918,8 @@ func _item_choice_step(f: Dictionary) -> bool:
 	var shown: Array = []
 	pending = []
 	for id: String in ids:
-		shown.append({"text": game.content.typed_value("item", id, "name", id), "description": "", "enabled": true})
+		# Items, or the creatures of `~ ask x as creature met:` (WorldSystem).
+		shown.append({"text": game.content.typed_value(str(f.get("type", "item")), id, "name", id), "description": "", "enabled": true})
 		pending.append({"item_pick": id, "enabled": true})
 	shown.append({"text": "Nevermind", "description": "", "enabled": true, "leave": true})
 	pending.append({"item_pick": "", "enabled": true})
@@ -1130,17 +1135,18 @@ func show_location() -> void:
 	for c in db.all_of("character"):
 		if game.where(c) == loc and not game.character_hidden(c):
 			var fields: Dictionary = db.get_def("character", c).fields
-			view.people.append({"id": c, "name": db.typed_value("character", c, "name", c),
+			view.people.append({"id": c, "name": WorldSystem.character_name(game, c),
 				"image": game.character_image(c),
 				# Talk and sex added by an "instead of" hook count only while the hook applies.
 				"talk": fields.has("talk") or (game.has_hook("instead of talking to " + c) and game.hook_instead("instead of talking to " + c) != ""),
 				"sex": fields.has("sex") or (game.has_hook("instead of sex with " + c) and game.hook_instead("instead of sex with " + c) != ""),
 				"give": can_give(c),
-				"smell": SmellSystem.can_smell(game, "character", c), "look": fields.has("description"), "actions": db.menus.has("%s.actions" % c),
+				"smell": SmellSystem.can_smell(game, "character", c), "look": WorldSystem.character_program(game, c, "description") != "", "actions": db.menus.has("%s.actions" % c),
 				"companion": c in game.state.companions,
 				"tamed": CompanionSystem.is_companion(game, c) and Condition._truthy(game.value("%s.tamed" % c))})
 			# A character's presence line ("Wren is whittling by the lean-to.") joins the description.
-			var presence: Program = db.program("%s#presence" % c, "character")
+			var presence_id: String = WorldSystem.character_program(game, c, "presence")  # or as a scene changed it
+			var presence: Program = db.program(presence_id, "character") if presence_id != "" else null
 			if presence != null:
 				view.description.append_array(render_paragraphs(presence))
 	var here := ItemSystem.ground(game, loc)
@@ -1292,7 +1298,7 @@ func _act(action: String, arg: String) -> bool:
 			if talk_instead == "" and not db.get_def("character", arg).fields.has("talk"):
 				return false
 			game.set_value("%s.met" % arg, true)
-			emit_title("Talking with %s" % db.typed_value("character", arg, "name", arg), arg)
+			emit_title("Talking with %s" % WorldSystem.character_name(game, arg), arg)
 			start(talk_instead if talk_instead != "" else "%s#talk" % arg)
 			return true
 		"give":
@@ -1300,7 +1306,7 @@ func _act(action: String, arg: String) -> bool:
 			if not db.has(arg, "character") or game.where(arg) != loc or not can_give(arg):
 				return false
 			game.set_value("%s.met" % arg, true)
-			emit_title("Giving to %s" % db.typed_value("character", arg, "name", arg), arg)
+			emit_title("Giving to %s" % WorldSystem.character_name(game, arg), arg)
 			give_to(arg)
 			return true
 		"smell", "smell_item", "smell_place", "smell_self":
@@ -1311,12 +1317,14 @@ func _act(action: String, arg: String) -> bool:
 			if not db.has(arg, "character") or game.where(arg) != loc:
 				return false
 			var sex_instead: String = game.hook_instead("instead of sex with " + arg) if action == "sex" else ""
-			if sex_instead == "" and db.program("%s#%s" % [arg, field], "character") == null:
+			# A description a scene put in its place (`~ character X description -> Y`).
+			var own: String = WorldSystem.character_program(game, arg, field) if action == "look" else "%s#%s" % [arg, field]
+			if sex_instead == "" and (own == "" or db.program(own, "character") == null):
 				return false
 			if action == "sex":
 				game.set_value("%s.met" % arg, true)
-				emit_title(db.typed_value("character", arg, "name", arg), arg)
-			start(sex_instead if sex_instead != "" else "%s#%s" % [arg, field])
+				emit_title(WorldSystem.character_name(game, arg), arg)
+			start(sex_instead if sex_instead != "" else own)
 			return true
 		"shop":
 			# A shop here: its menu when open, else what it says about being closed.
@@ -1359,6 +1367,8 @@ func _act(action: String, arg: String) -> bool:
 			start(use_script, extra)
 			return true
 		"take", "take_all":
+			if WorldSystem.take(self, action, arg):
+				return true  # `before picking up` hooks first; they may refuse the item
 			var lying: Dictionary = ItemSystem.ground(game, loc).duplicate()
 			var ok := ItemSystem.pick_up(game, arg) if action == "take" else ItemSystem.pick_up_all(game)
 			if ok:
@@ -1384,7 +1394,7 @@ func _act(action: String, arg: String) -> bool:
 				"wear":
 					ok = ItemSystem.wear(game, arg)
 				"remove":
-					ok = ItemSystem.remove(game, arg)
+					ok = WorldSystem.try_remove(self, arg)  # cursed gear: its `cursed text:`
 				"wield":
 					ok = ItemSystem.wield(game, arg)
 				"unwield":
@@ -1613,7 +1623,12 @@ func _walk(arg: String) -> bool:
 				if int(game.value("player.hp")) < 1:
 					game.notice("You are too injured to go far. You rest instead.", false)
 					return _act("rest", "")
-				return _explore(loc, danger)
+				# The door's `going text:` is read on the page of what lies beyond (WorldSystem).
+				var first: int = game.output.size()
+				var said := WorldSystem.say_going_text(self, door)
+				var explored := _explore(loc, danger)
+				WorldSystem.move_under_title(game, first, said)
+				return explored
 			if _door_locked(door):
 				var text: String = render_inline(db.program(door + "#locked text")) if db.program(door + "#locked text") != null else "The door is locked."
 				game.notice(text, false)
@@ -1641,7 +1656,7 @@ func leaving_event(loc: String, dir: String) -> String:
 	var best := ""
 	var best_priority := 1 << 30
 	for ev in db.all_of("event"):
-		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
+		var found := WorldSystem.event_found(game, ev)
 		if [loc, dir] not in found.leaving:
 			continue
 		var st: Dictionary = game._event(ev)
@@ -1669,7 +1684,7 @@ func arrival_event(mode: String, place: String = "", replacing: bool = false) ->
 	game.state.values["arrival.mode"] = mode
 	var candidates: Array = []
 	for ev in db.all_of("event"):
-		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
+		var found := WorldSystem.event_found(game, ev)
 		if not StorySystem.arrives(game, loc, found.walking if mode == "walk" else found.travelling):
 			continue  # a place named, or `any place in <zone or region>`
 		if (db.typed_value("event", ev, "replaces trip", "no") == "yes") != replacing:
@@ -1679,7 +1694,7 @@ func arrival_event(mode: String, place: String = "", replacing: bool = false) ->
 			continue
 		if game.filter_block(db._list(db.get_def("event", ev), "tags"), true) != "":
 			continue
-		if int(db.typed_value("event", ev, "level", "0")) > int(game.value("player.level")) + 1:
+		if WorldSystem.event_level(game, ev) > int(game.value("player.level")) + 1:
 			continue
 		if int(st.get("last_turn", -1)) >= 0 and game.state.turn - int(st.last_turn) <= int(db.typed_value("event", ev, "cooldown", "0")):
 			continue
@@ -1721,7 +1736,7 @@ func _events_found(zone: String, way: String) -> Array:
 	var db: ContentDB = game.content
 	var candidates: Array = []
 	for ev in db.all_of("event"):
-		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
+		var found := WorldSystem.event_found(game, ev)  # with the zones a scene moved it to
 		if not found[way] or zone not in found.zones:
 			continue
 		var st: Dictionary = game._event(ev)
@@ -1730,7 +1745,7 @@ func _events_found(zone: String, way: String) -> Array:
 		# Banned events are never found. Wards don't affect events, as in the original.
 		if game.filter_block(db._list(db.get_def("event", ev), "tags"), true) != "":
 			continue
-		if int(db.typed_value("event", ev, "level", "0")) >= int(game.value("player.level")) + 2:
+		if WorldSystem.event_level(game, ev) >= int(game.value("player.level")) + 2:
 			continue
 		if int(game.value("player.score")) < int(db.typed_value("event", ev, "min score", "-2147483648")):
 			continue

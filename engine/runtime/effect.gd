@@ -27,7 +27,8 @@ static var _rules: Array = [
 	["unbirth_of", RegEx.create_from_string("^unbirth pregnancy (?:of|with) (\\w+)$")],
 	["vore_step", RegEx.create_from_string("^(absorb enemy stat|infect enemy|unbirth pregnancy)$")],
 	# Pregnancy (PregnancySystem): "~ impregnation chance", "~ impregnate female by wolf with eggs".
-	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|\\w+))?( with eggs?)?$")],
+	# "by larissa.strain": the creature or form a value holds.
+	["impregnate", RegEx.create_from_string("^(impregnation chance|impregnate)(?: (female|male|self))?(?: by (random creature|[a-z0-9_]+(?:\\.[a-z0-9_]+)*))?( with eggs?)?$")],
 	["pregnancy_step", RegEx.create_from_string("^(accept pregnancy|give birth|record child)$")],
 	["each_child", RegEx.create_from_string("^for each child(?: at (\\w+))? play (\\w[\\w.]*)$")],
 	# A story child: "~ new child" clears the last child's values; "~ child.gender = random" and
@@ -195,6 +196,20 @@ static var _rules: Array = [
 	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*)$")],
 	["resolve_tagged", RegEx.create_from_string("^resolve every event tagged (\\w+)$")],
 	["each_companion_of", RegEx.create_from_string("^for (each tamed companion|all companions) play (\\w[\\w.]*)$")],
+	# WorldSystem: "~ event scopaesthesia found in red" (or "nowhere"), "~ event scopaesthesia
+	# level = 9" (also + and -); "~ cancel pick up" (in a `before picking up` hook); "~ shift
+	# into x.critter" (the original's shift: every part with its change text); "~ transform
+	# into x.critter" (a value holding a creature or form); "~ ask x.critter as creature met:
+	# Which one?"; "~ character doctor_matt name \"Left Behind Recording\"" (or "default"),
+	# "~ character doctor_matt presence -> matt_recorder" (also description; "-> default").
+	["world:event_zones", RegEx.create_from_string("^event (\\w+) found in ([a-z0-9_, ]+)$")],
+	["world:event_level", RegEx.create_from_string("^event (\\w+) level ([+=-]) (.+)$")],
+	["world:cancel_pick_up", RegEx.create_from_string("^cancel pick up$")],
+	["world:shift", RegEx.create_from_string("^shift into ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)$")],
+	["world:transform_held", RegEx.create_from_string("^transform into ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+)$")],
+	["world:ask_creature", RegEx.create_from_string("^ask ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)+) as (?:a )?creature met:\\s*(.+)$")],
+	["world:character_name", RegEx.create_from_string("^character (\\w+) name (\"[^\"]*\"|default)$")],
+	["world:character_text", RegEx.create_from_string("^character (\\w+) (presence|description) -> ([a-z0-9_.]+)$")],
 ]
 ## The rules worth trying for an effect, by its first word: the rules whose
 ## sentence starts with that word ("give one of ..." -> "give") and the rules
@@ -627,6 +642,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "each_companion_of", "scope": "tamed" if m.get_string(1).begins_with("each") else "all", "scene": m.get_string(2)}
 			_ when str(rule[0]).begins_with("fight:"):
 				return FightControlSystem.compile_effect(rule[0], m)
+			_ when str(rule[0]).begins_with("world:"):
+				return WorldSystem.compile_effect(rule[0], m)
 	return {"error": "unknown effect '%s'" % s}
 
 

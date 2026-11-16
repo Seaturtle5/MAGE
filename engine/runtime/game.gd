@@ -141,6 +141,9 @@ func value(path: String) -> Variant:
 		return 1 if path.substr(5) in state.feats else 0  # for formulas: feat.good_teacher * 50
 	if path.begins_with("collection."):
 		return CollectionSystem.value(self, path.substr(11))  # collections (CollectionSystem)
+	var world: Variant = WorldSystem.value(self, path)  # here.door_zone, arrival.from (WorldSystem)
+	if world != null:
+		return world
 	var looked: Variant = LooksSystem.value(self, path)  # form numbers, the unborn child ... (LooksSystem)
 	if looked != null:
 		return looked
@@ -538,6 +541,8 @@ func ask(node: Dictionary) -> bool:
 			return species_name(node.who, node.part).to_lower() == species_name(node.other, node.other_part).to_lower()
 		"is":
 			return adjective(node.who, node.adjective)
+		_ when str(node.op).begins_with("world_"):
+			return WorldSystem.ask(self, node)  # a banned creature, an item used up by use
 	warn("Condition '%s' is not supported yet." % node.op)
 	return false
 
@@ -774,8 +779,8 @@ func describe(name: String) -> String:
 			# "[name of event.item]": the name of the thing a value holds.
 			if "." in who:
 				var held := str(value(who))
-				return content.field_value(held, "name", held)
-			return content.field_value(who, "name", who)
+				return WorldSystem.character_name(self, held) if content.has(held, "character") else content.field_value(held, "name", held)
+			return WorldSystem.character_name(self, who) if content.has(who, "character") else content.field_value(who, "name", who)
 		"sir":
 			return "sir" if adjective("player", "male") else "ma'am"
 		"s", "es":
@@ -933,7 +938,7 @@ func companions_description() -> String:
 		var level = value(id + ".level")
 		if level == null:
 			level = content.field_value(id, "level", "")
-		var entry := content.field_value(id, "name", id)
+		var entry := WorldSystem.companion_name(self, id)
 		if str(level) != "":
 			entry += ", who is level %s" % str(level)
 		if i > 0 and i == state.companions.size() - 1:
@@ -1428,7 +1433,11 @@ func apply(e: Dictionary) -> void:
 		"no_fight":
 			fight_cancelled = true
 		"impregnate":
-			PregnancySystem.attempt(self, e.kind, e.father, e.eggs, e.sure)
+			var father: String = e.father
+			if "." in father:
+				var held: Variant = value(father)  # "by larissa.strain": the creature or form a value holds
+				father = str(held) if held != null else ""
+			PregnancySystem.attempt(self, e.kind, father, e.eggs, e.sure)
 		"accept_pregnancy":
 			PregnancySystem.accept(self)
 		"pregnancy_faster":
@@ -1474,7 +1483,7 @@ func apply(e: Dictionary) -> void:
 		"wear":
 			ItemSystem.wear(self, e.item, quiet)
 		"remove":
-			ItemSystem.remove(self, e.item, quiet)
+			ItemSystem.remove(self, e.item, quiet, true)  # a scene takes even cursed gear off (the original's "now X is not equipped")
 		"remove_slot":
 			for worn: String in state.equipped.duplicate():
 				if ItemSystem.gear(self, worn, "slot", "none") == e.slot:
@@ -1508,6 +1517,8 @@ func apply(e: Dictionary) -> void:
 			EndingSystem.exclude(self, e.type)
 		_ when e.op in FightControlSystem.OPS:
 			FightControlSystem.apply(self, e)
+		_ when str(e.op).begins_with("world_"):
+			WorldSystem.apply(self, e)  # events moved, the shift, renamed characters ...
 		_:
 			if StorySystem.apply(self, e):
 				return
@@ -1779,6 +1790,7 @@ func go_to(place: String) -> void:
 	if not content.has(place, "location"):
 		warn("No location '%s'." % place)
 		return
+	var from := state.location
 	state.location = place
 	state.visited[place] = true
 	if not state.known.has(place):
@@ -1788,6 +1800,7 @@ func go_to(place: String) -> void:
 	var arrival := content.program(place + "#enter")
 	if arrival != null:
 		runner.play_now(arrival.id)
+	WorldSystem.arrived(self, from, place)  # hooks `on: arriving`
 
 
 ## The zone exploring, hunting and resting use at a place: its own zone, or the
@@ -1870,14 +1883,18 @@ func pass_turn() -> void:
 
 ## The moments hooks can run at (`on:` of a hook).
 const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
-	"after resting", "instead of resting", "game starts", "while travelling", "infection", "player's turn", "after import"]
+	"after resting", "instead of resting", "game starts", "while travelling", "infection", "player's turn", "after import",
+	"arriving"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),
 ## "after taking trophy police_whistle" (chosen from a won fight's trophies),
 ## "after picking up porn_collection" (taken from the ground), "instead of using
-## clean_bandages" (played instead of the item's own use text, StorySystem.use_script).
-const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy ", "after picking up ", "instead of using "]
+## clean_bandages" (played instead of the item's own use text, StorySystem.use_script),
+## "before picking up rubber_sneakers" (before it is taken from the ground; `~ cancel pick up`
+## leaves it lying, WorldSystem).
+const HOOK_ITEM_MOMENTS := ["after using ", "after taking trophy ", "after picking up ", "instead of using ",
+	"before picking up "]
 
 
 ## Runs the form turn hook of the player's body, then the hooks for `moment`
@@ -1975,7 +1992,7 @@ func status_snapshot() -> Dictionary:
 	return {"location": content.field_value(loc, "name", loc), "region": map_group_name(map_group(loc)),
 		"day": day(), "time": time_slot(), "stats": stats, "conditions": state.conditions.keys(),
 		"sleep": RestSystem.status(self),
-		"companions": state.companions.map(func(c): return content.field_value(c, "name", c))}
+		"companions": state.companions.map(func(c): return WorldSystem.companion_name(self, c))}
 
 
 ## The top bar's meters and money: the game's `== status_bar` (its `meters` are
@@ -2032,6 +2049,7 @@ func inventory_list() -> Array:
 			"usable": d != null and (d.fields.has("use") or d.fields.has("use action")), "weight": int(content.typed_value("item", id, "weight", "0")),
 			"wearable": wearable, "worn": id in state.equipped, "weapon": weapon, "wielded": state.wielded == id,
 			"cursed": ItemSystem.gear(self, id, "cursed", "no") == "yes",
+			"cursed_text": WorldSystem.has_cursed_text(self, id),  # its Take off plays a text
 			"keep": content.typed_value("item", id, "keep", "no") == "yes",
 			"purifiable": ItemSystem.microwave_here(self),
 			"slot": ItemSystem.gear(self, id, "slot", "") if wearable else ""})

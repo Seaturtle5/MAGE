@@ -55,7 +55,8 @@ static func run(content: ContentDB) -> void:
 		["Vore", v._check_vore], ["Scavenging", v._check_scavenge_rules], ["World", v._check_world],
 		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help],
 		["Storage", StorageSystem.check.bind(v)], ["Collections", CollectionSystem.check.bind(v)],
-		["Fights", FightActionSystem.check.bind(v)], ["Earlier progress", ImportSystem.check.bind(v)]]
+		["Fights", FightActionSystem.check.bind(v)], ["Earlier progress", ImportSystem.check.bind(v)],
+		["World", WorldSystem.check.bind(v)]]
 	for i in steps.size():
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
@@ -817,8 +818,11 @@ func _check_companions() -> void:
 						_err(p.line, "Tamed must be yes or no.")
 				"stays when":
 					_check_condition_text(p.value, p.line, "character:" + id)
+				"name":
+					if p.value == "":
+						_err(p.line, "A companion's name needs a text: 'name: Mouse'.")
 				_:
-					_err(p.line, "Unknown companion field '%s'. Allowed: attacks with, hit bonus, stays when, tamed." % p.key)
+					_err(p.line, "Unknown companion field '%s'. Allowed: attacks with, hit bonus, stays when, tamed, name." % p.key)
 	var rules: Dictionary = db.all_of("companion_rules")
 	if rules.size() > 1:
 		for id in rules.keys().slice(1):
@@ -1492,11 +1496,15 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
-			"moment", "collect", "discard", "tame_all", "each_companion", "unborn_looks", "ask_gear", "gear_number"] + FightControlSystem.OPS and e.op not in StorySystem.OPS:
+			"moment", "collect", "discard", "tame_all", "each_companion", "unborn_looks", "ask_gear", "gear_number"] + FightControlSystem.OPS and e.op not in StorySystem.OPS \
+			and not str(e.op).begins_with("world_"):
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
 		return
 	if e.op in StorySystem.OPS:
 		StorySystem.check_effect(self, e, line)
+		return
+	if str(e.op).begins_with("world_"):
+		WorldSystem.check_effect(self, e, line)
 		return
 	if e.op == "moment":
 		_moments_raised[e.moment] = true
@@ -1553,7 +1561,9 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"trigger_ending":
 			_need(e.ending, "ending", line)
 		"impregnate":
-			if e.father not in ["", "random"] and not db.has(e.father, "creature") and not db.has(e.father, "form"):
+			if "." in str(e.father):
+				_check_path(e.father, line)  # "by larissa.strain": the creature or form a value holds
+			elif e.father not in ["", "random"] and not db.has(e.father, "creature") and not db.has(e.father, "form"):
 				_err(line, "'%s' is neither a creature nor a form to father a child." % e.father)
 			if e.kind == "self" and e.father != "":
 				_err(line, "A self-impregnation has no father: leave out 'by %s'." % e.father)
@@ -1754,6 +1764,7 @@ func _check_expr(node: Dictionary, line: int) -> void:
 	for p in Expr.list_paths(node):
 		_check_list(p, line)
 	LooksSystem.check_expr(self, node, line)  # "strain of x", "armor of x"
+	WorldSystem.check_expr(self, node, line)  # "strength of x", "creature named x", "random carried item"
 
 
 ## A value declared as a list (`name: list`).
@@ -1812,6 +1823,8 @@ func _check_path(path: String, line: int) -> void:
 		return  # form numbers, the unborn child, the newest child (LooksSystem)
 	if StorySystem.check_path(self, path, line):
 		return
+	if WorldSystem.check_path(path):
+		return  # here.door_zone, arrival.from, picking.item
 	if parts[0] == "captivity" and parts.size() == 2 and parts[1] in CaptivitySystem.VALUES:
 		return
 	if parts[0] == "fight" and parts.size() == 2 and parts[1].is_valid_identifier():
@@ -2066,6 +2079,8 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 		"parity":
 			for p in Expr.paths(c.value):
 				_check_path(p, line)
+		"world_banned", "world_has_used_up":
+			WorldSystem.check_condition(self, c, line)
 
 
 ## A creature's `special:` list: built-in behaviours, each with a chance where

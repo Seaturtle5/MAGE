@@ -107,7 +107,7 @@ static func pick_event(game, tag: String) -> String:
 			continue
 		if game.filter_block(game.content.list_field(ev, "tags"), true) != "":
 			continue
-		if int(game.content.typed_value("event", ev, "level", "0")) >= int(game.value("player.level")) + 2:
+		if WorldSystem.event_level(game, ev) >= int(game.value("player.level")) + 2:
 			continue
 		if int(game.value("player.score")) < int(game.content.typed_value("event", ev, "min score", "-2147483648")):
 			continue

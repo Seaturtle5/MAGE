@@ -89,7 +89,7 @@ static func _name(game, who: String, article: bool) -> String:
 	if who == "player":
 		return "you"
 	if game.content.has(who, "character"):
-		return game.content.typed_value("character", who, "name", who)
+		return WorldSystem.character_name(game, who)
 	var n: String = game.creature_field(who, "name", who).to_lower()
 	return ("the " + n) if article else n
 

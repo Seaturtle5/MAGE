@@ -359,9 +359,10 @@ static func wear(game, id: String, quiet: bool = false) -> bool:
 	return true
 
 
-## Takes off a worn item. Cursed items stay on; their text explains why.
-static func remove(game, id: String, quiet: bool = false) -> bool:
-	if id not in game.state.equipped or gear(game, id, "cursed", "no") == "yes":
+## Takes off a worn item. Cursed items stay on (their `cursed text:` explains why),
+## unless `forced`: a scene's `~ remove X` (the original's "now X is not equipped").
+static func remove(game, id: String, quiet: bool = false, forced: bool = false) -> bool:
+	if id not in game.state.equipped or (gear(game, id, "cursed", "no") == "yes" and not forced):
 		return false
 	_say(game, "**You take off the %s.**" % item_name(game, id), quiet)
 	game.state.equipped.erase(id)

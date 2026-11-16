@@ -82,6 +82,10 @@ static var _rules: Array = [
 	["gear_held", RegEx.create_from_string("^player (wears|does not wear|wields|does not wield) ([a-z0-9_]+\\.[a-z0-9_.]+)$")],
 	# After `~ pick random event tagged dream` (StorySystem): whether one was found.
 	["event_picked", RegEx.create_from_string("^(an|no) event is picked$")],
+	# WorldSystem: "creature catgirl is banned" (also "creature x.pick is not banned"),
+	# "player has an item used up by use" (the original's owned temporary grab objects).
+	["world_banned", RegEx.create_from_string("^creature ([a-z0-9_]+(?:\\.[a-z0-9_]+)*) is (not )?banned$")],
+	["world_has_used_up", RegEx.create_from_string("^player (has|does not have) (?:an? |any )item used up by use$")],
 ]
 
 
@@ -318,6 +322,8 @@ static func _predicate(words: PackedStringArray) -> Dictionary:
 				return {"op": "gear_held", "verb": "wields" if "wield" in verb else "wears", "path": m.get_string(2), "neg": verb.begins_with("does not")}
 			"event_picked":
 				return {"op": "empty", "path": "picked.event", "neg": m.get_string(1) == "an"}
+			"world_banned", "world_has_used_up":
+				return WorldSystem.compile_condition(rule[0], m)
 			"value_is":
 				var right := Expr.parse(m.get_string(3))
 				if right.has("error"):

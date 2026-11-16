@@ -125,6 +125,17 @@ class _P:
 			# "count of x.list": how many entries the list has.
 			i += 1
 			return {"op": "count", "a": list_path()}
+		if tok == "random" and i + 1 < t.size() and t[i] == "carried" and t[i + 1] == "item":
+			# "random carried item", "... tagged milky", "... used up by use" (WorldSystem).
+			i += 2
+			var tag := ""
+			if i + 1 < t.size() and t[i] == "tagged":
+				tag = t[i + 1]
+				i += 2
+			var used_up := i + 3 < t.size() and t[i] == "used" and t[i + 1] == "up" and t[i + 2] == "by" and t[i + 3] == "use"
+			if used_up:
+				i += 4
+			return {"op": "world_random_item", "tag": tag, "used_up": used_up}
 		if tok == "random" and i + 1 < t.size() and t[i] == "entry" and t[i + 1] == "of":
 			# "random entry of x.list": one of its entries, picked each time.
 			i += 2
@@ -155,6 +166,12 @@ class _P:
 				err = "%s takes %s" % [tok, "one value" if tok == "sqrt" else "two values: %s(a, b)" % tok]
 				return {}
 			return {"op": tok, "a": args[0], "b": args[1] if args.size() > 1 else {"op": "num", "v": 0}}
+		if (tok in WorldSystem.READINGS and i < t.size() and t[i] == "of") or (tok == "creature" and i < t.size() and t[i] == "named"):
+			# "strength of x.critter" (a creature's numbers), "creature named x.text" (WorldSystem).
+			var what := tok if tok != "creature" else "creature named"
+			i += 1
+			var named := atom()
+			return {} if err != "" else {"op": "world_of", "what": what, "a": named}
 		if tok in LooksSystem.READINGS and i < t.size() and t[i] == "of":
 			# "strain of player.body.cock", "armor of x.pick": a reading of the form,
 			# creature or item an operand names or holds (LooksSystem, GearSystem).
@@ -217,6 +234,10 @@ static func evaluate(node: Dictionary, ctx) -> Variant:
 			return list[ctx.rng.range_int(0, list.size() - 1)] if list is Array and not list.is_empty() else null
 		"of":
 			return LooksSystem.read_of(ctx, node.what, evaluate(node.a, ctx))
+		"world_of":
+			return WorldSystem.read_of(ctx, node.what, evaluate(node.a, ctx))
+		"world_random_item":
+			return WorldSystem.random_item(ctx, node.tag, node.used_up)
 		"%":
 			# The original's "the remainder after dividing a by b".
 			var m := _num(evaluate(node.b, ctx))
@@ -264,7 +285,7 @@ static func paths(node: Dictionary, out: Array = []) -> Array:
 		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt", "entry":
 			paths(node.a, out)
 			paths(node.b, out)
-		"count", "random_entry", "of":
+		"count", "random_entry", "of", "world_of":
 			paths(node.a, out)
 	return out
 
@@ -280,6 +301,6 @@ static func list_paths(node: Dictionary, out: Array = []) -> Array:
 		"+", "-", "*", "/", "%", "random", "min", "max", "sqrt":
 			list_paths(node.a, out)
 			list_paths(node.b, out)
-		"of":
+		"of", "world_of":
 			list_paths(node.a, out)
 	return out

@@ -125,10 +125,10 @@ static func tick(game) -> void:
 
 
 ## The turn the rescue comes: the rules' `rescue after` plus `~ extend game by N turns`;
-## -1 when the rules set no rescue.
+## -1 when the rules set no rescue, or while their `no rescue when:` holds (extended play).
 static func rescue_turn(game) -> int:
 	var after := text(game, "rescue after")
-	if not after.is_valid_int():
+	if not after.is_valid_int() or WorldSystem.no_rescue(game):
 		return -1
 	return int(after) + int(game.state.values.get("game.extended", 0))
 

@@ -124,7 +124,7 @@ static func tamed(game) -> Array:
 static func _with(game, id: String) -> void:
 	var v: Dictionary = game.state.values
 	v["companion.id"] = id
-	v["companion.name"] = game.content.field_value(id, "name", id)
+	v["companion.name"] = WorldSystem.companion_name(game, id)
 	for k in DEFAULTS:
 		v["companion." + k] = num(game, id, k)
 
@@ -150,13 +150,13 @@ static func tame(game, id: String, yes: bool) -> void:
 ## companion is not tamed, already follows or the party is full.
 static func summon(game, id: String) -> bool:
 	if not Condition._truthy(game.value("%s.tamed" % id)):
-		game.notice("You have no ally called %s!" % game.content.field_value(id, "name", id), false)
+		game.notice("You have no ally called %s!" % WorldSystem.companion_name(game, id), false)
 		return false
 	if id in party(game):
-		game.notice("%s is already following you!" % game.content.field_value(id, "name", id), false)
+		game.notice("%s is already following you!" % WorldSystem.companion_name(game, id), false)
 		return false
 	if party(game).size() >= limit(game):
-		game.notice("You cannot have any more allies following you right now! If you want to choose %s, you'll have to send someone else away!" % game.content.field_value(id, "name", id), false)
+		game.notice("You cannot have any more allies following you right now! If you want to choose %s, you'll have to send someone else away!" % WorldSystem.companion_name(game, id), false)
 		return false
 	game.cancel_companion = false
 	_with(game, id)
@@ -171,7 +171,7 @@ static func summon(game, id: String) -> bool:
 ## `~ dismiss x`: plays the dismiss text ("You send your ally away.").
 static func dismiss(game, id: String) -> bool:
 	if id not in party(game):
-		game.notice("%s is not following you!" % game.content.field_value(id, "name", id), false)
+		game.notice("%s is not following you!" % WorldSystem.companion_name(game, id), false)
 		return false
 	game.cancel_companion = false
 	_with(game, id)
@@ -222,7 +222,7 @@ static func act_in_fight(game, creature: String) -> void:
 		if c.result != "" or int(c.hp) <= 0:
 			return
 		_with(game, id)
-		var name: String = game.content.field_value(id, "name", id)
+		var name: String = WorldSystem.companion_name(game, id)
 		var level := num(game, id, "level")
 		var hit_bonus := int(field(game, id, "hit bonus", "0")) + number_rule(game, "hit bonus", 0)
 		var enemy_level := CombatSystem.number(game, creature, "level", 1)
@@ -317,7 +317,7 @@ static func level_up(game, id: String, cost: int = -1) -> void:
 	if game.content.program(pid) != null:
 		_play(game, pid)
 	else:
-		game.notice("%s has gained level %d! Congratulations!" % [game.content.field_value(id, "name", id), level], false)
+		game.notice("%s has gained level %d! Congratulations!" % [WorldSystem.companion_name(game, id), level], false)
 
 
 # --- Offspring --------------------------------------------------------------------

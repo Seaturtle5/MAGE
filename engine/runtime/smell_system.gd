@@ -96,7 +96,7 @@ static func _begin(game, kind: String, id: String, scent: String, title: String)
 	game.state.values["smell.kind"] = kind
 	match kind:
 		"character":
-			game.runner.emit_title(db.typed_value("character", id, "name", id), id)
+			game.runner.emit_title(WorldSystem.character_name(game, id), id)
 		"player":
 			game.runner.emit_title(str(game.value("player.name")))
 		"scenery":
