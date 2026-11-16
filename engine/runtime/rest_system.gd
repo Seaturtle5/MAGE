@@ -52,7 +52,9 @@ static func blocking_condition(game) -> String:
 static func recover(game, quality: String) -> void:
 	var quarter := int(game.value("player.maxhp")) / 4
 	var stamina := int(game.value("player.stamina")) * 3 / 2 + int(game.value("player.level"))
-	var recovery := (quarter + stamina) / 2 if quality == "rough" else maxi(quarter, stamina)
+	# Beds and cots: the better of the two; rough bedding: their average; none at all
+	# (only a rest a scene gives, `~ rest`): the lower (the original's Rest phrase).
+	var recovery := (quarter + stamina) / 2 if quality == "rough" else mini(quarter, stamina) if quality == "none" else maxi(quarter, stamina)
 	game.apply({"op": "survival", "kind": "heal", "amount": {"value": {"op": "num", "v": recovery}}, "quiet": true})
 	var config := rules(game)
 	if config == null or off(game):

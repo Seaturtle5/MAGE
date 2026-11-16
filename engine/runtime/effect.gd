@@ -167,6 +167,15 @@ static var _rules: Array = [
 	["shift_time", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) (earlier|later) by (.+?) turns?$")],
 	["set", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) = (.+)$")],
 	["change", RegEx.create_from_string("^([a-z0-9_]+\\.[a-z0-9_.]+) ([+-]) (.+)$")],
+	# StorySystem: "~ rest" (the Rest action's healing and sleep from a scene, no time passing);
+	# "~ pick random event tagged dream" (then `play picked event`); "~ discover every place
+	# flagged city_map"; "~ resolve every event tagged city_map"; "~ for each tamed companion
+	# play X" and "~ for all companions play X" (every character that can follow the player).
+	["rest", RegEx.create_from_string("^rest$")],
+	["pick_event", RegEx.create_from_string("^pick random event tagged (\\w+)$")],
+	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*)$")],
+	["resolve_tagged", RegEx.create_from_string("^resolve every event tagged (\\w+)$")],
+	["each_companion_of", RegEx.create_from_string("^for (each tamed companion|all companions) play (\\w[\\w.]*)$")],
 ]
 ## The rules worth trying for an effect, by its first word: the rules whose
 ## sentence starts with that word ("give one of ..." -> "give") and the rules
@@ -584,6 +593,16 @@ static func _match(s: String) -> Dictionary:
 				if amt.has("error"):
 					return {"error": amt.error}
 				return {"op": "change", "path": m.get_string(1), "sign": 1 if m.get_string(2) == "+" else -1, "amount": amt}
+			"rest":
+				return {"op": "rest"}
+			"pick_event":
+				return {"op": "pick_event", "tag": m.get_string(1)}
+			"discover_flagged":
+				return {"op": "discover_flagged", "flag": m.get_string(1).strip_edges()}
+			"resolve_tagged":
+				return {"op": "resolve_tagged", "tag": m.get_string(1)}
+			"each_companion_of":
+				return {"op": "each_companion_of", "scope": "tamed" if m.get_string(1).begins_with("each") else "all", "scene": m.get_string(2)}
 	return {"error": "unknown effect '%s'" % s}
 
 

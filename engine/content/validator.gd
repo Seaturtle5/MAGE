@@ -398,10 +398,13 @@ func _check_world() -> void:
 					if not db.has(zone, "zone"):
 						_err(found_line, "Zone '%s' does not exist.%s" % [zone, _suggest(zone, _ids("zone"))])
 			"arrival":
-				for place in found.walking + found.travelling:
-					_need(place, "location", found_line)
-				for place in found.travelling:
-					if "fast travel" not in db.list_field(place, "flags"):
+				for place: String in found.walking + found.travelling:
+					if StorySystem.area_of(place) != "":
+						StorySystem.check_area(self, StorySystem.area_of(place), found_line)  # "any place in junkyard"
+					else:
+						_need(place, "location", found_line)
+				for place: String in found.travelling:
+					if StorySystem.area_of(place) == "" and "fast travel" not in db.list_field(place, "flags"):
 						_warn(found_line, "'%s' is not a fast-travel point, so nobody travels to it; use 'walking into'." % place)
 				if d.fields.has("chance") and not RegEx.create_from_string("^\\d+%?$").search(d.fields.chance.value):
 					_err(d.fields.chance.line, "An arrival event's chance is a percentage, such as 40%.")
@@ -555,6 +558,11 @@ func _check_filters() -> void:
 				for f in lv[key][option]:
 					if not db.has(f, "filter"):
 						_err(lv.lines[option], "'%s' under option %s is not a filter.%s" % [f, option, _suggest(f, _ids("filter"))])
+		for option in lv.get("when", {}):
+			# An option the player can choose only while its condition holds.
+			_check_condition_text(str(lv.when[option].condition), int(lv.when[option].line), "level:" + id)
+			if option == lv.default:
+				_err(int(lv.when[option].line), "Option %s is the default of level %s, so it cannot wait for a condition." % [option, id])
 	var known: Array = _ids("filter") + _ids("tag")
 	for type in db.definitions:
 		for d: FscParser.Definition in db.all_of(type).values():
@@ -1441,7 +1449,7 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 
 
 func _check_target(target: String, line: int) -> void:
-	if target.begins_with("@picked#") or db.has(target, "captivity"):
+	if target.begins_with("@picked#") or target == "@picked_event" or db.has(target, "captivity"):
 		return
 	if target.begins_with("@character:"):
 		# "play talk of gang_members": the character's own talk or sex, or a hook instead of it.
@@ -1478,8 +1486,11 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			"tame", "summon", "dismiss", "cancel_companion", "companion_level", "send_children", "check_level", "choose_feat", "ask", "ask_item",
 			"vore", "absorb_enemy_stat", "infect_enemy", "unbirth_pregnancy", "sex_change", "form_number", "change_exit",
 			"unresolve", "character_image", "character_pronouns", "new_child", "child_random", "list_add", "list_remove", "list_remove_entry", "list_set", "list_clear", "list_sort", "lock",
-			"moment", "collect", "discard", "tame_all", "each_companion"]:
+			"moment", "collect", "discard", "tame_all", "each_companion"] and e.op not in StorySystem.OPS:
 		_err(line, "Effect '%s' is recognized by the format but is not implemented yet." % e.op)
+		return
+	if e.op in StorySystem.OPS:
+		StorySystem.check_effect(self, e, line)
 		return
 	if e.op == "moment":
 		_moments_raised[e.moment] = true
@@ -1679,6 +1690,13 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_check_path(e.form_path, line)
 			elif e.get("part", "") == "" and e.form != "@picked":
 				_need(e.form, "form", line)
+			elif e.op == "transform" and e.form != "":
+				# "~ transform skin into parasitic_plant": that form, with that part described.
+				_need(e.form, "form", line)
+				if db.has(e.form, "form") and not db.get_def("form", e.form).fields.has(e.part):
+					_err(line, "Form '%s' has no %s, so ~ transform %s into %s changes nothing." % [e.form, e.part, e.part, e.form])
+		"feat":
+			_need(e.feat, "feat", line)
 		"discover", "go", "forget":
 			_need(e.place, "location", line)
 		"use_item":
@@ -1697,7 +1715,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				_check_path(p, line)
 		"set_time", "shift_time":
 			_check_path(e.path, line)
-			if db.values.get(e.path, {}).get("kind", "") != "time":
+			if db.values.get(e.path, {}).get("kind", "") != "time" and not StorySystem.time_path(self, e.path):
 				_err(line, "'%s' is not a time value; only time values can be set to some turns ago or in some turns." % e.path)
 			for p in Expr.paths(e.by):
 				_check_path(p, line)
@@ -1778,6 +1796,8 @@ func _check_path(path: String, line: int) -> void:
 			return
 	var parts := path.split(".")
 	if CollectionSystem.check_path(self, parts, line):
+		return
+	if StorySystem.check_path(self, path, line):
 		return
 	if parts[0] == "captivity" and parts.size() == 2 and parts[1] in CaptivitySystem.VALUES:
 		return
@@ -1954,7 +1974,13 @@ func _check_condition(c: Dictionary, line: int, owner: String) -> void:
 				_err(line, "Level '%s' does not exist.%s" % [c.category, _suggest(c.category, db.levels.keys())])
 			elif c.option not in db.levels[c.category].options:
 				_err(line, "'%s' is not an option of level %s. Options: %s." % [c.option, c.category, ", ".join(db.levels[c.category].options)])
+		"feat":
+			_need(c.id, "feat", line)
 		"is":
+			if c.who == "fight":
+				if c.adjective != "away from home":
+					_err(line, "Use 'fight is away from home' (a scene's 'fight X away from home:').")
+				return
 			if c.who == "captivity":
 				if c.adjective != "ending":
 					_err(line, "Use 'captivity is ending' (after ~ end captivity or ~ escape captivity).")

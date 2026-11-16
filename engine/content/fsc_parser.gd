@@ -18,8 +18,9 @@ static var _header_re := RegEx.create_from_string("^==\\s+(?:(extend|replace)\\s
 static var _field_re := RegEx.create_from_string("^([A-Za-z][A-Za-z0-9 _]*?)\\s*:(?:\\s+(.*))?$")
 static var _choice_suffix_re := RegEx.create_from_string("\\s*\\[(if [^\\[\\]]+|then leave|always shown|number -?\\d+ to -?\\d+)\\]\\s*$")
 ## "fight wolf:", "fight goblin (female):", and fights in a row: "fight leopardman 2 times:",
-## "fight pink_gel, blue_gel, purple_gel:" (until one is lost or fled).
-static var _fight_re := RegEx.create_from_string("^fight\\s+([a-z0-9_.]+(?:\\s*,\\s*[a-z0-9_]+)*)(?:\\s*\\(([^)]*)\\))?(?:\\s+(\\S+)\\s+times)?\\s*:$")
+## "fight pink_gel, blue_gel, purple_gel:" (until one is lost or fled); "fight wolf away from
+## home:" meets the creature away from its usual place (`fight is away from home` in its texts).
+static var _fight_re := RegEx.create_from_string("^fight\\s+([a-z0-9_.]+(?:\\s*,\\s*[a-z0-9_]+)*)(?:\\s*\\(([^)]*)\\))?(?:\\s+(\\S+)\\s+times)?(\\s+away from home)?\\s*:$")
 static var _outcome_re := RegEx.create_from_string("^(won|lost|fled|won by seduction|lost by submitting)\\s*:$")
 
 
@@ -341,6 +342,8 @@ class _ScriptParser:
 			node["creatures"] = creatures
 		elif m.get_string(3) != "":
 			node["times"] = m.get_string(3)
+		if m.get_string(4) != "":
+			node["away"] = true
 		var next := peek()
 		if next == null or next.indent <= l.indent:
 			return node

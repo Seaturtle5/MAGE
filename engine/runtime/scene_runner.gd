@@ -141,7 +141,7 @@ func use_item_now(id: String) -> void:
 	var strain := str(game.state.values.get("item.%s.infectious" % id, db.typed_value("item", id, "infectious")))
 	if strain != "" and strain != "nothing":
 		frames.append({"kind": "item_infect", "form": strain})
-	_push_if(id + "#use")
+	_push_if(StorySystem.use_script(game, id))
 	if status == "idle" and not frames.is_empty():
 		run()
 
@@ -341,6 +341,7 @@ func run() -> void:
 			frames.pop_back()
 			CombatSystem.aftermath(game, f.creature, f.result)
 			game.state.combat = {}
+			StorySystem.set_away(game, false)  # after the creature's victory or defeat text
 			continue
 		if f.kind == "vore_offer":
 			if _vore_step(f):
@@ -358,7 +359,7 @@ func run() -> void:
 			# After the item was picked: the character's own `gift:` script, if anything was.
 			frames.pop_back()
 			if str(game.value("gift.item")) != "":
-				_push("%s#gift" % f.who, {})
+				_push(StorySystem.gift_script(game, f.who, str(game.value("gift.item"))), {})
 			continue
 		if f.kind == "trophy_choice":
 			_trophy_step(f)
@@ -391,6 +392,10 @@ func run() -> void:
 			continue
 		if f.kind == "collection":
 			if CollectionSystem.step(self, f):
+				return
+			continue
+		if f.kind == "smell_choice":
+			if SmellSystem.step(self, f):
 				return
 			continue
 		if f.kind == "birth":
@@ -452,6 +457,9 @@ func run() -> void:
 					target = character_story(target.substr(11).get_slice("#", 0), target.get_slice("#", 1))
 					if target == "":
 						continue
+				elif target == "@picked_event":
+					StorySystem.play_picked(self)  # the event `~ pick random event tagged X` chose
+					continue
 				var times: int = Effect.resolve_amount(ins.times, game) if ins.has("times") else 1
 				# Frames run last pushed first: push the last repetition first so they run 1, 2, 3 ...
 				for i in range(times, 0, -1):
@@ -487,6 +495,7 @@ func run() -> void:
 					f.erase("encountering")
 					if game.fight_cancelled:
 						game.fight_cancelled = false
+						StorySystem.set_away(game, false)
 						f.pc = ins.after
 						continue
 					f["fight"] = ins
@@ -511,6 +520,7 @@ func run() -> void:
 					# `fight goblin (female):` meets that variant; otherwise one is picked.
 					VariantSystem.pick(game, ins.creature, false, ins.variant)
 				# The creature's encounter plays first, then this instruction runs again.
+				StorySystem.set_away(game, ins.get("away", false))  # `fight X away from home:`
 				f["encountering"] = ins
 				f.pc -= 1
 				_push_encounter(ins.creature)
@@ -871,7 +881,7 @@ func give_to(who: String) -> void:
 	frames.append({"kind": "gift", "who": who})
 	var name := db.typed_value("character", who, "name", who)
 	var prompt := db.typed_value("character", who, "gift prompt", "Give what to %s?" % name)
-	frames.append({"kind": "item_choice", "path": "gift.item", "tags": db.list_field(who, "gift tags"),
+	frames.append({"kind": "item_choice", "path": "gift.item", "ids": StorySystem.gift_choices(self, who),
 		"prompt": TextTemplate.compile(prompt), "shown": false})
 	run()
 
@@ -886,13 +896,9 @@ func gift_items(who: String) -> Array:
 ## script, its `gift when:` holds and something carried fits.
 func can_give(who: String) -> bool:
 	var db: ContentDB = game.content
-	var d: FscParser.Definition = db.get_def("character", who)
-	if d == null or not d.fields.has("gift"):
+	if not db.has(who, "character"):
 		return false
-	var when: String = db.typed_value("character", who, "gift when")
-	if when != "" and not Condition.evaluate(Condition.compile(when), game):
-		return false
-	return not gift_items(who).is_empty()
+	return not StorySystem.gift_choices(self, who).is_empty()  # its own gift:, or an item anyone can be given
 
 
 func _item_choice_step(f: Dictionary) -> bool:
@@ -901,7 +907,7 @@ func _item_choice_step(f: Dictionary) -> bool:
 		return false
 	f.shown = true
 	game.set_value(str(f.path), "")
-	var ids: Array = game.carried_with_tags(f.tags) if f.has("tags") else game.carried_tagged(str(f.tag))
+	var ids: Array = f.ids if f.has("ids") else game.carried_with_tags(f.tags) if f.has("tags") else game.carried_tagged(str(f.tag))
 	if ids.is_empty():
 		frames.erase(f)
 		return false
@@ -981,6 +987,8 @@ func choose(index: int) -> bool:
 		_captivity_choice(f, p)
 	elif p.has("collection"):
 		CollectionSystem.choose(self, f, p)
+	elif p.has("smell"):
+		SmellSystem.choose(self, f, p)
 	elif p.has("to"):
 		f.pc = p.to
 	elif p.has("leave"):
@@ -1079,7 +1087,7 @@ func _trophy_step(f: Dictionary) -> bool:
 func _combat_item(id: String) -> bool:
 	var db: ContentDB = game.content
 	if int(game.state.inventory.get(id, 0)) <= 0 or db.typed_value("item", id, "in combat", "no") != "yes" \
-			or db.program(id + "#use", "item") == null:
+			or StorySystem.use_script(game, id) == "":
 		return false
 	game.use_cancelled = false
 	frames.append({"kind": "combat_item_end"})
@@ -1087,7 +1095,7 @@ func _combat_item(id: String) -> bool:
 	if db.typed_value("item", id, "consumed", "yes") != "no":
 		game.apply({"op": "take", "item": id, "amount": {"value": {"op": "num", "v": 1}}, "quiet": true})
 		extra["refund"] = id
-	_push("item:%s#use" % id, extra)
+	_push(StorySystem.use_script(game, id), extra)
 	run()
 	return true
 
@@ -1331,10 +1339,11 @@ func _act(action: String, arg: String) -> bool:
 			if int(game.state.inventory.get(arg, 0)) <= 0:
 				return false
 			# Bedding and similar items run an action, such as resting, when used.
+			var use_script := StorySystem.use_script(game, arg)  # an `instead of using` hook, else its use
 			var use_action := db.typed_value("item", arg, "use action")
-			if use_action != "":
+			if use_action != "" and not use_script.begins_with("hook:"):
 				return _act(use_action, "")
-			if db.program(arg + "#use") == null:
+			if use_script == "":
 				return false
 			game.use_cancelled = false
 			var extra := {"used": arg}
@@ -1345,7 +1354,7 @@ func _act(action: String, arg: String) -> bool:
 			var strain := str(game.state.values.get("item.%s.infectious" % arg, db.typed_value("item", arg, "infectious")))
 			if strain != "":
 				frames.append({"kind": "item_infect", "form": strain})
-			start("%s#use" % arg, extra)
+			start(use_script, extra)
 			return true
 		"take", "take_all":
 			var lying: Dictionary = ItemSystem.ground(game, loc).duplicate()
@@ -1659,8 +1668,8 @@ func arrival_event(mode: String, place: String = "", replacing: bool = false) ->
 	var candidates: Array = []
 	for ev in db.all_of("event"):
 		var found := ContentDB.found_by(db.typed_value("event", ev, "found by"))
-		if loc not in (found.walking if mode == "walk" else found.travelling):
-			continue
+		if not StorySystem.arrives(game, loc, found.walking if mode == "walk" else found.travelling):
+			continue  # a place named, or `any place in <zone or region>`
 		if (db.typed_value("event", ev, "replaces trip", "no") == "yes") != replacing:
 			continue
 		var st: Dictionary = game._event(ev)

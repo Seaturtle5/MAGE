@@ -2805,12 +2805,14 @@ func _level_row(panel: VBoxContainer, lv: Dictionary) -> Control:
 	for o: Dictionary in lv.options:
 		pick.add_item(o.name)
 		ids.append(o.id)
+		# An option a story has to unlock first (`when:` under it) is shown but cannot be picked.
+		pick.set_item_disabled(ids.size() - 1, not o.get("available", true) and o.id != lv.value)
 		if o.id == lv.value:
 			pick.select(ids.size() - 1)
 			chosen = o.description
 	var id: String = lv.id
 	pick.item_selected.connect(func(index: int):
-		game.set_level(id, str(ids[index]))
+		game.choose_level(id, str(ids[index]))
 		_fill_content_settings(panel))
 	top.add_child(pick)
 	v.add_child(top)
@@ -2848,7 +2850,7 @@ func _load_content_prefs() -> void:
 		return
 	var levels: Dictionary = data.get("levels", {}) if data.get("levels", {}) is Dictionary else {}
 	for id in levels:
-		game.set_level(str(id), str(levels[id]))
+		game.choose_level(str(id), str(levels[id]))
 	var interests: Dictionary = data.get("interests", {}) if data.get("interests", {}) is Dictionary else {}
 	for id in interests:
 		game.set_interest(str(id), bool(interests[id]))
