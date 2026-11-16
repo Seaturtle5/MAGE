@@ -126,6 +126,7 @@ var sheet_scroll: ScrollContainer  ## the character sheet's right column, for sc
 var inv_filter := "all"  ## the inventory tab
 var inv_bag_scroll: ScrollContainer
 var help_selected := ""  ## the topic the Help screen shows
+var pending_import := ""  ## export files to import once the new game's opening has played (ImportView)
 
 
 func _ready() -> void:
@@ -526,6 +527,9 @@ func _drain() -> void:
 				_page_continue(func(): _show_title())
 				waiting = true
 	if game.runner.status == "idle":
+		if pending_import != "" and not waiting:
+			_import_now()
+			return
 		if mode in ["scene", "moment"] and not page_new and not waiting:
 			# Text produced outside a scene (exploring, travelling, resting):
 			# show it as a moment the player acknowledges, then the location.
@@ -539,6 +543,22 @@ func _drain() -> void:
 	_refresh_panels()
 	_refresh_status()
 	_maybe_autosave()
+
+
+## Brings in the original game's export files chosen on the new-game screen,
+## keeps a copy of the report beside the saves and shows it.
+func _import_now() -> void:
+	var folder := pending_import
+	pending_import = ""
+	var report := ImportSystem.run(game, folder)
+	var file := FileAccess.open(launch.data_path("user://import-report.txt"), FileAccess.WRITE)
+	if file != null:
+		file.store_string(ImportSystem.report_text(report))
+		file.close()
+	game.runner.show_location()
+	_drain()
+	var view := get_viewport_rect().size
+	ImportView.fill_report(_open_overlay("Earlier progress", true, Vector2(minf(1100, view.x - 60), minf(760, view.y - 60))), report)
 
 
 func _esc(text: String) -> String:
@@ -2503,6 +2523,7 @@ func _open_new_game() -> void:
 	new_game = NewGameScreen.new(game, _content_settings_panel, _content_summary, _pack_image)
 	box.add_child(new_game)
 	new_game.begin.connect(func(scenario: String, player_name: String, pronouns: String, answers: Dictionary, modes: Array):
+		pending_import = new_game.import_folder
 		_close_overlay()
 		_hide_title()
 		_save_content_prefs()
@@ -3358,6 +3379,13 @@ func _take_screenshot() -> void:
 				var e := Effect.compile(arg)
 				if not e.has("error"):
 					game.apply(e)
+					_drain()
+			"import":
+				# "import FOLDER": on the new-game screen, the export folder chosen; in a game, imported now.
+				if new_game != null and is_instance_valid(new_game) and overlay != null:
+					new_game.set_import_folder(arg)
+				else:
+					pending_import = arg
 					_drain()
 			"note":
 				# "note Bob owes me soap": a note written in the journal, as in its text box.
