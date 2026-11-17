@@ -410,5 +410,11 @@ class _ScriptParser:
 		opt.label = label
 		if label.is_empty():
 			result.error(l.number, "A choice needs a label after '*'.")
+		# An action's typed command words ("command: take slide, use slide", the original's
+		# parser commands): kept with the option, never said as text.
+		var first := peek()
+		if first != null and first.indent > l.indent and first.text.begins_with("command:"):
+			opt["commands"] = Array(first.text.substr(8).split(",", false)).map(func(w: String) -> String: return w.strip_edges())
+			pos += 1
 		opt["body"] = children(l)
 		return opt

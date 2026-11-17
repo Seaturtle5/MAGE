@@ -44,6 +44,13 @@ func test_choices_with_conditions_and_description() -> void:
 	assert_true(c.options[0].then_leave)
 	assert_eq(c.options[0].body[0].text, "Fine.")
 
+func test_an_actions_command_words_are_not_text() -> void:
+	var r := _parse("== scene s\n* Use the slide -- Slide down\n    command: take slide, use slide\n    Whee.\n")
+	var o: Dictionary = r.definitions[0].nodes[0].options[0]
+	assert_eq(o.commands, ["take slide", "use slide"])
+	assert_eq(o.body.size(), 1, "the command line is not part of the scene")
+	assert_eq(o.body[0].text, "Whee.")
+
 func test_if_else_chain() -> void:
 	var r := _parse("== scene s\nif a.b:\n    A\nelse if c.d:\n    C\nelse:\n    E\nAfter\n")
 	var nodes := r.definitions[0].nodes
