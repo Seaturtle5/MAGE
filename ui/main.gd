@@ -221,7 +221,11 @@ static func _content_folders(extra: Array) -> Array:
 	var folders: Array = extra.duplicate()
 	folders.append("res://packs")
 	if not OS.has_feature("editor"):
-		folders.append(OS.get_executable_path().get_base_dir().path_join("packs"))
+		if OS.get_name() == "macOS":
+			# A macOS app keeps its packs inside the bundle (Contents/Resources/packs), covered by its signature.
+			folders.append(OS.get_bundle_resource_dir().path_join("packs"))
+		else:
+			folders.append(OS.get_executable_path().get_base_dir().path_join("packs"))
 	folders.append("user://packs")
 	return folders
 
