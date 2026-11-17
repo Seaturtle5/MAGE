@@ -616,7 +616,7 @@ func _offer_choices(f: Dictionary, ins: Dictionary) -> bool:
 	for o in ins.options:
 		var ok: bool = o.cond.is_empty() or (not o.cond.has("error") and Condition.evaluate(o.cond, game))
 		if ok or o.always_shown:
-			shown.append({"text": TextTemplate.plain(game.render(o.label)), "description": o.description, "enabled": ok})
+			shown.append({"text": TextTemplate.plain(game.render(o.label)), "description": game.rendered_text(str(o.description)), "enabled": ok})
 			pending.append({"to": o.to, "enabled": ok})
 	if shown.is_empty():
 		f.pc = ins.after
@@ -642,7 +642,7 @@ func _menu_step(m: Dictionary) -> bool:
 			var c := Condition.compile(o.condition)
 			ok = not c.has("error") and Condition.evaluate(c, game)
 		if ok or o.always_shown:
-			shown.append({"text": o.label, "description": o.description, "enabled": ok})
+			shown.append({"text": o.label, "description": game.rendered_text(str(o.description)), "enabled": ok})
 			pending.append({"menu": i, "enabled": ok})
 	shown.append({"text": menu.settings.get("leave", "Leave"), "description": "", "enabled": true, "leave": true})
 	pending.append({"leave": true, "enabled": true})
@@ -717,7 +717,7 @@ func _captivity_step(f: Dictionary) -> bool:
 					var o: Dictionary = options[i]
 					var c := Condition.compile(o.condition) if o.condition != "" else {}
 					if c.is_empty() or (not c.has("error") and Condition.evaluate(c, game)):
-						shown.append({"text": o.label, "description": o.description, "enabled": true})
+						shown.append({"text": o.label, "description": game.rendered_text(str(o.description)), "enabled": true})
 						pending.append({"captivity": "action", "index": i, "enabled": true})
 			game.emit({"type": "choices", "title": CaptivitySystem.field(game, id, "name"), "options": shown})
 			status = "choice"

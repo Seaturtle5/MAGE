@@ -769,8 +769,8 @@ func describe(name: String) -> String:
 	if n.begins_with("player.") or ("." in n and not " " in n):
 		var v = value(n)
 		if v is Array:
-			return ", ".join(v.map(func(x): return str(x)))  # a list: its entries
-		return str(v) if v != null else ""
+			return ", ".join(v.map(func(x): return rendered_text(str(x))))  # a list: its entries
+		return rendered_text(str(v)) if v != null else ""
 	var parts := n.split(" of ", true, 1)
 	var what := parts[0]
 	var who := parts[1] if parts.size() > 1 else "player"
@@ -1989,6 +1989,23 @@ static func _month_days(y: int, m: int) -> int:
 	if m == 2:
 		return 29 if (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 else 28
 	return 30 if m in [4, 6, 9, 11] else 31
+
+
+## A text value or description that holds markup ("[one of]brown[or]gray[at random]",
+## "a [x.color] coat") is rendered when it is shown, as the original substitutes a text
+## when it prints it; plain text is returned as it is. A value that names itself stops
+## after a few levels.
+var _rendering_depth := 0
+func rendered_text(text: String) -> String:
+	if not ("[" in text or "*" in text) or _rendering_depth > 4:
+		return text
+	var t := TextTemplate.compile(text)
+	if t.has("error"):
+		return text
+	_rendering_depth += 1
+	var out := TextTemplate.plain(render(t))
+	_rendering_depth -= 1
+	return out
 
 
 func status_snapshot() -> Dictionary:
