@@ -13,6 +13,9 @@ const PARTS := ["head", "torso", "back", "arms", "legs", "ass", "tail", "cock", 
 const COMPARATORS := [">=", "<=", "!=", ">", "<", "="]
 
 static var _cache: Dictionary = {}
+## Guards the cache: content may be compiled from several threads at once
+## (a loader or a check on one thread while another draws).
+static var _cache_lock := Mutex.new()
 static var _words_re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|!=|[()<>=!]|[^\\s()<>=!]+")
 
 # Sentence forms, tried in order. Each regex matches the whole predicate.
@@ -92,8 +95,11 @@ static var _rules: Array = [
 ## Compiles a condition. Returns the tree, or {"error": message}.
 static func compile(text: String) -> Dictionary:
 	var key := text.strip_edges()
-	if _cache.has(key):
-		return _cache[key]
+	_cache_lock.lock()
+	var known: Variant = _cache.get(key)
+	_cache_lock.unlock()
+	if known != null:
+		return known
 	var tokens := _words(key)
 	var node: Dictionary
 	if tokens.is_empty():
@@ -106,7 +112,9 @@ static func compile(text: String) -> Dictionary:
 			node = {"error": p.err}
 		elif p.i < tokens.size():
 			node = {"error": "unexpected '%s'" % tokens[p.i]}
+	_cache_lock.lock()
 	_cache[key] = node
+	_cache_lock.unlock()
 	return node
 
 

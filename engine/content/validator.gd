@@ -42,11 +42,58 @@ var _item_tag_list: Array = []
 var _moments_raised: Dictionary = {}  ## moments a scene raises with `~ moment <name>`
 var _moments_heard: Dictionary = {}  ## a game's own moments hooks listen to -> [path, line]
 var _fight_scenes: Dictionary = {}  ## scenes a fight's script plays or hands over to
+var _only: Array[String] = []  ## pack folders whose scripts are checked; empty: all
 
 
-static func run(content: ContentDB) -> void:
+## Whether a file's scripts are checked (see run()).
+func _checked(path: String) -> bool:
+	if _only.is_empty():
+		return true
+	for folder: String in _only:
+		if path.begins_with(folder):
+			return true
+	return false
+
+
+## Whether a program is checked: one written in a checked file, or extended from one.
+func _program_checked(pid: String) -> bool:
+	if _only.is_empty():
+		return true
+	if "@" in pid:
+		var menu: Dictionary = db.menus.get(pid.get_slice("@", 0), {})
+		if menu.is_empty():
+			return false
+		if _checked(str(menu.def.path)):
+			return true
+		for path: String in menu.get("extended from", []):
+			if _checked(path):
+				return true
+		return false
+	if "#" in pid:
+		for extra: Dictionary in db.extra_scripts.get(pid, []):
+			if _checked(str(extra.path)):
+				return true
+		var owner := pid.get_slice("#", 0)
+		var d: FscParser.Definition = db.get_def(owner.get_slice(":", 0), owner.get_slice(":", 1)) if ":" in owner else db.by_id.get(owner, null)
+		return d != null and _checked(d.path)
+	var scene: FscParser.Definition = db.get_def("scene", pid)
+	if scene == null:
+		scene = db.get_def("text", pid)
+	return scene != null and _checked(scene.path)
+
+
+## Checks the loaded content. With `only` (pack folders), scenes and scripts
+## are compiled and checked only where they are written in those packs, or
+## extended from them: for a tool that loads one pack again over the others
+## (see ContentDB.layer()) and has checked the others before. The checks of
+## fields and rules still cover everything; those that weigh all scripts
+## against each other (a moment no scene raises, a result nothing sets) are
+## left to a full check.
+static func run(content: ContentDB, only: Array = []) -> void:
 	var v := Validator.new()
 	v.db = content
+	for folder: String in only:
+		v._only.append(folder.trim_suffix("/") + "/")
 	# Each step says what it checks, for a loading screen (ContentDB.progress()).
 	var steps := [["Pictures", v._collect_images], ["Pictures", v._check_images], ["Content types", v._check_slice_types],
 		["Items", v._check_items], ["Rules", v._check_rest_rules], ["Rules", v._check_survival_rules],
@@ -62,8 +109,10 @@ static func run(content: ContentDB) -> void:
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()
 	v._check_programs()
-	v._check_moments()
-	v._check_resolutions()
+	if v._only.is_empty():
+		# These weigh all scripts against each other: a moment no scene raises, a result nothing sets.
+		v._check_moments()
+		v._check_resolutions()
 
 
 func _err(line: int, message: String) -> void:
@@ -1326,15 +1375,20 @@ func _check_programs() -> void:
 			pids.append(key)
 	for menu_id in db.menus:
 		var menu: Dictionary = db.menus[menu_id]
+		if not _program_checked("%s@0" % menu_id):
+			continue
 		for i in menu.options.size():
 			pids.append("%s@%d" % [menu_id, i])
 			var o: Dictionary = menu.options[i]
 			if o.condition != "":
 				_path = menu.def.path
 				_check_condition_text(o.condition, o.line, menu_id)
+	if not _only.is_empty():
+		pids = pids.filter(_program_checked)
 	_find_fight_scenes(pids)
 	for id: String in db.all_of("creature"):
-		_check_before_fight("creature:%s#encounter" % id, id, 0, {})
+		if _checked(db.get_def("creature", id).path):
+			_check_before_fight("creature:%s#encounter" % id, id, 0, {})
 	for k in pids.size():
 		if k % 250 == 0:
 			db._set_progress("Checking content", "Scenes and scripts", k, pids.size())

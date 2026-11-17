@@ -12,6 +12,9 @@ const PLAYER_STATS := ["xp", "score", "hp", "hunger", "thirst",
 	"strength", "dexterity", "stamina", "charisma", "intelligence", "perception"]
 
 static var _cache: Dictionary = {}
+## Guards the cache: content may be compiled from several threads at once
+## (a loader or a check on one thread while another draws).
+static var _cache_lock := Mutex.new()
 static var _rules: Array = [
 	["cancel_use", RegEx.create_from_string("^cancel use$")],
 	# In a creature's encounter: the meeting ends without a fight (the original's combat abort).
@@ -224,8 +227,11 @@ static var _percent_re := RegEx.create_from_string("^(\\d+)%$")
 ## Compiles one effect line (without the leading `~`).
 static func compile(text: String) -> Dictionary:
 	var key := text.strip_edges()
-	if _cache.has(key):
-		return _cache[key]
+	_cache_lock.lock()
+	var known: Variant = _cache.get(key)
+	_cache_lock.unlock()
+	if known != null:
+		return known
 	var s := key
 	var quiet := false
 	if s.ends_with(" quietly"):
@@ -233,7 +239,9 @@ static func compile(text: String) -> Dictionary:
 		s = s.substr(0, s.length() - 8).strip_edges()
 	var node := _match(s)
 	node["quiet"] = quiet
+	_cache_lock.lock()
 	_cache[key] = node
+	_cache_lock.unlock()
 	return node
 
 

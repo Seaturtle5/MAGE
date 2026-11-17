@@ -210,6 +210,13 @@ var art_off: Array = []
 var _folder_of: Dictionary = {}  ## pack path -> index of the folder it was found in
 ## event -> {outcome: resolution number} (`outcomes: fed = 1`, or an outcome named outcome_N)
 var outcome_numbers: Dictionary = {}
+## For a tool that keeps the parsed definitions for itself (an editor): set
+## before loading, an extension then changes a copy of the definition it
+## extends and never the parsed one. Always set on a layer (see layer()).
+var protect_definitions := false
+var _layered := false
+var _copied: Dictionary = {}  ## what this content has copied before changing it: definitions and fields, "menu:<id>", "<table>:<key>"
+var _unmatched: Array = []  ## [definition, parse result, index of its diagnostic] of extensions that found nothing to extend
 
 
 func error(path: String, line: int, message: String) -> void:
@@ -222,6 +229,113 @@ func warning(path: String, line: int, message: String) -> void:
 
 func errors() -> Array:
 	return diagnostics.filter(func(d): return d.severity == "error")
+
+
+## A copy of this loaded content to load more packs onto, for a tool that
+## keeps most packs as they are and loads the one being worked on again after
+## each change (an editor). Add the packs with load_pack() or by handing parsed
+## definitions to the loader, then finish and check it as usual.
+##
+## The copy shares this content's definitions and compiled programs; whatever
+## the further packs extend is copied first, so this content stays as it was
+## and can be layered again, also from another thread. The further packs load
+## after everything here, whatever they require. An extension here that found
+## nothing to extend is tried again on the layer, and its problem is reported
+## only if the further packs do not bring what it extends. The copy's
+## diagnostics start with this content's (without those extensions').
+func layer() -> ContentDB:
+	var top := ContentDB.new()
+	top._layered = true
+	top.protect_definitions = true
+	for type: String in definitions:
+		if definitions[type] is Dictionary:
+			top.definitions[type] = definitions[type].duplicate()
+	top.by_id = by_id.duplicate()
+	top.packs = packs.duplicate()
+	top.values = values.duplicate()
+	top.quests = quests.duplicate()
+	top.menus = menus.duplicate()
+	top.extra_scripts = extra_scripts.duplicate()
+	top.line_paths = line_paths.duplicate()
+	top.levels = levels.duplicate()
+	top.roles = roles.duplicate()
+	top.art_images = art_images.duplicate()
+	top.art_off = art_off.duplicate()
+	top._folder_of = _folder_of.duplicate()
+	top.outcome_numbers = outcome_numbers.duplicate()
+	top._programs = _programs.duplicate()
+	var waiting := {}
+	for entry: Array in _unmatched:
+		waiting[entry[2]] = true
+		top._extend(entry[0], entry[1])
+	for i in diagnostics.size():
+		if not waiting.has(i):
+			top.diagnostics.append(diagnostics[i])
+	return top
+
+
+## The definition to change when an extension adds to `target`: the target
+## itself, or with protect_definitions a copy that takes its place.
+func _extendable(target: FscParser.Definition) -> FscParser.Definition:
+	if not protect_definitions or _copied.has(target):
+		return target
+	var copy := FscParser.Definition.new()
+	copy.type = target.type
+	copy.id = target.id
+	copy.mode = target.mode
+	copy.path = target.path
+	copy.line = target.line
+	copy.field_order = target.field_order.duplicate()
+	copy.options = target.options
+	copy.nodes = target.nodes
+	copy.body = target.body
+	for name: String in target.fields:
+		copy.fields[name] = target.fields[name]
+	_copied[copy] = true
+	definitions[target.type][target.id] = copy
+	if by_id.get(target.id, null) == target:
+		by_id[target.id] = copy
+	if menus.has(target.id) and menus[target.id].def == target:
+		_own_menu(target.id).def = copy
+	return copy
+
+
+## A field to change in place: with protect_definitions a copy of the parsed one.
+func _own_field(d: FscParser.Definition, name: String) -> FscParser.Field:
+	var f: FscParser.Field = d.fields[name]
+	if not protect_definitions or _copied.has(f):
+		return f
+	var copy := FscParser.Field.new()
+	copy.name = f.name
+	copy.value = f.value
+	copy.line = f.line
+	copy.children = f.children.duplicate()
+	_copied[copy] = true
+	d.fields[name] = copy
+	return copy
+
+
+## A menu's entry to add options to: on a layer a copy of the shared one.
+func _own_menu(menu_id: String) -> Dictionary:
+	var menu: Dictionary = menus[menu_id]
+	if not _layered or _copied.has("menu:" + menu_id):
+		return menu
+	menu = menu.duplicate()
+	menu.options = menu.options.duplicate()
+	_copied["menu:" + menu_id] = true
+	menus[menu_id] = menu
+	return menu
+
+
+## A list kept per key (extra scripts, art pictures) to add to: on a layer a copy of the shared one.
+func _own_list(table: Dictionary, table_name: String, key: String) -> Array:
+	var mark := table_name + ":" + key
+	if not table.has(key):
+		table[key] = []
+	elif _layered and not _copied.has(mark):
+		table[key] = table[key].duplicate()
+	_copied[mark] = true
+	return table[key]
 
 
 ## Loads every pack found directly inside the given folders, each after the
@@ -456,6 +570,13 @@ func _add(d: FscParser.Definition, r: FscParser.Result) -> void:
 		return
 	if d.mode == "replace":
 		warning(d.path, d.line, "%s %s replaces an earlier definition." % [d.type, d.id])
+		if _layered and existing != null:
+			# Programs compiled for the definition below are not this one's.
+			_programs.erase(d.id)
+			var prefix := "%s:%s#" % [d.type, d.id]
+			for key: String in _programs.keys():
+				if key.begins_with(prefix):
+					_programs.erase(key)
 	_check_fields(d)
 	if not by_id.has(d.id) or d.mode == "replace" or _priority(d.type) < _priority(by_id[d.id].type):
 		by_id[d.id] = d
@@ -732,8 +853,10 @@ func _finish() -> void:
 			if not art.is_empty():
 				# An art pack never stops the game from loading: a picture for something gone is skipped.
 				warning(d.path, d.line, "Cannot extend %s %s: it does not exist, so its picture is not used." % [d.type, d.id])
+				_unmatched.append([d, r, diagnostics.size() - 1])
 				continue
 			error(d.path, d.line, "Cannot extend %s %s: it does not exist." % [d.type, d.id])
+			_unmatched.append([d, r, diagnostics.size() - 1])
 			continue
 		var schema: Dictionary = SCHEMA.get(d.type, {})
 		for name in d.field_order:
@@ -744,16 +867,13 @@ func _finish() -> void:
 			if name == "image" and not art.is_empty():
 				# An art pack's picture: chosen when shown (see image_of), so it can be switched off.
 				var key := "%s:%s" % [d.type, d.id]
-				if not art_images.has(key):
-					art_images[key] = []
-				art_images[key].append({"pack": art.id, "image": f.value, "replaces": art.art == "replaces",
+				_own_list(art_images, "art", key).append({"pack": art.id, "image": f.value, "replaces": art.art == "replaces",
 					"path": d.path, "line": f.line})
 				continue
 			if kind == "script":
 				var key := "%s:%s#%s" % [d.type, d.id, name]
-				if not extra_scripts.has(key):
-					extra_scripts[key] = []
-				extra_scripts[key].append({"field": f, "path": d.path})
+				_own_list(extra_scripts, "script", key).append({"field": f, "path": d.path})
+				_programs.erase(key)
 			elif kind == "menu":
 				var inner := FscParser.Definition.new()
 				inner.body = f.children
@@ -765,25 +885,30 @@ func _finish() -> void:
 					inner.id = menu_id
 					inner.path = d.path
 					inner.line = f.line
-					menus[menu_id] = {"def": inner, "options": inner.options.duplicate(), "settings": _menu_settings(inner)}
+					menus[menu_id] = {"def": inner, "options": inner.options.duplicate(), "settings": _menu_settings(inner), "extended from": [d.path]}
+					_copied["menu:" + menu_id] = true
 					continue
-				menus[menu_id].options.append_array(inner.options)
+				var menu := _own_menu(menu_id)
+				menu.options.append_array(inner.options)
+				menu["extended from"] = menu.get("extended from", []) + [d.path]
 			elif kind == "list":
 				# Lists such as tags: append values.
-				var tf: FscParser.Field = target.fields.get(name, null)
-				if tf == null:
+				if not target.fields.has(name):
+					target = _extendable(target)
 					target.fields[name] = f
 					target.field_order.append(name)
 				else:
+					target = _extendable(target)
+					var tf := _own_field(target, name)
 					tf.value = tf.value + ", " + f.value
 			elif kind == "fields" and d.type == "location" and name == "exits":
 				# More ways out of another pack's place ("== extend location bunker" with "exits:").
-				var tf: FscParser.Field = target.fields.get(name, null)
-				if tf == null:
+				target = _extendable(target)
+				if not target.fields.has(name):
 					target.fields[name] = f
 					target.field_order.append(name)
-					tf = f
 				else:
+					var tf := _own_field(target, name)
 					var taken: Array = []
 					for l: FscParser.Line in tf.children:
 						if not l.is_blank():
@@ -799,15 +924,18 @@ func _finish() -> void:
 					line_paths[l] = d.path
 			elif not target.fields.has(name):
 				# A field the definition does not have yet (an art pack's `image:` for a place without one).
+				target = _extendable(target)
 				target.fields[name] = f
 				target.field_order.append(name)
 			elif name == "image":
 				pass  # the definition's own picture wins: an art pack's picture is only a fallback
 			else:
 				error(d.path, f.line, "Field '%s' cannot be extended; use '== replace %s %s' to change it." % [name, d.type, d.id])
-		for o in d.options:
-			if menus.has(d.id):
-				menus[d.id].options.append(o)
+		if not d.options.is_empty() and menus.has(d.id):
+			var menu := _own_menu(d.id)
+			for o in d.options:
+				menu.options.append(o)
+			menu["extended from"] = menu.get("extended from", []) + [d.path]
 		if d.type == "character" and (d.fields.has("stats") or d.fields.has("body") or d.fields.has("relationship") or d.fields.has("companion")):
 			# body:, stats: and the like added by an extension declare their values too.
 			var decls := CharacterSystem.declarations(target)

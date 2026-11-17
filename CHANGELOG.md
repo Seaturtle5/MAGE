@@ -4,7 +4,11 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 
 ## Unreleased
 
-Nothing yet.
+**For tools that load content** (an editor, a checker)
+- Loaded content can be layered: `ContentDB.layer()` gives a copy to load more packs onto, sharing everything already loaded. A tool keeps the packs that do not change and loads only the pack being worked on again after each change. The content below is never altered and can be layered again, also from another thread.
+- `protect_definitions` on a `ContentDB` makes an extension change a copy of the definition it extends, so a tool's own parsed definitions stay as written.
+- `Validator.run(content, [pack folders])` compiles and checks the scripts of those packs only.
+- Actions, conditions and text can be compiled from several threads at once.
 
 ## 1.0.0 (2026-11-17): first public version
 

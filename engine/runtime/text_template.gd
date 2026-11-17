@@ -22,12 +22,18 @@ const ORDERS := ["at random", "cycling", "stopping", "sticky", "sticky random", 
 const STYLES := ["roll", "warning"]
 
 static var _cache: Dictionary = {}
+## Guards the cache: content may be compiled from several threads at once
+## (a loader or a check on one thread while another draws).
+static var _cache_lock := Mutex.new()
 
 
 static func compile(text: String, key: String = "") -> Dictionary:
 	var cache_key := key + "\u0001" + text
-	if _cache.has(cache_key):
-		return _cache[cache_key]
+	_cache_lock.lock()
+	var known: Variant = _cache.get(cache_key)
+	_cache_lock.unlock()
+	if known != null:
+		return known
 	var tokens := _tokenize(text)
 	var p := _P.new()
 	p.t = tokens
@@ -40,7 +46,9 @@ static func compile(text: String, key: String = "") -> Dictionary:
 		result = {"error": "unexpected [%s]" % tokens[p.i].v}
 	else:
 		result = {"parts": parts}
+	_cache_lock.lock()
 	_cache[cache_key] = result
+	_cache_lock.unlock()
 	return result
 
 
