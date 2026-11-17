@@ -86,27 +86,49 @@ static func written_exits(db: ContentDB, id: String) -> Array:
 	return out
 
 
+## Guards what a definition remembers of its own scripts: the layout may be
+## worked out from several threads at once (a tool's check beside its window).
+static var _scan_lock := Mutex.new()
+
+
 ## Exits scenes make in play, from every script: [direction, from, to] for each
 ## `~ change <direction> exit of <from> to <to>` (not `to nothing`), sorted.
+## Each definition is read once and remembers what it holds, so content that
+## shares its definitions with content read before (ContentDB.layer()) reads
+## only what is new.
 static func changed_exits(db: ContentDB) -> Array:
 	var re := RegEx.create_from_string("~\\s*change (\\w+) exit of (\\w+) to (\\w+)")
 	var found := {}
-	var scan := func(lines: Array) -> void:
+	var scan := func(lines: Array, into: PackedStringArray) -> void:
 		for l: FscParser.Line in lines:
 			if "exit of" not in l.text:
 				continue
 			var m := re.search(l.text)
 			if m != null and m.get_string(3) != "nothing":
-				found["%s %s %s" % [m.get_string(1), m.get_string(2), m.get_string(3)]] = true
+				into.append("%s %s %s" % [m.get_string(1), m.get_string(2), m.get_string(3)])
 	for type: String in db.definitions:
 		for id: String in db.definitions[type]:
 			var d: FscParser.Definition = db.definitions[type][id]
-			scan.call(d.body)
-			for f: FscParser.Field in d.fields.values():
-				scan.call(f.children)
+			_scan_lock.lock()
+			var known: Variant = d.changed_exits
+			_scan_lock.unlock()
+			if known == null:
+				var keys := PackedStringArray()
+				scan.call(d.body, keys)
+				for f: FscParser.Field in d.fields.values():
+					scan.call(f.children, keys)
+				known = keys
+				_scan_lock.lock()
+				d.changed_exits = keys
+				_scan_lock.unlock()
+			for key: String in known:
+				found[key] = true
 	for key: String in db.extra_scripts:
 		for extra: Dictionary in db.extra_scripts[key]:
-			scan.call((extra.field as FscParser.Field).children)
+			var keys := PackedStringArray()
+			scan.call((extra.field as FscParser.Field).children, keys)
+			for found_key: String in keys:
+				found[found_key] = true
 	var out: Array = []
 	for key: String in _sorted(found.keys()):
 		out.append(Array(key.split(" ")))

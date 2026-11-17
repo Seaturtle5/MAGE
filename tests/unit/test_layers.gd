@@ -262,3 +262,30 @@ func test_content_compiles_from_several_threads() -> void:
 	for thread: Thread in threads:
 		total += int(thread.wait_to_finish())
 	assert_eq(total, 1600, "four threads compiled the same texts side by side")
+
+
+func test_the_map_layout_reads_each_definition_once() -> void:
+	_file(ROOT + "/base/doors.fsc", "== location shed\nname: Shed\ndescription: A shed.\n\n== scene open_shed\nThe shed stands open.\n~ change east exit of yard to shed\n")
+	_file(ROOT + "/top/doors.fsc", "== location loft\nname: Loft\ndescription: A loft.\n\n== scene open_loft\nA ladder comes down.\n~ change up exit of shed to loft\n\n== extend character adam\ngift:\n    Adam opens a gate.\n    ~ change west exit of yard to loft\n")
+	var base := _base()
+	assert_eq(MapLayout.changed_exits(base), [["east", "yard", "shed"]], "an exit a scene makes in play is found")
+	var scene := base.get_def("scene", "open_shed")
+	var read: Variant = scene.changed_exits
+	assert_eq(Array(read), ["east yard shed"], "and the definition remembers it")
+	assert_eq(Array(base.get_def("scene", "base_story").changed_exits), [], "as does one that makes none")
+	var top := base.layer()
+	top.load_pack(ROOT + "/top")
+	top._finish()
+	assert_eq(MapLayout.changed_exits(top), [["east", "yard", "shed"], ["up", "shed", "loft"], ["west", "yard", "loft"]], "a layer adds what its own packs make, also in a script it adds to content below")
+	assert_same(top.get_def("scene", "open_shed"), scene, "what the layer shares")
+	assert_true(is_same(scene.changed_exits, read), "is not read a second time")
+	assert_eq(MapLayout.changed_exits(base), [["east", "yard", "shed"]], "and the content below still makes only its own")
+	assert_eq(top.map_layout().group.get("loft", ""), top.map_layout().group.get("yard", "?"), "the layout joins the places such exits lead to")
+	# Without protection an extension changes the definition itself: it is read again.
+	var plain := ContentDB.new()
+	plain.load_pack(ROOT + "/base")
+	plain._finish()
+	assert_eq(MapLayout.changed_exits(plain).size(), 1)
+	plain.load_pack(ROOT + "/top")
+	plain._finish()
+	assert_eq(MapLayout.changed_exits(plain).size(), 3, "an extension loaded later is read")

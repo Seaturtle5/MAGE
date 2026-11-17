@@ -288,6 +288,8 @@ func layer() -> ContentDB:
 ## itself, or with protect_definitions a copy that takes its place.
 func _extendable(target: FscParser.Definition) -> FscParser.Definition:
 	if not protect_definitions or _copied.has(target):
+		# It gains fields: what the map layout read from its scripts is read again.
+		target.changed_exits = null
 		return target
 	var copy := FscParser.Definition.new()
 	copy.type = target.type

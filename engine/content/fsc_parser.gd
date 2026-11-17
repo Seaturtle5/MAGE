@@ -68,6 +68,8 @@ class Definition:
 	var options: Array = []  ## `*` lines at field level (menus, observe ...)
 	var nodes: Array = []  ## parsed script, for script types
 	var body: Array[Line] = []
+	## The exits its scripts make in play, found once by MapLayout; null until then.
+	var changed_exits: Variant = null
 
 
 ## Result of parsing one file.

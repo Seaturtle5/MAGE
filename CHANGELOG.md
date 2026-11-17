@@ -10,6 +10,7 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - `Validator.run(content, [pack folders])` compiles and checks the scripts of those packs only.
 - Actions, conditions and text can be compiled from several threads at once.
 - `ContentDB.forget_compiled()` drops the compiled actions, conditions and texts kept for reuse; a tool that has checked a whole game gets several hundred megabytes back.
+- The map layout of layered content is worked out faster: each definition is read once for the exits its stories make in play (`~ change north exit of A to B`) and remembers them, so after a change only the pack that was loaded again is read.
 
 ## 1.0.0 (2026-11-17): first public version
 
