@@ -225,6 +225,22 @@ func test_a_check_of_one_packs_scripts() -> void:
 	assert_true(_messages(whole).any(func(m: String) -> bool: return "no_such_item" in m), "a full check finds them all")
 
 
+func test_compiled_content_can_be_forgotten() -> void:
+	var first := Effect.compile("player.hp + 77")
+	assert_same(Effect.compile("player.hp + 77"), first, "a line compiled twice is kept")
+	Condition.compile("player.hp >= 77")
+	TextTemplate.compile("[if player.hp > 77]Yes[end if]")
+	ContentDB.forget_compiled()
+	assert_eq(Effect._cache.size() + Condition._cache.size() + TextTemplate._cache.size(), 0, "nothing is kept")
+	var again := Effect.compile("player.hp + 77")
+	assert_eq(again, first, "and the line compiles the same again")
+	assert_not_same(again, first)
+	var base := _base()
+	assert_not_null(base.program("base_story"), "loaded content keeps its programs")
+	ContentDB.forget_compiled()
+	assert_eq(base.program("base_story").code[0].text.parts[0].v, "Words of the base.")
+
+
 func test_content_compiles_from_several_threads() -> void:
 	var texts: Array = []
 	for i in 400:

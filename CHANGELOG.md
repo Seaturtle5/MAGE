@@ -9,6 +9,7 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - `protect_definitions` on a `ContentDB` makes an extension change a copy of the definition it extends, so a tool's own parsed definitions stay as written.
 - `Validator.run(content, [pack folders])` compiles and checks the scripts of those packs only.
 - Actions, conditions and text can be compiled from several threads at once.
+- `ContentDB.forget_compiled()` drops the compiled actions, conditions and texts kept for reuse; a tool that has checked a whole game gets several hundred megabytes back.
 
 ## 1.0.0 (2026-11-17): first public version
 

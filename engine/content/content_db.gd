@@ -231,6 +231,16 @@ func errors() -> Array:
 	return diagnostics.filter(func(d): return d.severity == "error")
 
 
+## Forgets every compiled action, condition and text kept for reuse. They are
+## compiled again when next needed, so nothing changes but memory: a tool that
+## has checked a whole game and dropped that content gets several hundred
+## megabytes back. Loaded content keeps its own compiled programs.
+static func forget_compiled() -> void:
+	Effect.forget()
+	Condition.forget()
+	TextTemplate.forget()
+
+
 ## A copy of this loaded content to load more packs onto, for a tool that
 ## keeps most packs as they are and loads the one being worked on again after
 ## each change (an editor). Add the packs with load_pack() or by handing parsed

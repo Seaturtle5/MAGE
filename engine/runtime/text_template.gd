@@ -27,6 +27,13 @@ static var _cache: Dictionary = {}
 static var _cache_lock := Mutex.new()
 
 
+## Forgets the compiled texts kept for reuse (see ContentDB.forget_compiled()).
+static func forget() -> void:
+	_cache_lock.lock()
+	_cache.clear()
+	_cache_lock.unlock()
+
+
 static func compile(text: String, key: String = "") -> Dictionary:
 	var cache_key := key + "\u0001" + text
 	_cache_lock.lock()

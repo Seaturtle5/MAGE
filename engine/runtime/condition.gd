@@ -16,6 +16,13 @@ static var _cache: Dictionary = {}
 ## Guards the cache: content may be compiled from several threads at once
 ## (a loader or a check on one thread while another draws).
 static var _cache_lock := Mutex.new()
+
+
+## Forgets the compiled conditions kept for reuse (see ContentDB.forget_compiled()).
+static func forget() -> void:
+	_cache_lock.lock()
+	_cache.clear()
+	_cache_lock.unlock()
 static var _words_re := RegEx.create_from_string("\"[^\"]*\"|>=|<=|!=|[()<>=!]|[^\\s()<>=!]+")
 
 # Sentence forms, tried in order. Each regex matches the whole predicate.
