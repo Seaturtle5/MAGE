@@ -41,6 +41,8 @@ var continue_moving := false  ## '~ continue moving': a leaving event lets the p
 var captivity_exit := ""
 var cancel_companion := false  ## '~ cancel summon' / '~ cancel dismiss' in a companion's text
 var warnings: Array = []  ## runtime problems (missing descriptors and so on)
+## The player's last steps and the scene shown, for a bug report (not saved).
+var feedback := FeedbackReport.new()
 
 
 static func default_settings() -> Dictionary:
@@ -62,6 +64,11 @@ func dispose() -> void:
 
 
 func emit(event: Dictionary) -> void:
+	match event.get("type"):
+		"title":
+			feedback.scene_title = str(event.get("text", ""))
+		"choices":
+			feedback.choice_labels = Array(event.get("options", [])).map(func(o): return str(o.get("text", "")) if o is Dictionary else str(o))
 	# The rest of a sentence split by a condition joins the paragraph it belongs to.
 	if event.get("type") == "paragraph" and not output.is_empty() and output[-1].get("type") == "paragraph" \
 			and TextTemplate.continues(event.spans):
@@ -1766,6 +1773,7 @@ func start_scenario(id: String, name: String = "Player", pronouns: String = "he"
 	output.clear()
 	settings.scenario = id
 	settings.started = true
+	feedback.note("start a new game (%s)" % id)
 	set_value("player.name", name)
 	set_value("player.pronouns", pronouns)
 	CreationSystem.create(self, choices)
@@ -2512,4 +2520,5 @@ func load_dict(d: Dictionary) -> bool:
 	if state.rng_state.size() == 4:
 		rng.set_state(state.rng_state)
 	runner.load_frames(state.runner)
+	feedback.note("load a saved game")
 	return true

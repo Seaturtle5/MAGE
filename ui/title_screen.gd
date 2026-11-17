@@ -5,7 +5,9 @@ extends Control
 ## It only draws and reports choices through `chosen`; the main screen
 ## decides what each choice does. The title, subtitle, logo, background and
 ## footer come from the loaded content (`set_branding`); without them the
-## menu shows the project's name on plain colours.
+## menu shows the project's name on plain colours. The engine's own card
+## (lower right) and the Report a bug / Feedback button (bottom middle) are
+## always there.
 
 signal chosen(action: String)
 
@@ -22,7 +24,8 @@ var _menu_art: Array = []  ## pictures that pop up beside the hovered entry (pac
 var _hover_art: TextureRect
 var _art_tween: Tween
 var _last_art := -1
-var _credit: Label  ## the engine's credit, lower right
+var _engine_card: PanelContainer  ## the engine's own card, lower right
+var _report: Button  ## Report a bug / Feedback, bottom middle
 
 
 func _init() -> void:
@@ -97,22 +100,47 @@ func _init() -> void:
 	col.add_child(fill)
 	_footer = FsTheme.label("", 13, FsTheme.TEXT_FAINT)
 	col.add_child(_footer)
-	# The engine's credit and version, in the lower right corner.
-	var credit := FsTheme.label("Modular Adventure Game Engine by Seaturtle5 · %s" % engine_version(), 13, FsTheme.TEXT_FAINT)
-	credit.autowrap_mode = TextServer.AUTOWRAP_OFF
-	credit.add_theme_color_override("font_color", FsTheme.TEXT_DIM)
-	credit.add_theme_color_override("font_shadow_color", FsTheme.SHADOW)
-	credit.add_theme_constant_override("shadow_offset_x", 1)
-	credit.add_theme_constant_override("shadow_offset_y", 1)
-	credit.add_theme_constant_override("shadow_outline_size", 4)
-	credit.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	credit.set_anchors_and_offsets_preset(PRESET_BOTTOM_RIGHT)
-	credit.grow_horizontal = GROW_DIRECTION_BEGIN
-	credit.grow_vertical = GROW_DIRECTION_BEGIN
-	credit.offset_right = -24
-	credit.offset_bottom = -16
-	add_child(credit)
-	_credit = credit
+	# The engine's own card in the lower right corner: its name, an invitation
+	# to make a game with it, its Discord and GitHub, its maker and version. Packs cannot change it.
+	_engine_card = _make_engine_card()
+	add_child(_engine_card)
+	# Report a bug / Feedback, at the bottom in the middle (as in the game's tool bar).
+	_report = Button.new()
+	_report.add_theme_stylebox_override("normal", FsTheme.box(Color(FsTheme.SURFACE, 0.82), FsTheme.RADIUS, Color(FsTheme.ACCENT, 0.35), 0))
+	_report.pressed.connect(func(): chosen.emit("report"))
+	var face := HBoxContainer.new()
+	face.add_theme_constant_override("separation", 6)
+	face.mouse_filter = MOUSE_FILTER_IGNORE
+	var bug := "res://ui/icons/bug.svg"
+	if ResourceLoader.exists(bug):
+		var icon := TextureRect.new()
+		icon.texture = load(bug) as Texture2D
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(16, 16)
+		icon.self_modulate = FsTheme.ACCENT
+		icon.mouse_filter = MOUSE_FILTER_IGNORE
+		face.add_child(icon)
+	var words := FsTheme.label("Report a bug / Feedback", 15, FsTheme.ACCENT)
+	words.autowrap_mode = TextServer.AUTOWRAP_OFF
+	words.mouse_filter = MOUSE_FILTER_IGNORE
+	face.add_child(words)
+	var pad := MarginContainer.new()
+	pad.mouse_filter = MOUSE_FILTER_IGNORE
+	for side in ["left", "right"]:
+		pad.add_theme_constant_override("margin_" + side, 12)
+	for side in ["top", "bottom"]:
+		pad.add_theme_constant_override("margin_" + side, 8)
+	pad.add_child(face)
+	# The button and its face share a holder that sizes both to the face.
+	var holder := MarginContainer.new()
+	holder.add_child(_report)
+	holder.add_child(pad)
+	holder.set_anchors_and_offsets_preset(PRESET_CENTER_BOTTOM)
+	holder.grow_horizontal = GROW_DIRECTION_BOTH
+	holder.grow_vertical = GROW_DIRECTION_BEGIN
+	holder.offset_bottom = -12  # below the footer, which ends 48 above the bottom
+	add_child(holder)
 	# Light or dark: a sun and a moon in the upper right corner; the one in use is lit.
 	var modes := PanelContainer.new()
 	modes.add_theme_stylebox_override("panel", FsTheme.box(Color(FsTheme.SURFACE, 0.82), 20, FsTheme.BORDER, 4))
@@ -155,6 +183,70 @@ func _theme_button(icon: String, action: String, tip: String, active: bool) -> B
 	return b
 
 
+## The engine's Discord, where people who make their own games meet, and its code.
+const ENGINE_DISCORD := "https://discord.gg/K8YGRC7sWK"
+const ENGINE_GITHUB := "https://github.com/Seaturtle5/MAGE"
+
+
+## The engine's card: MAGE, "Make your own adventure game", its Discord and
+## GitHub, its maker and version. Quiet on purpose: small type in the faint
+## text colours on a thin translucent panel, so it is found by those looking
+## for it and never draws the eye from the game's title and menu.
+func _make_engine_card() -> PanelContainer:
+	var card := PanelContainer.new()
+	# Translucent on the dark palette; on the light one the art behind is dark, so less see-through to stay readable.
+	card.add_theme_stylebox_override("panel", FsTheme.box(Color(FsTheme.SURFACE, 0.85 if FsTheme.light else 0.6), FsTheme.RADIUS, Color(FsTheme.BORDER, 0.7), 14))
+	card.custom_minimum_size = Vector2(220, 0)
+	card.set_anchors_and_offsets_preset(PRESET_BOTTOM_RIGHT)
+	card.grow_horizontal = GROW_DIRECTION_BEGIN
+	card.grow_vertical = GROW_DIRECTION_BEGIN
+	card.offset_right = -24
+	card.offset_bottom = -12
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 3)
+	card.add_child(col)
+	var name := FsTheme.label("MAGE", 17, FsTheme.TEXT_DIM)
+	name.add_theme_font_override("font", FsTheme.strong_font())
+	col.add_child(name)
+	col.add_child(FsTheme.heading("Modular Adventure Game Engine", 10, FsTheme.TEXT_FAINT))
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 3)
+	col.add_child(gap)
+	var pitch := FsTheme.label("Make your own adventure game with this engine.", 13, FsTheme.TEXT_DIM)
+	pitch.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(pitch)
+	var links := HBoxContainer.new()
+	links.add_theme_constant_override("separation", 4)
+	links.add_child(_card_link("Discord", ENGINE_DISCORD))
+	links.add_child(_card_link("GitHub", ENGINE_GITHUB))
+	col.add_child(links)
+	col.add_child(FsTheme.label("Made by Seaturtle5 · version %s" % engine_version(), 12, FsTheme.TEXT_FAINT))
+	return card
+
+
+## A quiet link-button on the engine's card that opens `url` in the browser:
+## faint text and a faint outline, a little brighter on hover.
+func _card_link(text: String, url: String) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.tooltip_text = url
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_color_override("font_color", FsTheme.TEXT_DIM)
+	b.add_theme_color_override("font_hover_color", FsTheme.TEXT)
+	b.add_theme_color_override("font_pressed_color", FsTheme.TEXT)
+	b.add_theme_color_override("font_focus_color", FsTheme.TEXT_DIM)
+	var looks := {"normal": [Color.TRANSPARENT, Color(FsTheme.BORDER, 0.8)], "hover": [Color(FsTheme.SURFACE_3, 0.5), FsTheme.BORDER],
+		"pressed": [FsTheme.SURFACE_3, FsTheme.BORDER], "hover_pressed": [FsTheme.SURFACE_3, FsTheme.BORDER],
+		"focus": [Color.TRANSPARENT, FsTheme.TEXT_FAINT]}
+	for state: String in looks:
+		var box := FsTheme.box(looks[state][0], FsTheme.RADIUS, looks[state][1], 8)
+		box.content_margin_top = 2
+		box.content_margin_bottom = 2
+		b.add_theme_stylebox_override(state, box)
+	b.pressed.connect(func(): OS.shell_open(url))
+	return b
+
+
 ## The engine's version (project setting application/config/version).
 static func engine_version() -> String:
 	return str(ProjectSettings.get_setting("application/config/version", ""))
@@ -162,18 +254,20 @@ static func engine_version() -> String:
 
 ## Title, subtitle, logo and background textures, footer text and the hover
 ## pictures from the content; empty values keep the defaults.
+## `version` is the game's own, shown after the subtitle.
 func set_branding(title: String, subtitle: String, logo: Texture2D, background: Texture2D, footer: String,
-		menu_art: Array = []) -> void:
+		menu_art: Array = [], version: String = "") -> void:
 	_menu_art = menu_art
 	if title != "":
 		_title.text = title
-	_subtitle.text = subtitle.to_upper()
-	_subtitle.visible = subtitle != ""
+	var line: PackedStringArray = []
+	if subtitle != "":
+		line.append(subtitle)
+	if version != "":
+		line.append("Version " + version)
+	_subtitle.text = " · ".join(line).to_upper()
+	_subtitle.visible = not line.is_empty()
 	_background.texture = background
-	# The credit sits on the picture where there is one: light text with a dark shadow, as on the dark theme.
-	var on_art := background != null
-	_credit.add_theme_color_override("font_color", FsTheme.DARK.TEXT_DIM if on_art else FsTheme.TEXT_DIM)
-	_credit.add_theme_color_override("font_shadow_color", FsTheme.DARK.SHADOW if on_art else FsTheme.SHADOW)
 	_logo.texture = logo
 	_logo.visible = logo != null
 	_title.visible = logo == null
@@ -258,6 +352,11 @@ func set_continue(info: String) -> void:
 	_continue_info.visible = info != ""
 	_continue_info.text = info
 	(_continue_button if info != "" else _menu.get_child(2) as Button).grab_focus.call_deferred()
+
+
+## The Report button's tooltip (that reports cannot be sent yet, when so).
+func set_report_tip(text: String) -> void:
+	_report.tooltip_text = text
 
 
 func show_message(text: String) -> void:

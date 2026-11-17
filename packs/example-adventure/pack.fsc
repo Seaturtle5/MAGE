@@ -16,3 +16,13 @@ authors: MAGE project
 title: The Quiet Woods
 subtitle: An example adventure
 about: A tiny example game that comes with the engine. Copy its pack folder to start your own.
+// A game may also show a notice each time it starts, with an OK button
+// (`start notice title:` and a long `start notice:` with **bold**, *italic* and
+// web addresses as links), and give `feedback webhook:` a Discord webhook address
+// that the Report a bug / Feedback button sends players' reports to. Without one,
+// the report window says that reports cannot be sent yet. For example:
+//
+// start notice title: Welcome
+// start notice:
+//     This is a test build. Tell us what you think with the Report a bug button.
+// feedback webhook: PASTE-WEBHOOK-URL-HERE

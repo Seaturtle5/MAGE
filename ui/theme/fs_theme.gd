@@ -199,14 +199,17 @@ static func build() -> Theme:
 
 	# Text fields: a sunken well with an amber underline when focused.
 	var well := box(BG, RADIUS, BORDER, 10)
-	t.set_stylebox("normal", "LineEdit", well)
 	var well_focus := box(BG, RADIUS, BORDER, 10)
 	well_focus.border_color = ACCENT
-	t.set_stylebox("focus", "LineEdit", well_focus)
-	t.set_color("font_color", "LineEdit", TEXT)
-	t.set_color("font_placeholder_color", "LineEdit", TEXT_FAINT)
-	t.set_color("caret_color", "LineEdit", ACCENT)
-	t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.3))
+	for field in ["LineEdit", "TextEdit"]:
+		t.set_stylebox("normal", field, well)
+		t.set_stylebox("focus", field, well_focus)
+		t.set_color("font_color", field, TEXT)
+		t.set_color("font_placeholder_color", field, TEXT_FAINT)
+		t.set_color("caret_color", field, ACCENT)
+		t.set_color("selection_color", field, Color(ACCENT, 0.3))
+	t.set_stylebox("read_only", "TextEdit", box(Color(BG, 0.5), RADIUS, BORDER, 10))
+	t.set_color("font_readonly_color", "TextEdit", TEXT_DIM)
 
 	t.set_stylebox("panel", "PopupMenu", box(SURFACE_2, RADIUS, BORDER, 6))
 	t.set_stylebox("hover", "PopupMenu", box(SURFACE_3, 2, Color.TRANSPARENT, 6))

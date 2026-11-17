@@ -57,7 +57,7 @@ static func run(content: ContentDB) -> void:
 		["Filters", v._check_filters], ["Conditions", v._check_conditions], ["Smells, notes and help", v._check_smell_notes_help],
 		["Storage", StorageSystem.check.bind(v)], ["Collections", CollectionSystem.check.bind(v)],
 		["Fights", FightActionSystem.check.bind(v)], ["Earlier progress", ImportSystem.check.bind(v)],
-		["World", WorldSystem.check.bind(v)]]
+		["World", WorldSystem.check.bind(v)], ["Report a bug", FeedbackReport.check.bind(v)]]
 	for i in steps.size():
 		content._set_progress("Checking content", str(steps[i][0]), i, steps.size() + 1)
 		(steps[i][1] as Callable).call()

@@ -30,6 +30,7 @@ const CONTENT_PREFS := "user://content_settings.json"
 const PLAYER_PACKS := "user://packs"
 ## Display preferences, kept outside saves.
 const PREFS := "user://preferences.cfg"
+const REPORT_LABEL := "Report a bug / Feedback"
 const UI_SCALES := [0.9, 1.0, 1.1, 1.25]
 const BACKDROP := "res://ui/art/backdrop_texture.png"
 const PORTRAIT_MASK := preload("res://ui/portrait.gdshader")
@@ -126,6 +127,7 @@ var sheet_scroll: ScrollContainer  ## the character sheet's right column, for sc
 var inv_filter := "all"  ## the inventory tab
 var inv_bag_scroll: ScrollContainer
 var help_selected := ""  ## the topic the Help screen shows
+var report_button: Button  ## Report a bug / Feedback, in the middle of the tool bar
 var pending_import := ""  ## export files to import once the new game's opening has played (ImportView)
 
 
@@ -199,6 +201,7 @@ func _after_load(start: String, test_content: bool) -> void:
 	if not db.errors().is_empty():
 		_show_errors(db.errors())
 		return
+	report_button.tooltip_text = _report_tip()
 	if shot_path == "":
 		_load_art_prefs()
 	if shot_path == "":
@@ -210,6 +213,8 @@ func _after_load(start: String, test_content: bool) -> void:
 		_drain()
 	else:
 		_show_title()
+		if shot_path == "":
+			_show_start_notice()  # every start; screenshots show it only when asked ("open notice")
 	if shot_path != "":
 		_take_screenshot.call_deferred()
 
@@ -421,18 +426,51 @@ func _nav_bar() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 2)
 	pad.add_child(row)
+	var left := HBoxContainer.new()
+	left.add_theme_constant_override("separation", 2)
+	row.add_child(left)
 	for spec in [["Inventory", "I", _open_inventory], ["Journal", "J", _open_journal], ["Map", "M", _open_map],
 			["Character", "C", _open_character], ["Log", "L", _open_log]]:
-		_bar_button(row, spec[0], str(spec[0]).to_lower(), spec[1], spec[2])
+		_bar_button(left, spec[0], str(spec[0]).to_lower(), spec[1], spec[2])
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
 	row.add_child(spacer)
-	_bar_button(row, "Help", "help", "H", _open_help)
-	_bar_button(row, "Settings", "settings", "", _open_settings)
-	_bar_button(row, "Save", "save", "F5", func(): _open_saves(true))
-	_bar_button(row, "Load", "load", "", func(): _open_saves(false))
-	_bar_button(row, "Menu", "", "Esc", _open_pause)
+	var right := HBoxContainer.new()
+	right.add_theme_constant_override("separation", 2)
+	row.add_child(right)
+	_bar_button(right, "Help", "help", "H", _open_help)
+	_bar_button(right, "Settings", "settings", "", _open_settings)
+	_bar_button(right, "Save", "save", "F5", func(): _open_saves(true))
+	_bar_button(right, "Load", "load", "", func(): _open_saves(false))
+	_bar_button(right, "Menu", "", "Esc", _open_pause)
+	# Report a bug / Feedback, centred on the bar (over the space between the two groups).
+	var middle := CenterContainer.new()
+	middle.mouse_filter = MOUSE_FILTER_IGNORE
+	band.add_child(middle)
+	var face := HBoxContainer.new()
+	face.add_theme_constant_override("separation", 6)
+	face.add_child(_icon_view("bug", 16, FsTheme.ACCENT))
+	var words := _plain_label(REPORT_LABEL, 15, FsTheme.ACCENT)
+	face.add_child(words)
+	report_button = _face_button(middle, face, _open_report, false, 10, 8)
+	report_button.add_theme_stylebox_override("normal", FsTheme.box(Color.TRANSPARENT, FsTheme.RADIUS, Color(FsTheme.ACCENT, 0.35), 0))
+	report_button.tooltip_text = _report_tip()
+	# Too little room between the groups: the shorter label, then the icon alone.
+	var fit := func() -> void:
+		var room := minf(row.size.x / 2.0 - left.size.x, row.size.x / 2.0 - right.size.x) - 12.0  # half the button's width fits here
+		for label in [REPORT_LABEL, "Feedback", ""]:
+			words.text = label
+			words.visible = label != ""
+			if face.get_combined_minimum_size().x / 2.0 + 10.0 <= room:
+				break
+	row.resized.connect(fit)
 	return band
+
+
+## The Report button's tooltip: what it is for, or that reports cannot be sent yet.
+func _report_tip() -> String:
+	var problem := FeedbackReport.webhook_problem(str(db.branding().get("feedback webhook", ""))) if db != null else ""
+	return problem if problem != "" else "Tell us about a bug, or anything else about the game."
 
 
 ## A quiet tool-bar button: icon, name and its key.
@@ -3021,7 +3059,9 @@ func _show_title() -> void:
 		var b := db.branding()
 		title.set_branding(str(b.get("title", "")), str(b.get("subtitle", "")), _pack_image(str(b.get("logo", ""))),
 			_pack_image(str(b.get("background", ""))), str(b.get("about", "")),
-			Array(b.get("menu icons", [])).map(func(id): return _pack_image(str(id))).filter(func(t): return t != null))
+			Array(b.get("menu icons", [])).map(func(id): return _pack_image(str(id))).filter(func(t): return t != null),
+			str(b.get("version", "")))
+		title.set_report_tip(_report_tip())
 	move_child(title, get_child_count() - 1)
 	title.visible = true
 	title.show_message("")
@@ -3052,6 +3092,8 @@ func _on_title(action: String) -> void:
 			_set_theme.call_deferred(action == "light")
 		"credits":
 			_open_credits()
+		"report":
+			_open_report()
 		"quit":
 			get_tree().quit()
 
@@ -3321,7 +3363,74 @@ func _open_credits() -> void:
 		box.add_child(FsTheme.label("%s %s%s" % [p.name, p.version, (" — " + str(p.authors)) if str(p.authors) != "" else ""], 15, FsTheme.TEXT_DIM))
 
 
+# --- Report a bug and the start notice ---------------------------------------
+
+## The Report a bug window: the player's text, sent with the place, what plays
+## now, the last steps and the versions (FeedbackReport) to the game pack's
+## `feedback webhook:`.
+func _open_report() -> ReportView:
+	var view := get_viewport_rect().size
+	var box := _open_overlay("Report a bug", true, Vector2(minf(860, view.x - 60), minf(700, view.y - 60)))
+	overlay_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var report := ReportView.new()
+	report.size_flags_vertical = SIZE_EXPAND_FILL
+	box.size_flags_vertical = SIZE_EXPAND_FILL
+	box.add_child(report)
+	var playing: Game = game if game != null and game.settings.started else null
+	report.setup(str(db.branding().get("feedback webhook", "")),
+		func(text: String, discord: String) -> Dictionary:
+			return FeedbackReport.gather(db, playing, text, TitleScreen.engine_version(), discord),
+		overlay_footer, _close_overlay)
+	return report
+
+
+## The game pack's `start notice:`, shown once the packs have loaded, with OK.
+func _show_start_notice() -> void:
+	var b := db.branding()
+	var text := str(b.get("start notice", ""))
+	if text.strip_edges() == "":
+		return
+	var view := get_viewport_rect().size
+	var heading := str(b.get("start notice title", ""))
+	var box := _open_overlay(heading if heading != "" else "Notice", true, Vector2(minf(860, view.x - 60), minf(540, view.y - 60)))
+	var rich := _rich(notice_bbcode(text))
+	rich.meta_clicked.connect(func(meta: Variant) -> void:
+		var url := str(meta)
+		if url.begins_with("https://") or url.begins_with("http://"):
+			OS.shell_open(url))
+	box.add_child(rich)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = SIZE_EXPAND_FILL
+	overlay_footer.add_child(spacer)
+	var ok := Button.new()
+	ok.text = "OK"
+	ok.custom_minimum_size = Vector2(150, 44)
+	ok.add_theme_font_override("font", FsTheme.strong_font())
+	ok.pressed.connect(_close_overlay)
+	overlay_footer.add_child(ok)
+	ok.grab_focus.call_deferred()
+
+
+## A notice's text as BBCode: paragraphs, **bold**, *italic* and web
+## addresses as links; anything else is shown as written.
+static func notice_bbcode(text: String) -> String:
+	var out := text.replace("[", "[lb]")
+	out = RegEx.create_from_string("\\*\\*(.+?)\\*\\*").sub(out, "[b]$1[/b]", true)
+	out = RegEx.create_from_string("\\*(.+?)\\*").sub(out, "[i]$1[/i]", true)
+	out = RegEx.create_from_string("(https?://[^\\s<>\\[\\]]*[^\\s<>\\[\\].,;:!?)])").sub(out,
+		"[url=$1][color=#%s]$1[/color][/url]" % FsTheme.ACCENT.to_html(false), true)
+	return out
+
+
 # --- Automated screenshots --------------------------------------------------
+
+## The open Report a bug window, or null.
+func _report_view() -> ReportView:
+	if overlay == null:
+		return null
+	var found := overlay.find_children("*", "ReportView", true, false)
+	return found[0] as ReportView if not found.is_empty() else null
+
 
 func _take_screenshot() -> void:
 	for step in shot_steps:
@@ -3405,6 +3514,34 @@ func _take_screenshot() -> void:
 				else:
 					pending_import = arg
 					_drain()
+			"report":
+				# The open Report a bug window: "report text Words", "report name Discord name",
+				# "report details" (show what is sent), "report send" (to the pack's address; screenshot
+				# runs use it only with no address), "report sending|sent|offline|refused" (as the answer shows).
+				var view := _report_view()
+				if view == null:
+					continue
+				var what := arg.get_slice(" ", 0)
+				var rest := arg.substr(what.length()).strip_edges()
+				match what:
+					"text":
+						view.field.text = rest.replace("\\n", "\n")
+						view._on_text_changed()
+					"name":
+						view.name_field.text = rest
+					"details":
+						view._toggle_details()
+					"send":
+						if not view.can_send():
+							view.send()
+					"sending":
+						view.set_sending()
+					"sent":
+						view.show_result(HTTPRequest.RESULT_SUCCESS, 204)
+					"offline":
+						view.show_result(HTTPRequest.RESULT_CANT_CONNECT, 0)
+					"refused":
+						view.show_result(HTTPRequest.RESULT_SUCCESS, 400)
 			"note":
 				# "note Bob owes me soap": a note written in the journal, as in its text box.
 				NotesSystem.write(game, arg)
@@ -3434,6 +3571,8 @@ func _take_screenshot() -> void:
 					"saves": _open_saves(true)
 					"load": _open_saves(false)
 					"credits": _open_credits()
+					"report": _open_report()
+					"notice": _show_start_notice()
 					"help": _open_help()
 					"menu": _open_pause()
 					"content":
