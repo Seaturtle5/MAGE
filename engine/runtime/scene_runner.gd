@@ -861,6 +861,7 @@ func ask_number(path: String, prompt: Dictionary, low: Variant, high: Variant) -
 func enter_text(text: String) -> bool:
 	if status != "input" or frames.is_empty() or frames[-1].kind != "ask":
 		return false
+	game.feedback.note("type an answer")  # never what was typed: it may be the player's name
 	var f: Dictionary = frames[-1]
 	var clean := text.strip_edges().replace("\n", " ").replace("[", "(").replace("]", ")")
 	if f.get("number", false):
@@ -988,6 +989,7 @@ func _push_field(id: String, field: String) -> void:
 func choose(index: int) -> bool:
 	if status != "choice" or index < 0 or index >= pending.size() or not pending[index].enabled:
 		return false
+	game.feedback.note_choice(index)
 	var p: Dictionary = pending[index]
 	pending = []
 	var f: Dictionary = frames[-1]
@@ -1038,11 +1040,14 @@ func choose(index: int) -> bool:
 func proceed() -> bool:
 	if status != "continue":
 		return false
+	game.feedback.note("continue")
 	run()
 	return true
 
 
 func combat_action(action: String) -> bool:
+	if status == "combat":
+		game.feedback.note("fight: " + action)
 	if status == "combat" and action.begins_with("use "):
 		return _combat_item(action.substr(4))
 	if status == "combat" and action.begins_with("do "):
@@ -1297,6 +1302,8 @@ func act(action: String, arg: String = "") -> bool:
 	_dispatching_action = true
 	var accepted := _act(action, arg)
 	_dispatching_action = false
+	if accepted:
+		game.feedback.note(FeedbackReport.describe_action(action, arg))
 	# A failed in-world attempt also advances Inform's command-turn timers.
 	# Simple actions don't enter run(); scene actions finish there instead.
 	if game.state.action_pending and status == "idle" and _queue_scheduled_scenes():

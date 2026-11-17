@@ -14,7 +14,8 @@ const SCHEMA := {
 		"statuses": "fields", "warnings": "fields", "refreshed": "script", "collapse": "script", "wake": "script", "source": "meta"},
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
-		"menu icons": "list", "loading": "text", "loading frames": "text", "art": "text"},
+		"menu icons": "list", "loading": "text", "loading frames": "text", "art": "text",
+		"start notice": "text", "start notice title": "text", "feedback webhook": "text"},
 	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "not found": "script", "source": "meta"},
 	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
@@ -319,17 +320,40 @@ func _visit(id: String, found: Dictionary, state: Dictionary, order: Array) -> v
 
 
 ## Title, subtitle, logo, background and about text for the title and
-## credits screens: from the last loaded pack that sets a title.
+## credits screens: from the last loaded pack that sets a title (the game
+## pack). Also its `version`, the `start notice` shown once the packs have
+## loaded (with its `start notice title`) and the `feedback webhook` the
+## Report a bug window sends to.
 func branding() -> Dictionary:
 	var out := {}
 	for p: Dictionary in packs:
 		var d: FscParser.Definition = p.def
 		if d.fields.has("title"):
 			out = {"pack": p.id, "path": p.path}
-			for key in ["title", "subtitle", "logo", "background", "about"]:
+			for key in ["title", "subtitle", "logo", "background", "about", "version", "start notice title", "feedback webhook"]:
 				out[key] = d.fields[key].value if d.fields.has(key) else ""
+			out["start notice"] = long_text(d.fields["start notice"]) if d.fields.has("start notice") else ""
 			out["menu icons"] = _list(d, "menu icons")  # pictures shown beside a hovered menu entry
 	return out
+
+
+## A text field's whole text: the value on its line, or its indented lines
+## (lines of a paragraph joined, a blank line between paragraphs as "\n\n").
+static func long_text(f: FscParser.Field) -> String:
+	var paragraphs: PackedStringArray = []
+	var current: PackedStringArray = []
+	if f.value != "":
+		current.append(f.value)
+	for l in f.children:
+		if l.is_blank():
+			if not current.is_empty():
+				paragraphs.append(" ".join(current))
+				current = []
+		else:
+			current.append(l.text.strip_edges())
+	if not current.is_empty():
+		paragraphs.append(" ".join(current))
+	return "\n\n".join(paragraphs)
 
 
 ## The loading animation of the game pack (the one with a `title:`), read from
