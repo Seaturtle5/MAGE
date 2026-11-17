@@ -2,9 +2,77 @@
 
 MAGE (Modular Adventure Game Engine) runs text-driven adventure and role-playing games. The engine knows the rules: time, travel, conversations, fights, items, saving. The game itself comes from content packs. These are folders of plain text files and images that describe the places, characters, items, events and creatures, and every line of text the player reads.
 
-MAGE is a Godot 4.7 project written in GDScript. It runs offline on the desktop.
+![A place in the example game: its description, who is here, the ways out and what the player can do](docs/images/place.png)
 
-It is in early development, and the content format and save format will still change.
+MAGE is a Godot 4.7 project written in GDScript. It runs offline on the desktop. Version 1.0.0 is its first public version; the content format and save format will still change, and the [changelog](CHANGELOG.md) says what did.
+
+Packs can be written by hand in a text editor, or made with [MAGE:EDITOR](https://github.com/Seaturtle5/MAGE-EDITOR), which builds them from sentences, a story board and a map.
+
+## Contents
+
+- [What a game looks like](#what-a-game-looks-like)
+- [What the engine handles](#what-the-engine-handles)
+- [Content packs](#content-packs)
+- [Running it](#running-it)
+- [Tests](#tests)
+- [Layout](#layout)
+- [License](#license)
+
+## What a game looks like
+
+The pictures show *The Quiet Woods*, the small example game that comes with the engine. Everything in them is content of that pack: the engine brings the screens, the pack brings the words.
+
+### The moment, not a scrolling log
+
+The middle of the screen shows what is happening now: the place and who is there, or the scene that is playing. The ways out and the things to do stand beside it in panels of their own, each with what it costs in turns. The top bar holds the meters the game defines (here health, hunger, thirst and cold), and a small map shows where the player is.
+
+### Conversations and choices
+
+Scenes are prose with choices. A talk menu lists what can be said; a choice can be offered only under a condition, and it can lead to another scene, change a value or move a quest along. Every choice has a number key.
+
+![Talking with a character: her greeting, and four things to say](docs/images/talk.png)
+
+### Fights
+
+Fights are turn-based, against the creatures the packs define, with the rolls shown. A creature brings its own attacks and texts, and a pack can add buttons, special moves and scripted stages.
+
+![A fight after its first round: the rolls, the creature's bars and the player's moves](docs/images/fight.png)
+
+### Shops
+
+A shop buys, sells and trades at a place, when its keeper is there and it is open. Prices are in a currency the game chooses.
+
+![A shop: what the keeper says, the player's coins and what can be bought](docs/images/shop.png)
+
+### The map
+
+The map is drawn from the places and their exits; a pack does not have to draw one. Places next to the ones the player knows show as question marks, the rest stay hidden, and fast-travel points can be clicked to go there.
+
+![The map of a region, with the player's place marked](docs/images/map.png)
+
+### Items and gear
+
+The inventory shows what the player carries, by kind, with what each thing is and what can be done with it: use, wear, wield, drop. Worn and wielded things have their slots, and everything has a weight.
+
+![The inventory: equipment slots, the carried items and the chosen item's details](docs/images/inventory.png)
+
+### The game's own title and start
+
+The title, subtitle, logo, background and the line under the menu come from the game's pack, so the engine carries no branding of its own. A new game starts from one of the pack's scenarios, and the player sets up their character in a few steps.
+
+![The title screen of the example game](docs/images/title.png)
+
+![A new game: where the story begins, with the character on the right](docs/images/newgame.png)
+
+### What the player controls
+
+Settings hold the window, the theme and the interface size, and the content settings the game defines: kinds of content a player can ban or keep at a distance. There are a dark and a light theme.
+
+![Settings: display, and the game's own content settings](docs/images/settings.png)
+
+![The same place in the light theme](docs/images/light.png)
+
+Also there: a journal for quests and the player's own notes, a character sheet, a log of what was shown, help topics the game writes, named saves with a picture of the moment, an autosave and a quicksave, and a button that sends a bug report to an address the game sets.
 
 ## What the engine handles
 
