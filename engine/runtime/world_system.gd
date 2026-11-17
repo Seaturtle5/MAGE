@@ -32,7 +32,7 @@ const FRAME := "world_pick_up"
 const PICKING := "picking.item"
 const CANCELLED := "picking.cancelled"
 ## A creature's numbers a script can read: `strength of x.critter`.
-const READINGS := ["strength", "dexterity", "stamina", "perception", "intelligence", "charisma", "libido"]
+const READINGS := ["strength", "dexterity", "stamina", "perception", "intelligence", "charisma", "libido", "level", "zones"]
 ## Value paths this system answers.
 const PATHS := ["here.door_zone", "arrival.from", PICKING]
 ## The parts the shift changes with their change texts, in the original's order
@@ -272,22 +272,34 @@ static func creature_named(game, text: String) -> String:
 	return wanted if game.content.has(wanted, "creature") else ""
 
 
-## `strength of x` ... `libido of x`: a creature's numbers now (for a form, those of the
+## `strength of x` ... `libido of x`, `level of x`: a creature's numbers now (for a form, those of the
 ## first creature that infects with it, else the form's own `stats:` and `libido:`).
 static func read_of(game, what: String, v: Variant) -> Variant:
 	var id := str(v) if v != null else ""
 	if what == "creature named":
 		return creature_named(game, id)
 	if id == "":
-		return 0
+		return "" if what == "zones" else 0
+	if what == "zones":
+		# `zones of x`: the names of the zones a creature is found in now ("" for nowhere).
+		var names: Array = []
+		for z: String in game.creature_field(id, "found in", "nowhere").split(","):
+			z = z.strip_edges()
+			if z != "" and z != "nowhere":
+				names.append(game.content.typed_value("zone", z, "name", z))
+		return ", ".join(names)
 	if not game.content.has(id, "creature") and game.content.has(id, "form"):
 		for c: String in game.content.all_of("creature"):
 			if game.creature_field(c, "form", c) == id:
 				id = c
 				break
 	if game.content.has(id, "creature"):
-		return CombatSystem.number(game, id, "libido", 0) if what == "libido" else CombatSystem.stat(game, id, what)
+		if what in ["libido", "level"]:
+			return CombatSystem.number(game, id, what, 0)
+		return CombatSystem.stat(game, id, what)
 	if game.content.has(id, "form"):
+		if what == "level":
+			return 0  # a form with no creature has no level
 		if what == "libido":
 			return int(game.content.typed_value("form", id, "libido", "0"))
 		for entry in game.content.typed_value("form", id, "stats").split(","):

@@ -179,6 +179,9 @@ damage: 2
 stats: strength 8, dexterity 16, stamina 8, perception 12, intelligence 10, charisma 14
 form: wolf
 
+== scene overview_line
+[name of creature.id]: level [level of creature.id], [zones of creature.id]
+
 == character ann
 name: Ann
 lives at: den
@@ -343,6 +346,7 @@ func test_the_player_chooses_a_creature_and_shifts_into_it() -> void:
 	assert_eq(_eval("creature named \"cat\""), "cat", "a part of the name")
 	assert_eq(_eval("creature named \"dragon\""), "")
 	assert_eq(_eval("strength of wolf"), 15)
+	assert_eq(_eval("level of wolf"), 2, "a creature's level, for prices and rewards that scale with it")
 	assert_eq(_eval("charisma of cat"), 14)
 	assert_eq(_eval("libido of wolf"), 40)
 	game.state.encountered.append_array(["wolf", "cat"])
@@ -521,3 +525,16 @@ if player.strength < strength of wolff:
 	assert_true(has.call("plain_door: 'going text'"), str(all))
 	assert_true(has.call("grumpy"), str(all))
 	assert_true(has.call("no_such.value"), str(all))
+
+
+func test_a_loop_over_every_creature_found_somewhere_by_level() -> void:
+	game.apply(Effect.compile("creature wolf found in outside, red"))
+	game.apply(Effect.compile("creature cat found in sewers"))
+	game.take_output()
+	assert_eq(_eval("level of wolf"), 2)
+	assert_eq(_eval("zones of wolf"), "Outside, Red light district")
+	game.apply(Effect.compile("for each creature by level play overview_line"))
+	var text := _said()
+	assert_string_contains(text, "Housecat: level 1, Sewers")
+	assert_string_contains(text, "Wolf: level 2, Outside, Red light district")
+	assert_lt(text.find("Housecat"), text.find("Wolf"), "lower levels first")

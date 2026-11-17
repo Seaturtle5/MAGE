@@ -194,6 +194,8 @@ static var _rules: Array = [
 	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*)$")],
 	["resolve_tagged", RegEx.create_from_string("^resolve every event tagged (\\w+)$")],
 	["each_companion_of", RegEx.create_from_string("^for (each tamed companion|all companions) play (\\w[\\w.]*)$")],
+	# "~ for each creature by level play terminal_line" (StorySystem): every creature found somewhere.
+	["each_creature", RegEx.create_from_string("^for each creature by level play (\\w[\\w.]*)$")],
 	# WorldSystem: "~ event scopaesthesia found in red" (or "nowhere"), "~ event scopaesthesia
 	# level = 9" (also + and -); "~ cancel pick up" (in a `before picking up` hook); "~ shift
 	# into x.critter" (the original's shift: every part with its change text); "~ transform
@@ -631,6 +633,8 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "discover_flagged", "flag": m.get_string(1).strip_edges()}
 			"resolve_tagged":
 				return {"op": "resolve_tagged", "tag": m.get_string(1)}
+			"each_creature":
+				return {"op": "each_creature", "scene": m.get_string(1)}
 			"each_companion_of":
 				return {"op": "each_companion_of", "scope": "tamed" if m.get_string(1).begins_with("each") else "all", "scene": m.get_string(2)}
 			_ when str(rule[0]).begins_with("fight:"):

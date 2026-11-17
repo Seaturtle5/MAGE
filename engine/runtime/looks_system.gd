@@ -136,7 +136,7 @@ static func describe(game, n: String) -> Variant:
 		return null
 	if what == "traits":
 		return traits(game, n.substr(10).strip_edges())
-	if what in READINGS:
+	if what in READINGS or what in WorldSystem.READINGS:  # also a creature's numbers and zones: [level of x], [zones of x]
 		var e := Expr.parse(n)
 		if not e.has("error"):
 			var v: Variant = Expr.evaluate(e, game)
@@ -255,7 +255,7 @@ static func check_text(v, n: String, line: int) -> bool:
 		if who != "player" and not v.db.has(who, "character"):
 			v._err(line, "[%s]: '%s' is not a character.%s" % [n, who, v._suggest(who, v._ids("character"))])
 		return true
-	if what in READINGS:
+	if what in READINGS or what in WorldSystem.READINGS:
 		var e := Expr.parse(n)
 		if e.has("error"):
 			v._err(line, "[%s]: %s" % [n, e.error])

@@ -103,7 +103,7 @@ func character_story(id: String, field: String) -> String:
 	if hook == "" and game.content.program(own) == null:
 		game.warn("'%s' has no %s to play." % [id, field])
 		return ""
-	game.set_value("%s.met" % id, true)
+	frames.append({"kind": "met", "who": id})  # met once the story is over (the caller pushes it on top)
 	return hook if hook != "" else own
 
 
@@ -274,6 +274,11 @@ func run() -> void:
 			if f.kind == "discover":
 				game.notice("Following movement, you end up at %s." % game.content.typed_value("location", f.place, "name", f.place), false)
 			game.go_to(f.place)
+			continue
+		if f.kind == "met":
+			# After a talk or sex scene: the character counts as met from now on.
+			frames.pop_back()
+			game.set_value("%s.met" % str(f.who), true)
 			continue
 		if f.kind == "turn":
 			frames.pop_back()
@@ -1339,7 +1344,7 @@ func _act(action: String, arg: String) -> bool:
 			var talk_instead: String = game.hook_instead("instead of talking to " + arg)
 			if talk_instead == "" and not db.get_def("character", arg).fields.has("talk"):
 				return false
-			game.set_value("%s.met" % arg, true)
+			frames.append({"kind": "met", "who": arg})  # met once the talk is over, so `if not X.met:` plays the first meeting
 			emit_title("Talking with %s" % WorldSystem.character_name(game, arg), arg)
 			start(talk_instead if talk_instead != "" else "%s#talk" % arg)
 			return true
@@ -1364,7 +1369,7 @@ func _act(action: String, arg: String) -> bool:
 			if sex_instead == "" and (own == "" or db.program(own, "character") == null):
 				return false
 			if action == "sex":
-				game.set_value("%s.met" % arg, true)
+				frames.append({"kind": "met", "who": arg})  # met once the scene is over
 				emit_title(WorldSystem.character_name(game, arg), arg)
 			start(sex_instead if sex_instead != "" else own)
 			return true

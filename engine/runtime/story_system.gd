@@ -18,7 +18,7 @@ extends RefCounted
 ## The key of the away-from-home flag among the game's values (saved with a mid-scene save).
 const AWAY := "encounter.away_from_home"
 ## Effects this system applies (Game.apply hands them over).
-const OPS := ["rest", "pick_event", "discover_flagged", "resolve_tagged", "each_companion_of"]
+const OPS := ["rest", "pick_event", "discover_flagged", "resolve_tagged", "each_companion_of", "each_creature"]
 
 
 # --- Fights away from home ------------------------------------------------------
@@ -65,9 +65,28 @@ static func apply(game, e: Dictionary) -> bool:
 			for c: String in who:
 				CompanionSystem._with(game, c)
 				CompanionSystem._play(game, str(e.scene))
+		"each_creature":
+			# Every creature found somewhere, by level then name (the original's Table of
+			# Random Critters sorted in lev order), with `creature.id` (for example an overview).
+			for c: String in creatures_by_level(game):
+				game.state.values["creature.id"] = c
+				CompanionSystem._play(game, str(e.scene))
 		_:
 			return false
 	return true
+
+
+## Every creature found somewhere now (not `nowhere`), by level, then by name.
+static func creatures_by_level(game) -> Array:
+	var out: Array = game.content.all_of("creature").keys().filter(func(id: String) -> bool:
+		return game.creature_field(id, "found in", "nowhere").strip_edges() not in ["", "nowhere"])
+	out.sort_custom(func(a: String, b: String) -> bool:
+		var la := int(WorldSystem.read_of(game, "level", a))
+		var lb := int(WorldSystem.read_of(game, "level", b))
+		if la != lb:
+			return la < lb
+		return WorldSystem.creature_name(game, a) < WorldSystem.creature_name(game, b))
+	return out
 
 
 ## Every character that can follow the player (it has a `companion:` block), sorted.
@@ -227,6 +246,9 @@ static func check_effect(v, e: Dictionary, line: int) -> void:
 		"resolve_tagged":
 			if events_tagged_db(v.db, str(e.tag)).is_empty():
 				v._err(line, "No event has the tag '%s', so ~ resolve every event tagged %s resolves nothing." % [e.tag, e.tag])
+		"each_creature":
+			v._check_target(str(e.scene), line)
+			v.warn_played_at_once(str(e.scene), line, "for each creature by level play")
 		"each_companion_of":
 			v._check_target(str(e.scene), line)
 			v.warn_played_at_once(str(e.scene), line, "for each tamed companion play" if e.scope == "tamed" else "for all companions play")
@@ -239,7 +261,7 @@ static func events_tagged_db(db: ContentDB, tag: String) -> Array:
 ## Value paths this system adds: `picked.event`, and `gift.to.<value>` (a value every
 ## character has, or one some character declares). True when the path is one of them.
 static func check_path(v, path: String, line: int) -> bool:
-	if path == "picked.event" or path == AWAY:
+	if path == "picked.event" or path == AWAY or path == "creature.id":
 		return true
 	if path.begins_with("gift.to.") and path.count(".") == 2:
 		var name := path.substr(8)
