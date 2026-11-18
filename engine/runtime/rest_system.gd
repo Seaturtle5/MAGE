@@ -39,6 +39,13 @@ static func bedding(game) -> Dictionary:
 		if QUALITY.get(quality, 0) >= QUALITY.get(result.quality, 0) and quality != "none":
 			result.quality = quality
 			result.text = game.content.typed_value("item", id, "carried rest text" if owned else "ground rest text", "You rest for a while.")
+	# A feat can be bedding of its own (`rest: rough` and `rest text:`): a rest
+	# anywhere, when nothing at least as good is at hand.
+	for id: String in game.state.feats:
+		var quality: String = game.content.typed_value("feat", id, "rest", "none")
+		if QUALITY.get(quality, 0) > QUALITY.get(result.quality, 0):
+			result.quality = quality
+			result.text = game.content.typed_value("feat", id, "rest text", "You rest for a while.")
 	return result
 
 

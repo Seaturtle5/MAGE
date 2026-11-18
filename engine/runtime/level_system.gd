@@ -78,11 +78,11 @@ static func level_up(game, cost: int = -1) -> void:
 		cost = needed(game)
 	game.set_value("player.level", int(game.value("player.level")) + 1)
 	game.set_value("player.xp", int(game.value("player.xp")) - cost)
+	# A notice of its own, so a level gained at the end of a long page of fight text is not missed.
+	game.notice("Level %d" % int(game.value("player.level")), false)
 	var pid := "level_rules:%s#level up" % rules(game)
 	if rules(game) != "" and game.content.program(pid) != null:
 		game.runner.play_now(pid)
-	else:
-		game.notice("You have gained level %d!" % int(game.value("player.level")), false)
 
 
 ## Feats of `group` the player can take now.

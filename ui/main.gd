@@ -38,6 +38,10 @@ const PORTRAIT_MASK := preload("res://ui/portrait.gdshader")
 const READING_SIDE := 40
 ## Width of the framed picture beside a scene's text.
 const PLATE_WIDTH := 290.0
+## The least height the scene's picture plate asks of the stage.
+const PLATE_MIN_HEIGHT := 150.0
+## The share of the stage's height the choices under a scene may take before they scroll.
+const CHOICES_SHARE := 0.62
 ## Equipment slots shown in the inventory, empty or not.
 const SLOT_ORDER := ["head", "eyes", "face", "neck", "chest", "back", "arms", "hands", "crotch", "legs", "feet"]
 const INVENTORY_TABS := [["all", "All"], ["equipment", "Wearables"], ["armaments", "Weapons"],
@@ -71,6 +75,9 @@ var mode := ""  ## "location", "scene" or "moment"
 var page_box: VBoxContainer
 var page_new := true
 var choices_box: VBoxContainer
+var choices_scroll: ScrollContainer  ## around the choices, for when they outgrow their share of the stage
+var page_scroll: ScrollContainer  ## around a scene page's text
+var more_hint: Button  ## "More below", shown while the page's text goes on under its window
 var scene_title := ""
 var scene_image := ""
 var scene_character := ""
@@ -80,6 +87,7 @@ var scene_frame: Control  ## the mat around the scene's picture
 var scene_links: HBoxContainer  ## "Add image" / "Change image" under the scene's picture
 var scene_plate: Control  ## the framed picture beside a scene's text
 var scene_credit: Label
+var scene_caption: Control  ## the credit and the links, under the scene's picture
 var image_cache: Dictionary = {}
 var icon_cache: Dictionary = {}
 
@@ -444,10 +452,10 @@ func _nav_bar() -> Control:
 	var right := HBoxContainer.new()
 	right.add_theme_constant_override("separation", 2)
 	row.add_child(right)
-	# For authors, when debug tools are on (Settings, or the --debug start option).
+	# For authors, while Debug tools are switched on in Settings.
 	debug_button = _bar_button(right, "Debug", "debug", "F3", _open_debug)
 	debug_button.tooltip_text = "Run commands and actions, look up and change the game's values."
-	(debug_button.get_parent() as Control).visible = _debug_level() > 0
+	(debug_button.get_parent() as Control).visible = _debug_tools()
 	_bar_button(right, "Help", "help", "H", _open_help)
 	_bar_button(right, "Settings", "settings", "", _open_settings)
 	_bar_button(right, "Save", "save", "F5", func(): _open_saves(true))
@@ -900,13 +908,65 @@ func _new_page() -> void:
 	pad.add_child(page_box)
 	content.add_child(_scene_plate())
 	_set_scene_image(scene_image)
+	# A page longer than its window says so, and one click (or Space) reads on.
+	page_scroll = scroll
+	more_hint = Button.new()
+	more_hint.text = "More below  ▾"
+	more_hint.tooltip_text = "This page goes on: scroll down, click here or press Space"
+	more_hint.visible = false
+	more_hint.focus_mode = FOCUS_NONE
+	more_hint.add_theme_font_size_override("font_size", 14)
+	more_hint.add_theme_color_override("font_color", FsTheme.ACCENT)
+	more_hint.add_theme_stylebox_override("normal", FsTheme.box(FsTheme.recede(FsTheme.ACCENT_DIM, 0.55), 0, Color.TRANSPARENT, 5))
+	more_hint.pressed.connect(_page_down)
+	stage_box.add_child(more_hint)
+	scroll.get_v_scroll_bar().changed.connect(_update_more_hint)
+	scroll.get_v_scroll_bar().value_changed.connect(func(_value: float) -> void: _update_more_hint())
 	choices_box = VBoxContainer.new()
 	choices_box.add_theme_constant_override("separation", 6)
 	var cpad := _padded(READING_SIDE, 20)
+	cpad.size_flags_horizontal = SIZE_EXPAND_FILL
 	cpad.add_child(choices_box)
-	stage_box.add_child(cpad)
+	# The choices take the height they need, up to a share of the stage; beyond it they scroll.
+	choices_scroll = ScrollContainer.new()
+	choices_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	choices_scroll.add_child(cpad)
+	stage_box.add_child(choices_scroll)
+	cpad.minimum_size_changed.connect(_fit_choices)
+	if not stage.resized.is_connected(_fit_choices):
+		stage.resized.connect(_fit_choices)
 	page_box.modulate.a = 0.0
 	create_tween().tween_property(page_box, "modulate:a", 1.0, 0.25)
+
+
+## Whether the page's text goes on below what its window shows.
+func _more_below() -> bool:
+	if page_scroll == null or not is_instance_valid(page_scroll):
+		return false
+	var bar := page_scroll.get_v_scroll_bar()
+	return bar.max_value - bar.page - bar.value > 8.0
+
+
+func _update_more_hint() -> void:
+	if more_hint != null and is_instance_valid(more_hint):
+		more_hint.visible = _more_below()
+
+
+## Reads on: the page moves down by most of its window.
+func _page_down() -> void:
+	if page_scroll == null or not is_instance_valid(page_scroll):
+		return
+	var bar := page_scroll.get_v_scroll_bar()
+	var target := minf(bar.value + bar.page * 0.85, bar.max_value - bar.page)
+	create_tween().tween_property(page_scroll, "scroll_vertical", int(target), 0.18)
+
+
+## Gives the choices under a scene the height they need, up to CHOICES_SHARE of the stage.
+func _fit_choices() -> void:
+	if choices_scroll == null or not is_instance_valid(choices_scroll) or choices_scroll.get_child_count() == 0:
+		return
+	var wanted: float = (choices_scroll.get_child(0) as Control).get_combined_minimum_size().y
+	choices_scroll.custom_minimum_size.y = minf(wanted, stage.size.y * CHOICES_SHARE)
 
 
 ## The scene's picture, mounted like a print: a dark mat with a hairline
@@ -916,10 +976,15 @@ func _scene_plate() -> Control:
 	col.add_theme_constant_override("margin_top", 28)
 	col.add_theme_constant_override("margin_right", 32)
 	col.add_theme_constant_override("margin_bottom", 16)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 8)
-	v.size_flags_vertical = SIZE_SHRINK_BEGIN
-	col.add_child(v)
+	# The picture takes the height the stage has left, never more: the plate
+	# asks for little itself, and the frame is sized inside it to show the
+	# whole picture (_fit_scene_art), so a tall picture cannot push the
+	# choices below it off the screen.
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(PLATE_WIDTH + 14, PLATE_MIN_HEIGHT)
+	holder.size_flags_vertical = SIZE_EXPAND_FILL
+	holder.resized.connect(_fit_scene_art)
+	col.add_child(holder)
 	var frame := PanelContainer.new()
 	var mat := FsTheme.box(FsTheme.BG, 3, FsTheme.BORDER, 7)
 	mat.content_margin_top = 7
@@ -928,19 +993,51 @@ func _scene_plate() -> Control:
 	mat.shadow_size = 14
 	mat.shadow_offset = Vector2(0, 4)
 	frame.add_theme_stylebox_override("panel", mat)
-	v.add_child(frame)
+	holder.add_child(frame)
 	scene_frame = frame
 	scene_art = TextureRect.new()
 	scene_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	scene_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	scene_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	scene_art.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+	scene_art.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			_open_picture(scene_art.texture, scene_credit.text))
 	frame.add_child(scene_art)
+	var caption := VBoxContainer.new()
+	caption.add_theme_constant_override("separation", 8)
+	holder.add_child(caption)
+	scene_caption = caption
 	scene_credit = FsTheme.heading("", 12, FsTheme.TEXT_FAINT)
-	v.add_child(scene_credit)
+	caption.add_child(scene_credit)
 	scene_links = HBoxContainer.new()
 	scene_links.add_theme_constant_override("separation", 12)
-	v.add_child(scene_links)
+	caption.add_child(scene_links)
 	scene_plate = col
 	return col
+
+
+## Sizes the scene's picture to what the plate has room for: the whole
+## picture, as wide as the plate or as tall as the room left above the credit
+## and the links, whichever comes first; the credit and links sit under it.
+func _fit_scene_art() -> void:
+	if scene_frame == null or not is_instance_valid(scene_frame) or not is_instance_valid(scene_caption):
+		return
+	var holder := scene_frame.get_parent() as Control
+	var caption_size := scene_caption.get_combined_minimum_size()
+	var texture := scene_art.texture
+	var top := 0.0
+	if texture != null and scene_frame.visible:
+		var ratio := float(texture.get_height()) / maxf(1.0, float(texture.get_width()))
+		var room := maxf(60.0, holder.size.y - 14.0 - caption_size.y - 8.0)
+		var height := minf(PLATE_WIDTH * ratio, room)
+		var width := minf(PLATE_WIDTH, height / ratio)
+		scene_frame.size = Vector2(width + 14.0, height + 14.0)
+		scene_frame.position = Vector2((holder.size.x - scene_frame.size.x) / 2.0, 0)
+		top = scene_frame.size.y + 8.0
+	# The credit and the links start under the picture's left edge.
+	var left := scene_frame.position.x if texture != null and scene_frame.visible else 0.0
+	scene_caption.position = Vector2(maxf(0.0, minf(left, holder.size.x - caption_size.x)), top)
+	scene_caption.size = caption_size
 
 
 func _set_scene_image(id: String) -> void:
@@ -951,23 +1048,40 @@ func _set_scene_image(id: String) -> void:
 	var subject: Array = (["character", scene_character] if scene_character != "" and game.content.has(scene_character, "character")
 		else ["creature", scene_creature] if scene_creature != "" else [])
 	for child in scene_links.get_children():
+		scene_links.remove_child(child)
 		child.queue_free()
 	if not subject.is_empty():
 		_image_links(scene_links, subject[0], subject[1], texture != null)
 	scene_plate.visible = texture != null or not subject.is_empty()
 	scene_frame.visible = texture != null
-	scene_credit.visible = false
-	if texture == null:
-		scene_art.custom_minimum_size = Vector2(PLATE_WIDTH, 0)
-		return
-	# A fixed width; the height follows the picture, within limits (very
-	# tall pictures are trimmed top and bottom).
-	var ratio := float(texture.get_height()) / maxf(1.0, float(texture.get_width()))
-	scene_art.custom_minimum_size = Vector2(PLATE_WIDTH, clampf(PLATE_WIDTH * ratio, 150.0, 420.0))
-	var artist := game.content.typed_value("image", id, "artist")
+	var artist := game.content.typed_value("image", id, "artist") if texture != null else ""
 	scene_credit.text = ("Art  ·  " + artist).to_upper() if artist != "" else ""
-	scene_art.tooltip_text = "Art: " + artist if artist != "" else ""
+	scene_art.tooltip_text = ("Art: %s. " % artist if artist != "" else "") + "Click to see the picture large."
 	scene_credit.visible = artist != ""
+	_fit_scene_art()
+
+
+## A picture shown large over the game, whole, until it is clicked or Esc is pressed.
+func _open_picture(texture: Texture2D, credit: String = "") -> void:
+	if texture == null:
+		return
+	var view := get_viewport_rect().size
+	var box := _open_overlay("Picture", true, Vector2(minf(1100, view.x - 60), view.y - 60))
+	overlay_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	overlay_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.size_flags_vertical = SIZE_EXPAND_FILL
+	var picture := TextureRect.new()
+	picture.texture = texture
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	picture.size_flags_vertical = SIZE_EXPAND_FILL
+	picture.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+	picture.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed:
+			_close_overlay())
+	box.add_child(picture)
+	if credit != "":
+		overlay_footer.add_child(FsTheme.heading(credit, 12, FsTheme.TEXT_FAINT))
 
 
 func _ensure_page() -> void:
@@ -1009,6 +1123,9 @@ func _page_choices(e: Dictionary) -> void:
 	for c in choices_box.get_children():
 		c.queue_free()
 	var n := 0
+	# A long list is set tighter, so more of it fits before it has to scroll.
+	var many: bool = (e.options as Array).size() > 5
+	choices_box.add_theme_constant_override("separation", 3 if many else 6)
 	for o in e.options:
 		n += 1
 		var row := HBoxContainer.new()
@@ -1017,14 +1134,14 @@ func _page_choices(e: Dictionary) -> void:
 		key.size_flags_vertical = SIZE_SHRINK_BEGIN
 		row.add_child(key)
 		var text := VBoxContainer.new()
-		text.add_theme_constant_override("separation", 1)
+		text.add_theme_constant_override("separation", 0 if many else 1)
 		text.size_flags_horizontal = SIZE_EXPAND_FILL
-		text.add_child(FsTheme.label(o.text, 17))
-		if o.description != "":
-			text.add_child(FsTheme.label(o.description, 14, FsTheme.TEXT_DIM))
+		text.add_child(FsTheme.label(o.text, 16 if many else 17))
+		if str(o.get("description", "")) != "":
+			text.add_child(FsTheme.label(str(o.description), 13 if many else 14, FsTheme.TEXT_DIM))
 		row.add_child(text)
 		var index := n - 1
-		_face_button(choices_box, row, func(): _choose(index), not o.enabled, 14, 11)
+		_face_button(choices_box, row, func(): _choose(index), not o.enabled, 14, 5 if many else 11)
 	choice_count = n
 	page_new = true
 
@@ -1085,7 +1202,13 @@ func _page_continue(callback: Callable) -> void:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_child(FsTheme.title("Continue", 17))
 	row.add_child(FsTheme.keycap("Space"))
-	var b := _face_button(choices_box, row, callback, false, 14, 12)
+	# With the keyboard, Continue first reads on while the page has more below; a click always continues.
+	var go := func() -> void:
+		if _more_below() and (Input.is_key_pressed(KEY_SPACE) or Input.is_key_pressed(KEY_ENTER) or Input.is_key_pressed(KEY_KP_ENTER)):
+			_page_down()
+		else:
+			callback.call()
+	var b := _face_button(choices_box, row, go, false, 14, 12)
 	b.add_theme_stylebox_override("normal", FsTheme.box(FsTheme.recede(FsTheme.ACCENT_DIM, 0.25)))
 	b.add_theme_stylebox_override("hover", FsTheme.edged(FsTheme.ACCENT_DIM, FsTheme.ACCENT))
 	b.grab_focus.call_deferred()
@@ -1485,7 +1608,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif key >= KEY_1 and key <= KEY_9 and game.runner.status == "choice":
 		_choose(key - KEY_1)
 	elif key == KEY_SPACE or key == KEY_ENTER:
-		if game.runner.status == "continue":
+		if _more_below() and mode in ["scene", "moment"]:
+			_page_down()
+		elif game.runner.status == "continue":
 			_continue()
 		elif mode == "moment":
 			_finish_moment()
@@ -1501,7 +1626,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_log()
 	elif key == KEY_H:
 		_open_help()
-	elif key == KEY_F3 and _debug_level() > 0:
+	elif key == KEY_F3 and _debug_tools():
 		_open_debug()
 
 
@@ -2606,22 +2731,25 @@ func _open_settings() -> void:
 	else:
 		box.add_child(FsTheme.label("Content filters and levels are chosen on the new-game screen, and can be changed here during a game.", 15, FsTheme.TEXT_DIM))
 	box.add_child(FsTheme.section("For authors"))
-	if launch.debug > 0:
-		box.add_child(FsTheme.label("Debug tools are on: the game was started with --debug.", 15, FsTheme.TEXT_DIM))
-	else:
-		box.add_child(_choice_row("Debug tools", "A Debug button on the bottom bar (F3): run commands and actions, look up and change the game's values. Content's debug lines are shown too.", ["Off", "On"],
-			1 if prefs.get_value("debug", "tools", false) else 0,
-			func(i: int): _set_debug_tools(i == 1)))
+	box.add_child(_choice_row("Debug tools", "A Debug button on the bottom bar (F3): run commands and actions, look up and change the game's values. Content's debug lines are shown too.", ["Off", "On"],
+		1 if _debug_tools() else 0,
+		func(i: int): _set_debug_tools(i == 1)))
 	box.add_child(FsTheme.section("Keys"))
 	box.add_child(FsTheme.label("1–9 choose · Space or Enter continue · I inventory · J journal · M map · C character · L log · F5 quicksave · F9 quickload · Esc menu", 15, FsTheme.TEXT_DIM))
 
 
 # --- Debug tools ---------------------------------------------------------------
 
-## The debug level a game runs at: the --debug start option, or 1 while the
-## player has turned debug tools on in Settings.
+## Whether Debug tools are switched on in Settings: the only thing that shows
+## the Debug button and opens its window.
+func _debug_tools() -> bool:
+	return bool(prefs.get_value("debug", "tools", false))
+
+
+## The debug level a game runs at (`game.debug`, for content's debug lines):
+## the --debug start option, or 1 while Debug tools are on.
 func _debug_level() -> int:
-	return maxi(launch.debug if launch != null else 0, 1 if prefs.get_value("debug", "tools", false) else 0)
+	return maxi(launch.debug, 1 if _debug_tools() else 0)
 
 
 func _set_debug_tools(on: bool) -> void:
@@ -2631,13 +2759,13 @@ func _set_debug_tools(on: bool) -> void:
 	if game != null:
 		game.debug = _debug_level()
 	if debug_button != null and is_instance_valid(debug_button):
-		(debug_button.get_parent() as Control).visible = _debug_level() > 0
+		(debug_button.get_parent() as Control).visible = on
 
 
 ## The Debug window (DebugView): commands and actions on the left, the game's
 ## values on the right. Only in a game that has started.
 func _open_debug() -> DebugView:
-	if game == null or not game.settings.started or game.state.ending != "":
+	if not _debug_tools() or game == null or not game.settings.started or game.state.ending != "":
 		return null
 	var view := get_viewport_rect().size
 	var box := _open_overlay("Debug", true, Vector2(minf(1280, view.x - 60), minf(800, view.y - 60)))

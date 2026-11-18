@@ -34,7 +34,7 @@ const CANCELLED := "picking.cancelled"
 ## A creature's numbers a script can read: `strength of x.critter`.
 const READINGS := ["strength", "dexterity", "stamina", "perception", "intelligence", "charisma", "libido", "level", "zones"]
 ## Value paths this system answers.
-const PATHS := ["here.door_zone", "arrival.from", PICKING]
+const PATHS := ["here.door_zone", "here.zone", "arrival.from", PICKING]
 ## The parts the shift changes with their change texts, in the original's order
 ## (skin, face, ass and tail), before the breasts and the body.
 const SHIFT_FIRST := ["skin", "head", "ass", "tail", "back", "arms", "legs"]
@@ -472,6 +472,8 @@ static func value(game, path: String) -> Variant:
 	match path:
 		"here.door_zone":
 			return door_zone(game)
+		"here.zone":
+			return game.zone_here()  # the zone exploring and hunting use here ("" when none)
 		"arrival.from", PICKING:
 			return str(game.state.values.get(path, ""))
 	return null

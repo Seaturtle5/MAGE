@@ -541,7 +541,7 @@ func run() -> void:
 						f.pc = ins.after
 						continue
 					ins = ins.duplicate()
-					ins.creature = pool[game.rng.range_int(0, pool.size() - 1)]
+					ins.creature = CombatSystem.draw(game, pool)
 					VariantSystem.pick(game, ins.creature)
 					_encounter_title(ins.creature)
 				else:
@@ -1526,7 +1526,7 @@ func _act(action: String, arg: String) -> bool:
 			var pool := encounter_pool("outside")
 			var bonus: int = (int(game.value("player.perception")) - 10) / 2
 			if not pool.is_empty() and game.rng.range_int(1, 20) < 10 - bonus:
-				start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
+				start_encounter(CombatSystem.draw(game, pool))
 			else:
 				run()
 			return true
@@ -1554,7 +1554,7 @@ func _act(action: String, arg: String) -> bool:
 			if exposed and RestSystem.interrupted(game):
 				if not RestSystem.play(game, "interrupted"):
 					game.notice("Your rest is interrupted by the arrival of a creature.", false)
-				start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
+				start_encounter(CombatSystem.draw(game, pool))
 				return true
 			var bedding := RestSystem.bedding(game)
 			game.emit({"type": "paragraph", "spans": game.render(TextTemplate.compile(bedding.text))})
@@ -1621,7 +1621,7 @@ func _explore(loc: String, zone: String = "") -> bool:
 	var pool := encounter_pool(zone)
 	if not pool.is_empty() and _creature_roll():
 		_queue_second_fight(pool)
-		start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
+		start_encounter(CombatSystem.draw(game, pool))
 		return true
 	if room_first and _explore_location(zone, bonus):
 		return true
@@ -1645,6 +1645,7 @@ func _explore(loc: String, zone: String = "") -> bool:
 ## A hunt for a creature that can be met in the zone: its tracks, then whoever
 ## the hunting rules draw (HuntSystem), or nothing.
 func _hunt_creature(id: String, zone: String) -> bool:
+	HuntSystem.gather_extras(game)  # hooks `on: hunting`, before anything of the hunt is queued
 	frames.append({"kind": "turn", "turns": 1})
 	HuntSystem.say(game, "tracks", HuntSystem.creature_name(game, id))
 	var met: String = HuntSystem.pick(game, id, zone)
@@ -1707,7 +1708,7 @@ func _search_fight(zone: String) -> void:
 	if HuntSystem._field(game, "search fight") == "" or pool.is_empty() or not _creature_roll():
 		return
 	_queue_second_fight(pool)
-	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true})
+	frames.append({"kind": "encounter", "creature": CombatSystem.draw(game, pool), "pc": 0, "title": true})
 	HuntSystem.say(game, "search fight")
 	frames.append({"kind": "pause"})
 
@@ -1931,7 +1932,7 @@ func _fight_chance(f: Dictionary) -> void:
 	var bonus: int = (int(game.value("player.perception")) - 10) / 2 + game.feat_bonus("encounter bonus")
 	if pool.is_empty() or game.rng.range_int(1, 20) >= 10 + bonus:
 		return
-	var id: String = pool[game.rng.range_int(0, pool.size() - 1)]
+	var id: String = CombatSystem.draw(game, pool)
 	_queue_second_fight(pool)
 	frames.append({"kind": "encounter", "creature": id, "pc": 0, "title": true})
 	frames.append({"kind": "pause"})
@@ -1970,7 +1971,7 @@ func _queue_second_fight(pool: Array) -> void:
 	if when == "" or not Condition.evaluate(Condition.compile(when), game):
 		return
 	# Marked "second", so a scene can call it off (`~ no second fight`).
-	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true, "second": true})
+	frames.append({"kind": "encounter", "creature": CombatSystem.draw(game, pool), "pc": 0, "title": true, "second": true})
 	var intro: Program = game.content.program("combat_rules:%s#second fight" % id)
 	if intro != null:
 		frames.append({"kind": "script", "pid": intro.id, "pc": 0, "second": true})
@@ -1997,7 +1998,7 @@ func _explore_location(zone: String, bonus: int) -> bool:
 	var fight_bonus: int = (int(game.value("player.perception")) - 10) / 2
 	fight_bonus += game.feat_bonus("encounter bonus")
 	if not pool.is_empty() and game.rng.range_int(1, 20) < 10 + fight_bonus:
-		start_encounter(pool[game.rng.range_int(0, pool.size() - 1)])
+		start_encounter(CombatSystem.draw(game, pool))
 	else:
 		run()
 	return true

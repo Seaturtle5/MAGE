@@ -10,8 +10,13 @@ extends RefCounted
 ##       player has feat tracker: + 2          ("condition: amount" lines)
 ##   others when: not player has feat loner    (whether the zone's other creatures join)
 ##   other skipped when: chance 1 in 3         (tested for each other creature)
+##   kindred when: player has feat herdmate    (creatures of the player's own strain join too:
+##   kindred chance: 1 in 2                    once for each body part of that strain, by chance)
 ##   not found:
 ##       You find no trace of it.              (played when the pool is empty)
+##
+## Hooks `on: hunting` run before the draw and may put creatures in with
+## `~ hunt may meet <creature> [N times]` (something that hunts the player).
 ##
 ## The other creatures are those random meetings could bring (bans and wards
 ## apply); the hunt then meets whoever is drawn.
@@ -82,6 +87,8 @@ static func target_weight(game) -> int:
 
 ## The creature a hunt for `target` in `zone` meets, or "" when nothing is found.
 static func pick(game, target: String, zone: String) -> String:
+	var joined := extras(game)  # what the hooks `on: hunting` put in (`~ hunt may meet <creature>`)
+	game.state.values.erase(EXTRAS)
 	if rules(game) == "":
 		return target
 	var pool: Array = []
@@ -91,9 +98,44 @@ static func pick(game, target: String, zone: String) -> String:
 		for id: String in game.runner.encounter_pool(zone):
 			if id != target and not _holds(game, "other skipped when", false):
 				pool.append(id)
+	# Kindred: a creature of the zone whose strain a part of the player's body has
+	# may join once for each such part (`kindred when`, `kindred chance: 1 in 2`).
+	if _holds(game, "kindred when", false):
+		var chance := _field(game, "kindred chance", "1 in 1").split(" in ")
+		for id: String in game.runner.encounter_pool(zone, true):
+			for _part in CombatSystem.kindred(game, id):
+				if chance.size() != 2 or game.rng.chance(int(chance[0]), int(chance[1])):
+					pool.append(id)
+	pool.append_array(joined)
 	if pool.is_empty():
 		return ""
 	return str(pool[game.rng.range_int(0, pool.size() - 1)])
+
+
+## Where the creatures hooks add to the hunt going on are kept until the draw.
+const EXTRAS := "hunt.extras"
+
+
+## Starts a hunt's draw: the hooks `on: hunting` run and may add creatures.
+static func gather_extras(game) -> void:
+	game.state.values[EXTRAS] = []
+	if game.has_hook("hunting"):
+		game.run_hooks("hunting")
+
+
+## `~ hunt may meet <creature> N times`: the creature joins the draw (not a banned one).
+static func add_extra(game, creature: String, times: int) -> void:
+	if not game.content.has(creature, "creature") or not game.state.values.has(EXTRAS):
+		return
+	if game.filter_block(CreatureChangeSystem.creature_tags(game, creature), true) != "":
+		return
+	for _i in maxi(0, times):
+		(game.state.values[EXTRAS] as Array).append(creature)
+
+
+static func extras(game) -> Array:
+	var kept: Variant = game.state.values.get(EXTRAS, [])
+	return (kept as Array).duplicate() if kept is Array else []
 
 
 # --- Hunting by name ----------------------------------------------------------

@@ -1,25 +1,49 @@
 # MAGE changelog
 
-Changes to MAGE, the Modular Adventure Game Engine, for people who make games with it. The newest version is at the top; changes since the last version are under "Unreleased" until the next one. The content format is described in the engine's documentation and the example game in `packs/example-adventure`.
+Changes to MAGE, the Modular Adventure Game Engine, for people who make games with it. The newest version is at the top; changes since the last version are listed under "Next version" until that version is built, one short line each. The content format is described in the engine's documentation and the example game in `packs/example-adventure`.
 
-## Unreleased
+## Next version (not built yet)
 
-**For players and authors**
-- **Debug window.** With debug mode on (the start option `--debug`, or **Debug tools** in Settings) the bottom bar has a **Debug** button (F3). On the left a line to type a command or an action on, with what it could become listed as it is typed (Tab completes, Enter runs, Up and Down bring back earlier lines) and every command listed when nothing is typed. A line is a command's ID or name, an action as content writes it (`~ give rope 2`, `~ go to great_hall`, `~ unresolve old_debt`, `~ wolf.met = 3`), `play <scene>`, `fight <creature>` or `event <id>`; it is checked like content before it runs. On the right every declared value and each event's resolved and active flags, looked up by parts of the name and changed by hand; values that differ from their start are marked. What is done there is noted among the last steps a bug report sends.
-- **Debug commands.** `== command` with `debug: yes` is an author's test or skip command: never among a place's actions, run from the Debug window.
-- **Hunting by name.** `by name: yes` in `hunt_rules` gives the Hunt window a box to type what is hunted for: a place, an event or a creature. A place or an event is found with a visible roll (`search bonus`, `search bonus modifiers`, `search target`, `search label`, `search certain when`); a place is then travelled to and known, an event plays. Texts: `tracks`, `searching`, `place found`, `event found`, `place not found`, `event not found`, `search fight`, and an answer for each way such a hunt ends with nothing met. `events listed when:` lists the zone's events in the window.
-- `player.milk_item` and `player.cum_item` read the item the strain of the player's torso gives as milk and the strain of their cock as cum (the forms' `milk item` and `cum item`), for `~ give player.milk_item 2`.
+**New**
+- Debug window: a Debug button on the bottom bar (F3) while Debug tools are switched on in Settings.
+- Debug window, left: a line for a command or an action (`~ give rope 2`, `play <scene>`, `fight <creature>`, `event <id>`), with suggestions while typing, Tab to complete and every command listed.
+- Debug window, right: every value and each event's resolved and active flags, looked up by name and changed by hand; changed ones are marked.
+- Debug commands: `== command` with `debug: yes` runs from the Debug window only.
+- What is done in the Debug window is noted among the steps a bug report sends.
+- Hunting by name: `by name: yes` in `hunt_rules` gives the Hunt window a box to type a place, an event or a creature.
+- Hunting by name: a search roll (`search bonus`, `search target`, `search certain when`), texts for it, and an answer for each way the hunt finds nothing.
+- `events listed when:` in `hunt_rules` lists the area's events in the Hunt window.
+- `tracks:` in `hunt_rules`: a line said before a hunted creature is met.
+- `player.milk_item` and `player.cum_item`: the milk and cum item of the player's strain.
+- A scene's picture is always shown whole, and a click shows it large.
+- A page longer than its window shows "More below"; Space reads on before it continues.
+- A level gained shows a notice of its own.
+- The feats offered when a new game is made follow the answers given (a main stat opens up its feats).
+- A feat can be bedding for a rest anywhere: `rest: rough` and `rest text:` on a feat.
+- `kindred when:` and `kindred parts:` in `combat_rules`: creatures of the player's own strain are met more often.
+- `kindred when:` and `kindred chance:` in `hunt_rules`: the same for hunts.
+- Hooks `on: hunting` and `~ hunt may meet <creature> [N times]`: content puts creatures into a hunt.
+- `here.zone` reads the zone the player explores and hunts in.
+- The Debug button is shown by the Settings switch only; `--debug` no longer shows it.
 
 **Fixed**
-- A creature of any level can be hunted for: the combat rules' `level limit` kept creatures above it out of the Hunt list, although it is meant for random meetings.
+- A creature of any level can be hunted for; the level limit is for random meetings only.
+- A tall picture no longer pushes the fight buttons and choices off the bottom of the screen.
+- A long list of choices scrolls instead of being cut off, and is set tighter.
+- A feat picked at the start that the answers no longer open up gives way to the default.
 
-**For tools that load content** (an editor, a checker)
-- Loaded content can be layered: `ContentDB.layer()` gives a copy to load more packs onto, sharing everything already loaded. A tool keeps the packs that do not change and loads only the pack being worked on again after each change. The content below is never altered and can be layered again, also from another thread.
-- `protect_definitions` on a `ContentDB` makes an extension change a copy of the definition it extends, so a tool's own parsed definitions stay as written.
-- `Validator.run(content, [pack folders])` compiles and checks the scripts of those packs only.
-- Actions, conditions and text can be compiled from several threads at once.
-- `ContentDB.forget_compiled()` drops the compiled actions, conditions and texts kept for reuse; a tool that has checked a whole game gets several hundred megabytes back.
-- The map layout of layered content is worked out faster: each definition is read once for the exits its stories make in play (`~ change north exit of A to B`) and remembers them, so after a change only the pack that was loaded again is read.
+**Internal**
+- New tests: hunting by name, the Debug window's rules, the feats offered at creation, a feat as bedding.
+- The scenario player prints choices that have no description.
+
+**For tools that load content**
+- `ContentDB.layer()`: a copy of loaded content to load more packs onto.
+- `protect_definitions`: an extension changes a copy, the parsed definition stays as written.
+- `Validator.run(content, [pack folders])` checks the scripts of those packs only.
+- `Validator.check_program(content, program)` checks one compiled script.
+- Actions, conditions and text compile from several threads at once.
+- `ContentDB.forget_compiled()` frees the compiled actions, conditions and texts.
+- The map layout of layered content reads each definition once.
 
 ## 1.0.0 (2026-11-17): first public version
 

@@ -8,7 +8,8 @@ extends RefCounted
 ##   == creation_rules my_game
 ##   choices: main_stat, starting_body       (menus asked on the new-game screen, in order)
 ##   feats:
-##       basic: survivalist                  (a free feat of a feat group, and its default)
+##       basic: survivalist                  (a free feat of a feat group, and its default;
+##                                            the feats offered follow the answers given)
 ##   before:
 ##       ~ player.strength = 12 quietly      (runs first)
 ##   after:
@@ -92,6 +93,31 @@ static func create(game, choices: Dictionary = {}) -> void:
 	var r := rules(game)
 	if r == "":
 		return
+	_answer(game, choices)
+	# The free feats come last, as in the original: a feat's `gained` can build on the starting numbers.
+	# A feat the answers do not open up (chosen before the main stat was changed) gives way to the default.
+	for f: Dictionary in feat_choices(game):
+		var offered: Array = f.feats.map(func(x: Dictionary) -> String: return str(x.id))
+		var feat := str(choices.get("feat " + str(f.group), f.default))
+		if feat not in offered:
+			feat = str(f.default) if str(f.default) in offered else ""
+		if feat != "" and game.content.has(feat, "feat") and feat not in game.state.feats:
+			LevelSystem.take_feat(game, feat)
+
+
+## The free feats as they are offered once the given answers are applied: a
+## main stat can open up feats (`available when: player.stamina > 14`). Runs
+## `before`, the answers and `after` on `probe`, a throwaway game.
+static func feat_choices_with(probe, choices: Dictionary) -> Array:
+	if rules(probe) == "":
+		return []
+	_answer(probe, choices)
+	return feat_choices(probe)
+
+
+## `before`, each chosen answer and `after`.
+static func _answer(game, choices: Dictionary) -> void:
+	var r := rules(game)
 	_play(game, "creation_rules:%s#before" % r)
 	for q: Dictionary in questions(game):
 		var index := int(choices.get(q.id, q.default))
@@ -99,11 +125,6 @@ static func create(game, choices: Dictionary = {}) -> void:
 			index = q.default
 		_play(game, "%s@%d" % [q.id, index])
 	_play(game, "creation_rules:%s#after" % r)
-	# The free feats come last, as in the original: a feat's `gained` can build on the starting numbers.
-	for f: Dictionary in feat_choices(game):
-		var feat := str(choices.get("feat " + str(f.group), f.default))
-		if feat != "" and game.content.has(feat, "feat") and feat not in game.state.feats:
-			LevelSystem.take_feat(game, feat)
 
 
 static func _play(game, pid: String) -> void:

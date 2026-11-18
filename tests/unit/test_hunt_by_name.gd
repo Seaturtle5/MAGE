@@ -142,10 +142,30 @@ repeat: always
 play:
     A DEN
 
+== feat herdmate
+name: Herdmate
+
+== feat marked
+name: Marked
+
+== form fox
+name: Fox
+tail:
+    description: a fox's tail
+    change: a tail grows
+
 == combat_rules test
 creature chance: 0 in 20
 creature chance modifiers:
     player has feat keen: + 20
+kindred when: player has feat herdmate
+kindred parts: torso, tail
+
+== hook the_owl_hunts_the_marked
+on: hunting
+when: player has feat marked
+do:
+    ~ hunt may meet bear 50 times
 
 == survival_rules test
 rescue after: 1000
@@ -155,6 +175,8 @@ const RULES := """== hunt_rules test
 by name: yes
 events listed when: player has feat pathfinder
 others when: player has feat crowded
+kindred when: player has feat herdmate
+kindred chance: 1 in 1
 tracks: TRACKS OF [hunt.name]
 searching: SEARCHING FOR [hunt.name]
 search bonus: 0
@@ -423,3 +445,42 @@ func test_the_validator_checks_the_rules() -> void:
 	assert_true(messages.any(func(m: String) -> bool: return m.begins_with("Search target:")), str(messages))
 	assert_true(messages.any(func(m: String) -> bool: return "Searching only matters with 'by name: yes'" in m), str(messages))
 	assert_true(messages.any(func(m: String) -> bool: return "[no such thing here]" in m), "texts are checked")
+
+
+func test_hooks_put_creatures_into_a_hunt() -> void:
+	# The bear lives in the hills; a hook puts fifty of it into every hunt of a marked player.
+	game.state.feats.append("marked")
+	assert_true(game.runner.act("hunt", "fox"))
+	assert_string_contains(_text(), "[title] Encounter: Bear")
+	assert_false(Condition.evaluate(Condition.compile("player is hunting"), game), "not the creature hunted for")
+	assert_false(game.state.values.has(HuntSystem.EXTRAS), "the hook's creatures are used up")
+
+
+func test_kindred_creatures_join_a_hunt_and_random_meetings() -> void:
+	assert_eq(CombatSystem.kindred(game, "fox"), 0)
+	game.set_value("player.body.tail", "fox")
+	game.set_value("player.body.torso", "fox")
+	game.set_value("player.body.head", "fox")
+	assert_eq(CombatSystem.kindred(game, "fox"), 2, "torso and tail are the kindred parts; the head is not")
+	# Not a herdmate: every creature of a pool is as likely.
+	var counts := {"fox": 0, "slug": 0}
+	for _i in 400:
+		counts[CombatSystem.draw(game, ["fox", "slug"])] += 1
+	assert_almost_eq(float(counts.fox), 200.0, 45.0)
+	# A herdmate meets its own strain three times as often (1 + 2 parts).
+	game.state.feats.append("herdmate")
+	counts = {"fox": 0, "slug": 0}
+	for _i in 400:
+		counts[CombatSystem.draw(game, ["fox", "slug"])] += 1
+	assert_almost_eq(float(counts.fox), 300.0, 45.0)
+	# In a hunt for the slug (once in the draw) the fox joins twice: it is met about two times in three.
+	var met := {"fox": 0, "slug": 0}
+	for _i in 300:
+		met[HuntSystem.pick(game, "slug", "woods")] += 1
+	assert_almost_eq(float(met.fox), 200.0, 40.0)
+
+
+func test_here_zone_reads_the_zone_hunted_in() -> void:
+	assert_eq(str(game.value("here.zone")), "woods")
+	game.go_to("tower")
+	assert_eq(str(game.value("here.zone")), "")

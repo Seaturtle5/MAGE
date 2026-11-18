@@ -26,6 +26,9 @@ static var _rules: Array = [
 	["cancel_use", RegEx.create_from_string("^cancel use$")],
 	# In a creature's encounter: the meeting ends without a fight (the original's combat abort).
 	["no_fight", RegEx.create_from_string("^no fight$")],
+	# In a hook `on: hunting`: "~ hunt may meet black_wasp", "~ hunt may meet mental_mouse (100 - player.humanity) / 25 times"
+	# puts a creature into the draw of the hunt going on (HuntSystem).
+	["hunt_extra", RegEx.create_from_string("^hunt may meet (\\w+)(?: (.+?) times?)?$")],
 	["resolve", RegEx.create_from_string("^resolve(?: (\\w+))?$")],
 	# "~ unresolve other_event": it can be found again (the original's "now X is unresolved").
 	["unresolve", RegEx.create_from_string("^unresolve (\\w+)$")],
@@ -309,6 +312,11 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "unresolve", "event": m.get_string(1)}
 			"cancel_use", "no_fight", "end_pregnancy", "end_heat", "reset_heat", "reset_human", "continue_moving":
 				return {"op": rule[0]}
+			"hunt_extra":
+				var extra_times := amount(m.get_string(2)) if m.get_string(2) != "" else {"value": {"op": "num", "v": 1}}
+				if extra_times.has("error"):
+					return {"error": extra_times.error}
+				return {"op": "hunt_extra", "creature": m.get_string(1), "times": extra_times}
 			"impregnate":
 				return {"op": "impregnate", "sure": m.get_string(1) == "impregnate", "kind": m.get_string(2),
 					"father": m.get_string(3).replace("random creature", "random"), "eggs": m.get_string(4) != ""}

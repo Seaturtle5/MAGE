@@ -714,6 +714,33 @@ static func holds(game, field: String) -> bool:
 	return text != "" and Condition.evaluate(Condition.compile(text), game)
 
 
+## How many of the player's body parts have the creature's strain, of the
+## parts the combat rules name (`kindred parts: torso, head, skin`).
+static func kindred(game, id: String) -> int:
+	var rules := rules_id(game)
+	if rules == "":
+		return 0
+	var strain: String = game.content.typed_value("creature", id, "form", id)
+	var n := 0
+	for part: String in game.content._list(game.content.get_def("combat_rules", rules), "kindred parts"):
+		if game.part_form("player", part) == strain:
+			n += 1
+	return n
+
+
+## A creature of a pool for a random meeting. With the combat rules'
+## `kindred when` holding, a creature of the player's own strain counts once
+## more for each kindred part; otherwise every creature of the pool is as likely.
+static func draw(game, pool: Array) -> String:
+	if not holds(game, "kindred when"):
+		return str(pool[game.rng.range_int(0, pool.size() - 1)])
+	var weighted: Array = []
+	for id: String in pool:
+		for _i in 1 + kindred(game, id):
+			weighted.append(id)
+	return str(weighted[game.rng.range_int(0, weighted.size() - 1)])
+
+
 ## The highest creature level met at random, or -1 for no limit (`level limit`,
 ## lifted while `level limit off when` holds).
 static func level_limit(game) -> int:

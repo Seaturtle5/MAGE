@@ -60,6 +60,16 @@ gained:
 name: Nimble
 group: basic
 
+== feat mighty
+name: Mighty
+group: basic
+available when: player.strength > 14
+
+== feat drifter
+name: Drifter
+rest: rough
+rest text: You curl up in a corner...
+
 == game_mode tough
 name: Tough Mode
 description: Harder fights.
@@ -169,7 +179,7 @@ func test_questions_feats_and_modes_come_from_the_content() -> void:
 	var feats := CreationSystem.feat_choices(game)
 	assert_eq(feats[0].group, "basic")
 	assert_eq(feats[0].default, "steady")
-	assert_eq(feats[0].feats.map(func(f): return f.id), ["nimble", "steady"], "sorted by name")
+	assert_eq(feats[0].feats.map(func(f): return f.id), ["nimble", "steady"], "sorted by name; Mighty needs more strength")
 	assert_eq(CreationSystem.modes(game)[0].name, "Tough Mode")
 
 
@@ -189,6 +199,36 @@ func test_a_chosen_feat_and_a_disabled_answer() -> void:
 	assert_eq(int(game.value("player.strength")), 15, "a disabled answer falls back to the default")
 	assert_true("nimble" in game.state.feats)
 	assert_false("steady" in game.state.feats)
+
+
+func test_the_feats_offered_follow_the_answers_given() -> void:
+	# Strong (+5 strength) opens up Mighty; Clever does not.
+	var probe := Game.new(db, 4)
+	var strong: Array = CreationSystem.feat_choices_with(probe, {"pick_stat": 0})
+	probe.dispose()
+	assert_eq(strong[0].feats.map(func(f): return f.id), ["mighty", "nimble", "steady"])
+	probe = Game.new(db, 4)
+	var clever: Array = CreationSystem.feat_choices_with(probe, {"pick_stat": 1})
+	probe.dispose()
+	assert_eq(clever[0].feats.map(func(f): return f.id), ["nimble", "steady"])
+	# The feat is taken with the answer that opens it up ...
+	game.start_scenario("home_start", "Bo", "he", {"pick_stat": 0, "feat basic": "mighty"})
+	assert_true("mighty" in game.state.feats)
+	# ... and gives way to the default when the answer was changed afterwards.
+	game.start_scenario("home_start", "Bo", "he", {"pick_stat": 1, "feat basic": "mighty"})
+	assert_false("mighty" in game.state.feats)
+	assert_true("steady" in game.state.feats)
+
+
+func test_a_feat_can_be_bedding() -> void:
+	game.start_scenario("home_start")
+	game.runner.proceed()
+	assert_eq(RestSystem.bedding(game).quality, "none")
+	assert_false(game.runner.can_rest(), "nothing to rest on")
+	game.state.feats.append("drifter")
+	assert_eq(RestSystem.bedding(game).quality, "rough")
+	assert_eq(RestSystem.bedding(game).text, "You curl up in a corner...")
+	assert_true(game.runner.can_rest())
 
 
 func test_modes_are_the_settings_chosen_before_the_start() -> void:

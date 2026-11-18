@@ -61,10 +61,7 @@ func _init(g: Game, content_panel: Callable, content_summary: Callable, pack_ima
 	_questions = CreationSystem.questions(game)
 	for q: Dictionary in _questions:
 		_answers[q.id] = q.default
-	_feats = CreationSystem.feat_choices(game).filter(func(f): return not f.feats.is_empty())
-	for f: Dictionary in _feats:
-		var ids: Array = f.feats.map(func(x): return x.id)
-		_answers["feat " + str(f.group)] = f.default if f.default in ids else ids[0]
+	_update_feats()
 	_game_modes = CreationSystem.modes(game)
 
 	if _scenarios.size() > 1:
@@ -166,8 +163,26 @@ func _forward() -> void:
 			_answers.duplicate(), _modes.duplicate())
 
 
+## The free feats offered with the answers given so far (a main stat opens up
+## feats), worked out on a throwaway game. A feat picked earlier that is no
+## longer offered gives way to the default.
+func _update_feats() -> void:
+	var probe := Game.new(game.content, 7)
+	probe.settings = game.settings.duplicate(true)
+	probe.settings.mode = _modes.duplicate()
+	probe.settings.scenario = _scenario
+	_feats = CreationSystem.feat_choices_with(probe, _answers).filter(func(f): return not f.feats.is_empty())
+	probe.dispose()
+	for f: Dictionary in _feats:
+		var ids: Array = f.feats.map(func(x): return x.id)
+		var key := "feat " + str(f.group)
+		if not _answers.has(key) or _answers[key] not in ids:
+			_answers[key] = f.default if f.default in ids else ids[0]
+
+
 func _go(index: int) -> void:
 	_step = clampi(index, 0, _steps.size() - 1)
+	_update_feats()
 	_build_bar()
 	for c in _page.get_children():
 		_page.remove_child(c)

@@ -1022,6 +1022,12 @@ func _check_levels() -> void:
 			_check_path(d.fields["auto action"].value, d.fields["auto action"].line)
 		if d.fields.has("second fight when"):
 			_check_condition_text(d.fields["second fight when"].value, d.fields["second fight when"].line, "combat_rules:" + id)
+		if d.fields.has("kindred when"):
+			_check_condition_text(d.fields["kindred when"].value, d.fields["kindred when"].line, "combat_rules:" + id)
+		if d.fields.has("kindred parts"):
+			for part: String in db._list(d, "kindred parts"):
+				if part not in BodySystem.PARTS:
+					_err(d.fields["kindred parts"].line, "Kindred parts are body parts (%s); '%s' is not one." % [", ".join(BodySystem.PARTS), part])
 	for id in db.all_of("hunt_rules"):
 		var d := db.get_def("hunt_rules", id)
 		_path = d.path
@@ -1044,7 +1050,9 @@ func _check_levels() -> void:
 				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
 				if amount.has("error"):
 					_err(l.number, "Target weight modifier: %s." % amount.error)
-		for f in ["others when", "other skipped when", "hunt when", "events listed when", "search certain when"]:
+		if d.fields.has("kindred chance") and not RegEx.create_from_string("^\\d+ in \\d+$").search(d.fields["kindred chance"].value):
+			_err(d.fields["kindred chance"].line, "Kindred chance is written 'N in M', such as 1 in 2.")
+		for f in ["others when", "other skipped when", "hunt when", "events listed when", "search certain when", "kindred when"]:
 			if d.fields.has(f):
 				_check_condition_text(d.fields[f].value, d.fields[f].line, "hunt_rules:" + id)
 		# Hunting by name: yes or no, the search's numbers and the texts.
@@ -1323,7 +1331,7 @@ func _check_rest_rules() -> void:
 						_err(line.number, template.error)
 					else:
 						_check_template(template, line.number, id)
-	for type in ["item", "location"]:
+	for type in ["item", "location", "feat"]:
 		for d: FscParser.Definition in db.all_of(type).values():
 			_path = d.path
 			if d.fields.has("rest") and not RestSystem.QUALITY.has(d.fields.rest.value):
@@ -1694,7 +1702,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 	if e.op not in ["remove_slot", "set", "set_time", "shift_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
 			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
-			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight",
+			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight", "hunt_extra",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain", "random_loot",
@@ -1850,6 +1858,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 		"infects_as":
 			if e.creature != "":
 				_need(e.creature, "creature", line)
+		"hunt_extra":
+			_need(e.creature, "creature", line)
 		"sex":
 			if e.act not in SEX_ACTS:
 				_err(line, "Unknown sex act '%s'. Acts: %s." % [e.act, ", ".join(SEX_ACTS)])
