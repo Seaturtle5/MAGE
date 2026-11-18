@@ -28,7 +28,7 @@ const KEYS := ["text", "place_id", "place_name", "playing", "steps", "game_versi
 
 ## How actions read in the list of steps ("talk" with "adam" is "talk to adam").
 const ACTION_WORDS := {"talk": "talk to", "sex": "sex with", "look": "look at", "give": "give to",
-	"travel": "travel to", "hunt": "hunt for", "actions": "actions with", "smell_item": "smell",
+	"travel": "travel to", "hunt": "hunt for", "hunt_name": "hunt for", "actions": "actions with", "smell_item": "smell",
 	"smell_place": "smell the place", "smell_self": "smell yourself", "take_all": "take everything",
 	"drop_all": "drop all", "drop_everything": "drop everything", "junk_all": "junk all"}
 

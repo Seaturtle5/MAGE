@@ -22,12 +22,16 @@ extends RefCounted
 ## - `offspring.last.<value>`: the newest child on record (`offspring.last.torso`).
 ## - `[traits of alexandra]`: a character's traits, "a, b and c".
 ## - `player.heat_name`: the name of the heat that applies to the player's sex now.
+## - `player.milk_item`, `player.cum_item`: the item the strain of the player's
+##   torso gives as milk, and the strain of their cock as cum (the forms'
+##   `milk item` and `cum item`; `""` when the strain has none), for
+##   `~ give player.milk_item 2`.
 
 const FORM_NUMBERS := {"cock": ["count", "length", "girth"], "balls": ["count", "size"],
 	"cunt": ["count", "depth", "tightness"], "breasts": ["size", "nipples", "male_size"]}
 ## Readings written "<what> of <operand>" in values and text.
 const READINGS := ["strain", "armor", "effectiveness", "damage"]
-const PLAYER_PATHS := ["player.heat_name", "player.carried_weapons"]
+const PLAYER_PATHS := ["player.heat_name", "player.carried_weapons", "player.milk_item", "player.cum_item"]
 const LOOKING := "looking at themself"
 
 
@@ -69,6 +73,10 @@ static func value(game, path: String) -> Variant:
 				return heat_name(game)
 			"player.carried_weapons":
 				return GearSystem.carried(game, ["weapon"]).size()
+			"player.milk_item":
+				return game.content.typed_value("form", game.part_form("player", "torso"), "milk item")
+			"player.cum_item":
+				return game.content.typed_value("form", game.part_form("player", "cock"), "cum item")
 	return null
 
 

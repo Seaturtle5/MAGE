@@ -115,6 +115,27 @@ static func run(content: ContentDB, only: Array = []) -> void:
 		v._check_resolutions()
 
 
+## Checks one compiled script against loaded content, as the content's own
+## scripts are checked (a debug window's typed line). Returns the errors as
+## messages; the content's own list of problems stays as it was.
+static func check_program(content: ContentDB, prog: Program) -> Array:
+	var v := Validator.new()
+	v.db = content
+	v._path = prog.path
+	var before: int = content.diagnostics.size()
+	var out: Array = []
+	for ins: Dictionary in prog.code:
+		for part: String in ["effect", "cond", "text"]:
+			if ins.get(part) is Dictionary and (ins[part] as Dictionary).has("error"):
+				out.append(str(ins[part].error))
+		v._check_instruction(ins, "")
+	for d: Dictionary in content.diagnostics.slice(before):
+		if d.severity == "error":
+			out.append(str(d.message))
+	content.diagnostics.resize(before)
+	return out
+
+
 func _err(line: int, message: String) -> void:
 	db.error(_path, line, message)
 
@@ -1023,9 +1044,39 @@ func _check_levels() -> void:
 				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
 				if amount.has("error"):
 					_err(l.number, "Target weight modifier: %s." % amount.error)
-		for f in ["others when", "other skipped when", "hunt when"]:
+		for f in ["others when", "other skipped when", "hunt when", "events listed when", "search certain when"]:
 			if d.fields.has(f):
 				_check_condition_text(d.fields[f].value, d.fields[f].line, "hunt_rules:" + id)
+		# Hunting by name: yes or no, the search's numbers and the texts.
+		if d.fields.has("by name") and d.fields["by name"].value not in ["yes", "no"]:
+			_err(d.fields["by name"].line, "By name is yes or no.")
+		for f in ["search bonus", "search target"]:
+			if d.fields.has(f):
+				var e := Expr.parse(d.fields[f].value)
+				if e.has("error"):
+					_err(d.fields[f].line, "%s: %s." % [f.left(1).to_upper() + f.substr(1), e.error])
+				else:
+					for p in Expr.paths(e):
+						_check_path(p, d.fields[f].line)
+		if d.fields.has("search bonus modifiers"):
+			for l: FscParser.Line in d.fields["search bonus modifiers"].children:
+				if l.is_blank():
+					continue
+				var parts := l.text.rsplit(":", true, 1)
+				if parts.size() != 2:
+					_err(l.number, "Search bonus modifiers are 'condition: amount' lines.")
+					continue
+				_check_condition_text(parts[0].strip_edges(), l.number, "hunt_rules:" + id)
+				var amount := Expr.parse(CompanionSystem.amount_text(parts[1]))
+				if amount.has("error"):
+					_err(l.number, "Search bonus modifier: %s." % amount.error)
+		for f: String in ["tracks", "searching", "place found", "event found", "place not found", "event not found", "search fight"] + HuntSystem.ANSWERS:
+			if d.fields.has(f):
+				_check_text_field(d.fields[f].value, d.fields[f].line, "hunt_rules:" + id)
+		if not d.fields.has("by name") or d.fields["by name"].value != "yes":
+			for f: String in ["events listed when", "searching", "search target", "place found", "event found"]:
+				if d.fields.has(f):
+					_warn(d.fields[f].line, "%s only matters with 'by name: yes'." % (f.left(1).to_upper() + f.substr(1)))
 	for id in db.all_of("command"):
 		var cd := db.get_def("command", id)
 		_path = cd.path
@@ -1033,6 +1084,8 @@ func _check_levels() -> void:
 			_err(cd.line, "A command needs 'play:', the scene it runs.")
 		if cd.fields.has("when"):
 			_check_condition_text(cd.fields.when.value, cd.fields.when.line, "command:" + id)
+		if cd.fields.has("debug") and cd.fields.debug.value not in ["yes", "no"]:
+			_err(cd.fields.debug.line, "Debug is yes or no.")
 	for id in db.all_of("game_mode"):
 		var gm := db.get_def("game_mode", id)
 		_path = gm.path
@@ -1820,8 +1873,8 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 				# The value must be a state list whose states are all items.
 				_check_path(e.item_path, line)
 				var decl: Dictionary = db.values.get(e.item_path, {})
-				if decl.get("kind", "") == "text" or e.item_path == "gift.item":
-					pass  # an item ID put there in play ("~ ask x as item tagged milky: ...", a gift)
+				if decl.get("kind", "") == "text" or e.item_path in ["gift.item", "player.milk_item", "player.cum_item"]:
+					pass  # an item ID put there in play ("~ ask x as item tagged milky: ...", a gift), or a strain's own item
 				elif decl.get("kind", "") != "states":
 					_err(line, "%s must be declared with item names as its states, for example 'item: food, water_bottle'." % e.item_path)
 				else:
@@ -1958,7 +2011,7 @@ func _need(id: String, type: String, line: int) -> void:
 func _check_path(path: String, line: int) -> void:
 	if not _reads.has(path):
 		_reads[path] = [_path, line]
-	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to",
+	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "gift.item", "gift.to", "hunt.name",
 			"smell.thing", "smell.kind", "notes.count", "date.year", "date.month", "date.day", "note.year", "note.month", "note.day", "note.number",
 			"infection.creature", "storage.item", "storage.item_name", "storage.count", "storage.kinds"]:
 		return

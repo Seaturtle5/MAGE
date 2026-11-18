@@ -1149,8 +1149,9 @@ func apply(e: Dictionary) -> void:
 				e = e.duplicate()
 				e.item = str(value(e.item_path))
 			var n: int = Effect.resolve_amount(e.amount, self)
-			ItemSystem.gain(self, e.item, n)
-			notice("Gained: %s%s" % [content.field_value(e.item, "name", e.item), " x%d" % n if n > 1 else ""], quiet)
+			if e.item != "":  # a value may hold no item now (a strain without a milk item)
+				ItemSystem.gain(self, e.item, n)
+				notice("Gained: %s%s" % [content.field_value(e.item, "name", e.item), " x%d" % n if n > 1 else ""], quiet)
 		"give_one":
 			# One item picked at random, as the original's random list entries.
 			var picked: String = e.items[rng.range_int(0, e.items.size() - 1)]

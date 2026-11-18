@@ -144,6 +144,7 @@ func _text() -> String:
 
 func test_the_level_limit_and_harder_rolls_follow_a_mode() -> void:
 	assert_eq(game.runner.encounter_pool("wild"), ["pup"], "the level limit keeps the brute away")
+	assert_eq(game.runner.encounter_pool("wild", true), ["brute", "pup"], "but a creature of any level can be hunted for")
 	assert_false(CombatSystem.holds(game, "harder rolls when"))
 	game.settings.mode = ["tough"]
 	assert_eq(game.runner.encounter_pool("wild"), ["brute", "pup"], "the mode lifts the limit")

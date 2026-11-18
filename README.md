@@ -86,6 +86,7 @@ Also there: a journal for quests and the player's own notes, a character sheet, 
 - **Items.** Inventory, carry weight, equipment, and items that can be used or dropped.
 - **Saves.** Named save slots with thumbnails, an autosave and a quicksave.
 - **Repeatable runs.** A built-in random number generator, so the same seed always plays out the same way.
+- **A Debug window for authors.** With debug mode on (Debug tools in Settings, or `--debug`) a Debug button on the bottom bar opens it: type a command or a line of story script (`~ give rope 2`, `~ go to great_hall`, `play bonfire`) with suggestions as you type, run the test commands your packs define (`== command` with `debug: yes`), and look up and change the game's values.
 
 The interface shows the current moment rather than a scrolling log, with navigation and actions in separate panels. The game pack supplies the title, logo, background and about text, so the engine carries no branding of its own.
 
@@ -166,7 +167,7 @@ Options go after `--`:
 | `--start ID` | Skip the title screen and start at this location |
 | `--play ID` | Then play a story: a scene's ID, `event:<id>`, or a story inside content as `<type>:<id>#<field>` (`character:adam#talk`) |
 | `--set PATH=VALUE` | Set a value before the story plays (can be repeated): a number, `yes` or `no`, or words |
-| `--debug [N]` | Debug mode: `game.debug` reads N (1 when no number follows) instead of 0, so content can show its debug lines (`if game.debug:`); not saved |
+| `--debug [N]` | Debug mode: `game.debug` reads N (1 when no number follows) instead of 0, so content can show its debug lines (`if game.debug:`), and the Debug button is on the bottom bar; not saved |
 | `--seed N` | Fix the random seed |
 
 `--only-packs` with `--data` tries out a pack without touching the player's saves, settings or own packs.

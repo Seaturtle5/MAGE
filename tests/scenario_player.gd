@@ -72,7 +72,7 @@ static func _step(game: Game, line: String) -> bool:
 			return game.runner.proceed()
 		"type":
 			return game.runner.enter_text(arg)
-		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss", "command":
+		"go", "talk", "use", "take", "explore", "rest", "observe", "travel", "hunt", "hunt_name", "wait", "scavenge", "shop", "actions", "sex", "smell", "look", "summon", "dismiss", "command":
 			return game.runner.act(cmd, arg)
 		"save":
 			var f := FileAccess.open(arg, FileAccess.WRITE)
@@ -112,8 +112,8 @@ static func _print(events: Array, out: PackedStringArray) -> void:
 				var k := 1
 				for o in e.options:
 					var text: String = o.text
-					if o.description != "":
-						text += " -- " + o.description
+					if str(o.get("description", "")) != "":
+						text += " -- " + str(o.description)
 					out.append("  {%d:%s}%s" % [k, text, "" if o.enabled else " (unavailable)"])
 					k += 1
 			"location":

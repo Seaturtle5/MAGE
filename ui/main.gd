@@ -128,6 +128,7 @@ var inv_filter := "all"  ## the inventory tab
 var inv_bag_scroll: ScrollContainer
 var help_selected := ""  ## the topic the Help screen shows
 var report_button: Button  ## Report a bug / Feedback, in the middle of the tool bar
+var debug_button: Button  ## Debug, on the tool bar while debug tools are on
 var pending_import := ""  ## export files to import once the new game's opening has played (ImportView)
 
 
@@ -443,6 +444,10 @@ func _nav_bar() -> Control:
 	var right := HBoxContainer.new()
 	right.add_theme_constant_override("separation", 2)
 	row.add_child(right)
+	# For authors, when debug tools are on (Settings, or the --debug start option).
+	debug_button = _bar_button(right, "Debug", "debug", "F3", _open_debug)
+	debug_button.tooltip_text = "Run commands and actions, look up and change the game's values."
+	(debug_button.get_parent() as Control).visible = _debug_level() > 0
 	_bar_button(right, "Help", "help", "H", _open_help)
 	_bar_button(right, "Settings", "settings", "", _open_settings)
 	_bar_button(right, "Save", "save", "F5", func(): _open_saves(true))
@@ -1194,6 +1199,8 @@ func _action_tile(id: String, busy: bool, label: String = "", arg: String = "", 
 		info[0] = label  # the menu's own title, or the command's name
 	if id == "command":
 		info[1] = description
+	if id == "hunt" and HuntSystem.by_name(game):
+		info[1] = "Look for a creature, a place or an event by name."
 	var icon_name := id if _icon(id) != null else ("smell" if id == "smell_place" else ("inventory" if id == "storage" else "use"))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
@@ -1494,6 +1501,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_open_log()
 	elif key == KEY_H:
 		_open_help()
+	elif key == KEY_F3 and _debug_level() > 0:
+		_open_debug()
 
 
 # --- Overlays ---------------------------------------------------------------
@@ -2596,8 +2605,50 @@ func _open_settings() -> void:
 		box.add_child(_content_settings_panel())
 	else:
 		box.add_child(FsTheme.label("Content filters and levels are chosen on the new-game screen, and can be changed here during a game.", 15, FsTheme.TEXT_DIM))
+	box.add_child(FsTheme.section("For authors"))
+	if launch.debug > 0:
+		box.add_child(FsTheme.label("Debug tools are on: the game was started with --debug.", 15, FsTheme.TEXT_DIM))
+	else:
+		box.add_child(_choice_row("Debug tools", "A Debug button on the bottom bar (F3): run commands and actions, look up and change the game's values. Content's debug lines are shown too.", ["Off", "On"],
+			1 if prefs.get_value("debug", "tools", false) else 0,
+			func(i: int): _set_debug_tools(i == 1)))
 	box.add_child(FsTheme.section("Keys"))
 	box.add_child(FsTheme.label("1–9 choose · Space or Enter continue · I inventory · J journal · M map · C character · L log · F5 quicksave · F9 quickload · Esc menu", 15, FsTheme.TEXT_DIM))
+
+
+# --- Debug tools ---------------------------------------------------------------
+
+## The debug level a game runs at: the --debug start option, or 1 while the
+## player has turned debug tools on in Settings.
+func _debug_level() -> int:
+	return maxi(launch.debug if launch != null else 0, 1 if prefs.get_value("debug", "tools", false) else 0)
+
+
+func _set_debug_tools(on: bool) -> void:
+	prefs.set_value("debug", "tools", on)
+	if shot_path == "":
+		prefs.save(prefs_path)
+	if game != null:
+		game.debug = _debug_level()
+	if debug_button != null and is_instance_valid(debug_button):
+		(debug_button.get_parent() as Control).visible = _debug_level() > 0
+
+
+## The Debug window (DebugView): commands and actions on the left, the game's
+## values on the right. Only in a game that has started.
+func _open_debug() -> DebugView:
+	if game == null or not game.settings.started or game.state.ending != "":
+		return null
+	var view := get_viewport_rect().size
+	var box := _open_overlay("Debug", true, Vector2(minf(1280, view.x - 60), minf(800, view.y - 60)))
+	overlay_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	overlay_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.size_flags_vertical = SIZE_EXPAND_FILL
+	var debug := DebugView.new()
+	debug.size_flags_vertical = SIZE_EXPAND_FILL
+	box.add_child(debug)
+	debug.setup(game, _drain, _close_overlay)
+	return debug
 
 
 ## A new-game question: a heading, a pick list of answers and the chosen answer's description.
@@ -2935,15 +2986,62 @@ func _save_content_prefs() -> void:
 			"levels": game.settings.levels, "interests": game.settings.get("interests", {}), "art_off": db.art_off}, "  "))
 
 
+## The hunt: the creatures of this area to pick from and, when the game's
+## hunting rules allow hunting by name, a box to name a creature, a place or
+## an event (and the area's events, when the rules list them).
 func _open_hunt() -> void:
 	var box := _open_overlay("Hunt")
-	for id in game.runner.encounter_pool(game.content.typed_value("location", game.state.location, "zone"), true):
+	var zone: String = game.zone_here(game.state.location)
+	var by_name := HuntSystem.by_name(game)
+	if by_name:
+		box.add_child(FsTheme.label("Hunting takes 1 turn. Name what you are looking for (a creature, a place or an event you have heard of), or pick a creature of this area.", 15, FsTheme.TEXT_DIM))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var field := LineEdit.new()
+		field.placeholder_text = "Hunt for ..."
+		field.max_length = 80
+		field.size_flags_horizontal = SIZE_EXPAND_FILL
+		field.custom_minimum_size = Vector2(0, 44)
+		field.add_theme_font_size_override("font_size", 17)
+		row.add_child(field)
+		var go := Button.new()
+		go.text = "Hunt"
+		go.custom_minimum_size = Vector2(110, 44)
+		var submit := func(_t: String = "") -> void:
+			var wanted := field.text
+			if HuntSystem.plain(wanted) == "":
+				return
+			_close_overlay()
+			_act("hunt_name", wanted)
+		go.pressed.connect(submit)
+		field.text_submitted.connect(submit)
+		row.add_child(go)
+		box.add_child(row)
+		field.grab_focus.call_deferred()
+	var list := box  # the window's own content scrolls
+	var events: Array = HuntSystem.listed_events(game, zone)
+	if not events.is_empty():
+		list.add_child(FsTheme.section("Events"))
+		for id: String in events:
+			var name: String = game.content.typed_value("event", id, "name", id)
+			var button := Button.new()
+			button.text = name
+			button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			button.pressed.connect(func():
+				_close_overlay()
+				_act("hunt_name", name))
+			list.add_child(button)
+	var creatures: Array = game.runner.encounter_pool(zone, true)
+	if by_name and not creatures.is_empty():
+		list.add_child(FsTheme.section("Creatures of this area"))
+	for id: String in creatures:
 		var button := Button.new()
 		button.text = game.content.typed_value("creature", id, "name", id)
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT if by_name else HORIZONTAL_ALIGNMENT_CENTER
 		button.pressed.connect(func():
 			_close_overlay()
 			_act("hunt", id))
-		box.add_child(button)
+		list.add_child(button)
 
 
 func _show_combat(event: Dictionary) -> void:
@@ -3037,7 +3135,7 @@ func _reset_game() -> void:
 	if game != null:
 		game.dispose()
 	game = Game.new(db, seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()))
-	game.debug = launch.debug
+	game.debug = _debug_level()
 	history.clear()
 	location_view = {}
 	mode = ""
@@ -3201,7 +3299,7 @@ func _write_save(id: String, name: String, thumb: PackedByteArray) -> void:
 ## Loads a save into a new game object, so a failed load leaves the current game as it was.
 func _load_save(id: String) -> bool:
 	var fresh := Game.new(db, seed_value if seed_value != 0 else int(Time.get_unix_time_from_system()))
-	fresh.debug = launch.debug
+	fresh.debug = _debug_level()
 	if not store.load_into(id, fresh):
 		fresh.dispose()
 		_notify(store.last_error)
@@ -3547,6 +3645,29 @@ func _take_screenshot() -> void:
 						view.show_result(HTTPRequest.RESULT_CANT_CONNECT, 0)
 					"refused":
 						view.show_result(HTTPRequest.RESULT_SUCCESS, 400)
+			"debug":
+				# "debug on" turns debug tools on, as in Settings. With the Debug window open:
+				# "debug type ~ gi" (as typed on the line), "debug run ~ give rope", "debug search harvest",
+				# "debug changed" (only values that differ from their start).
+				var what := arg.get_slice(" ", 0)
+				var rest := arg.substr(what.length()).strip_edges()
+				if what == "on":
+					_set_debug_tools(true)
+					continue
+				var found: Array = overlay.find_children("*", "DebugView", true, false) if overlay != null else []
+				if found.is_empty():
+					continue
+				var view := found[0] as DebugView
+				match what:
+					"type":
+						view._take(rest)
+					"run":
+						view._run(rest)
+					"search":
+						view.search.text = rest
+						view._fill_values()
+					"changed":
+						view.changed_box.button_pressed = true
 			"note":
 				# "note Bob owes me soap": a note written in the journal, as in its text box.
 				NotesSystem.write(game, arg)
@@ -3580,6 +3701,8 @@ func _take_screenshot() -> void:
 					"notice": _show_start_notice()
 					"help": _open_help()
 					"menu": _open_pause()
+					"hunt": _open_hunt()
+					"debug": _open_debug()
 					"content":
 						if new_game != null and is_instance_valid(new_game):
 							new_game.show_content()

@@ -271,7 +271,7 @@ func run() -> void:
 			frames.pop_back()
 			if f.kind == "travel":
 				frames.append({"kind": "arrival", "mode": "travel"})
-			if f.kind == "discover":
+			if f.kind == "discover" and not f.get("quiet", false):
 				game.notice("Following movement, you end up at %s." % game.content.typed_value("location", f.place, "name", f.place), false)
 			game.go_to(f.place)
 			continue
@@ -1206,7 +1206,8 @@ func show_location() -> void:
 		view.items.append({"id": it, "name": db.typed_value("item", it, "name", it), "count": int(here[it])})
 	if game.zone_here(loc) != "":
 		view.actions.append({"id": "explore", "label": "Explore"})
-		if HuntSystem.allowed(game) and not encounter_pool(game.zone_here(loc), true).is_empty():
+		# With hunting by name there is always something to hunt for; else only the zone's creatures.
+		if HuntSystem.allowed(game) and (HuntSystem.by_name(game) or not encounter_pool(game.zone_here(loc), true).is_empty()):
 			view.actions.append({"id": "hunt", "label": "Hunt"})
 	if "fast travel" in db.list_field(loc, "flags") and not db.all_of("scavenge_rules").is_empty():
 		view.actions.append({"id": "scavenge", "label": "Scavenge"})
@@ -1231,9 +1232,12 @@ func show_location() -> void:
 
 
 ## Commands the player can use now (`== command` whose `when` holds), sorted by ID.
+## Debug commands (`debug: yes`) are run from a debug window only (DebugSystem).
 func available_commands() -> Array:
 	var out: Array = []
 	for cmd in game.content.all_of("command"):
+		if DebugSystem.is_debug(game.content, cmd):
+			continue
 		var when: String = game.content.typed_value("command", cmd, "when")
 		if when == "" or Condition.evaluate(Condition.compile(when), game):
 			out.append(cmd)
@@ -1294,7 +1298,7 @@ func render_inline(prog: Program) -> String:
 func act(action: String, arg: String = "") -> bool:
 	if status != "idle" or game.state.ending != "":
 		return false
-	if action not in ["go", "talk", "sex", "smell", "smell_item", "smell_place", "smell_self", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "travel", "rest", "wait",
+	if action not in ["go", "talk", "sex", "smell", "smell_item", "smell_place", "smell_self", "look", "give", "actions", "shop", "command", "summon", "dismiss", "use", "take", "take_all", "observe", "explore", "hunt", "hunt_name", "travel", "rest", "wait",
 			"scavenge", "wear", "remove", "wield", "unwield", "drop", "drop_all", "drop_everything", "junk", "junk_all", "purify"] \
 			and action not in StorageSystem.ACTIONS:
 		return false
@@ -1492,24 +1496,15 @@ func _act(action: String, arg: String) -> bool:
 		"scavenge":
 			return _scavenge(loc)
 		"hunt":
-			if not HuntSystem.allowed(game):
+			if not HuntSystem.allowed(game) or arg not in encounter_pool(game.zone_here(loc), true):
 				return false
-			var hunt_zone: String = game.zone_here(loc)
-			if arg not in encounter_pool(hunt_zone, true):
+			return _hunt_creature(arg, game.zone_here(loc))
+		"hunt_name":
+			# A hunt for what the player typed: a place, an event or a creature (HuntSystem).
+			if not HuntSystem.allowed(game) or not HuntSystem.by_name(game) or game.zone_here(loc) == "" \
+					or HuntSystem.plain(arg) == "":
 				return false
-			frames.append({"kind": "turn", "turns": 1})
-			# Hunting rules may draw another creature, or nothing (HuntSystem).
-			var met: String = HuntSystem.pick(game, arg, hunt_zone)
-			if met == "":
-				var not_found: Program = db.program("hunt_rules:%s#not found" % HuntSystem.rules(game))
-				if not_found != null:
-					frames.append({"kind": "script", "pid": not_found.id, "pc": 0})
-				else:
-					game.emit({"type": "paragraph", "spans": [{"text": "You search for a while but find no trace of it.", "bold": false, "italic": false, "class": ""}]})
-				run()
-				return true
-			start_encounter(met, met == arg)
-			return true
+			return _hunt_name(arg, game.zone_here(loc))
 		"travel":
 			# Fast travel between known fast-travel points; spends a turn.
 			var flags_here := db.list_field(loc, "flags")
@@ -1645,6 +1640,76 @@ func _explore(loc: String, zone: String = "") -> bool:
 		game.emit({"type": "paragraph", "spans": [{"text": "You wander around for a while but find nothing of interest.", "bold": false, "italic": false, "class": ""}]})
 	run()
 	return true
+
+
+## A hunt for a creature that can be met in the zone: its tracks, then whoever
+## the hunting rules draw (HuntSystem), or nothing.
+func _hunt_creature(id: String, zone: String) -> bool:
+	frames.append({"kind": "turn", "turns": 1})
+	HuntSystem.say(game, "tracks", HuntSystem.creature_name(game, id))
+	var met: String = HuntSystem.pick(game, id, zone)
+	if met == "":
+		var not_found: Program = game.content.program("hunt_rules:%s#not found" % HuntSystem.rules(game))
+		if not_found != null:
+			frames.append({"kind": "script", "pid": not_found.id, "pc": 0})
+		else:
+			game.emit({"type": "paragraph", "spans": [{"text": "You search for a while but find no trace of it.", "bold": false, "italic": false, "class": ""}]})
+		run()
+		return true
+	start_encounter(met, met == id)
+	return true
+
+
+## A hunt by a typed name (the hunting rules' `by name`): a place is travelled
+## to and an event plays once the search finds it, a creature is hunted as from
+## the list; anything else gets the rules' answer. Every such hunt takes a turn.
+func _hunt_name(text: String, zone: String) -> bool:
+	var db: ContentDB = game.content
+	var found := HuntSystem.find(game, text, zone)
+	if found.kind == "creature" and found.answer == "":
+		return _hunt_creature(found.id, zone)
+	frames.append({"kind": "turn", "turns": 1})
+	if found.answer != "":
+		# A creature of this zone leaves its tracks even when it cannot be met now.
+		if found.kind == "creature" and HuntSystem.roams(game, found.id, zone):
+			HuntSystem.say(game, "tracks", HuntSystem.creature_name(game, found.id))
+		HuntSystem.say(game, found.answer, text.strip_edges())
+		run()
+		return true
+	var name: String = db.typed_value("location" if found.kind == "place" else "event", found.id, "name", found.id)
+	var first: int = game.output.size()
+	HuntSystem.say(game, "searching", name)
+	if not HuntSystem.search(game):
+		HuntSystem.say(game, "%s not found" % found.kind, name)
+		HuntSystem.say(game, "search failed", name)
+		_search_fight(zone)
+		run()
+		return true
+	if found.kind == "place":
+		HuntSystem.say(game, "place found", name)
+		frames.append({"kind": "discover", "place": found.id, "quiet": true})
+		_search_fight(zone)
+		run()
+		return true
+	HuntSystem.say(game, "event found", name)
+	# The search and its roll belong on the event's page.
+	var preface: Array = game.output.slice(first)
+	game.output.resize(first)
+	start_event(found.id, preface)
+	return true
+
+
+## On a search a creature of the zone may come up, with the chance of meeting
+## one while exploring (the combat rules' `creature chance`) and the hunting
+## rules' `search fight` text before it; a game without that text has no such fights.
+func _search_fight(zone: String) -> void:
+	var pool := encounter_pool(zone)
+	if HuntSystem._field(game, "search fight") == "" or pool.is_empty() or not _creature_roll():
+		return
+	_queue_second_fight(pool)
+	frames.append({"kind": "encounter", "creature": pool[game.rng.range_int(0, pool.size() - 1)], "pc": 0, "title": true})
+	HuntSystem.say(game, "search fight")
+	frames.append({"kind": "pause"})
 
 
 ## Events that exploring in a zone can find now, sorted by ID.
@@ -1989,7 +2054,9 @@ func pick_creature(tag: String, zone: String, favoring: Array, with_outside: boo
 
 
 ## Creatures that can be met in a zone. Banned creatures are never met;
-## warded ones only when `hunted` (the player hunts for that creature).
+## warded ones only when `hunted` (the player hunts for that creature). The
+## combat rules' `level limit` holds for random meetings only: a creature of
+## any level can be hunted for.
 func encounter_pool(zone: String, hunted: bool = false) -> Array:
 	var out: Array = []
 	var limit := CombatSystem.level_limit(game)  # combat rules' `level limit`
@@ -2005,7 +2072,7 @@ func encounter_pool(zone: String, hunted: bool = false) -> Array:
 		var active: String = game.content.typed_value("creature", id, "active", "always")
 		if (active == "day" and not game.is_day()) or (active == "night" and game.is_day()):
 			continue
-		if limit >= 0 and CombatSystem.number(game, id, "level", 1) > limit:
+		if not hunted and limit >= 0 and CombatSystem.number(game, id, "level", 1) > limit:
 			continue
 		out.append(id)
 	out.sort()

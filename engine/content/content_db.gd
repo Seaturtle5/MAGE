@@ -17,7 +17,12 @@ const SCHEMA := {
 		"menu icons": "list", "loading": "text", "loading frames": "text", "art": "text",
 		"start notice": "text", "start notice title": "text", "feedback webhook": "text"},
 	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
-		"other skipped when": "text", "not found": "script", "source": "meta"},
+		"other skipped when": "text", "not found": "script", "by name": "text", "events listed when": "text", "tracks": "text",
+		"searching": "text", "search bonus": "text", "search bonus modifiers": "fields", "search target": "text", "search label": "text",
+		"search certain when": "text", "place found": "text", "event found": "text", "place not found": "text", "event not found": "text", "search fight": "text",
+		"nothing found": "text", "wrong time": "text", "wrong area": "text", "creature banned": "text", "place hidden": "text",
+		"place unreachable": "text", "search failed": "text", "event elsewhere": "text", "event too hard": "text",
+		"event resolved": "text", "event not ready": "text", "event inactive": "text", "source": "meta"},
 	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
@@ -27,7 +32,7 @@ const SCHEMA := {
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	# Character creation (CreationSystem): the new-game choices and the scripts around them.
 	"creation_rules": {"choices": "list", "feats": "fields", "before": "script", "after": "script", "source": "meta"},
-	"command": {"name": "text", "description": "text", "when": "text", "play": "script", "source": "meta"},
+	"command": {"name": "text", "description": "text", "when": "text", "debug": "text", "play": "script", "source": "meta"},
 	# Smelling (SmellSystem), the player's own notes (NotesSystem) and the help topics (HelpSystem).
 	"smell_rules": {"smelling": "script", "smelling person": "script", "no scent": "script", "no place scent": "script",
 		"yourself": "script", "source": "meta"},
@@ -1086,6 +1091,12 @@ func typed_value(type: String, id: String, name: String, default: String = "") -
 	if d != null and d.fields.has(name):
 		return d.fields[name].value
 	return default
+
+
+## Keeps a program compiled outside the packs (a debug window's typed line)
+## under a name of its own, so it can be played like a scene.
+func keep_program(key: String, prog: Program) -> void:
+	_programs[key] = prog
 
 
 func has(id: String, type: String = "") -> bool:

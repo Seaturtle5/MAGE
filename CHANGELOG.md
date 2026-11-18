@@ -4,6 +4,15 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 
 ## Unreleased
 
+**For players and authors**
+- **Debug window.** With debug mode on (the start option `--debug`, or **Debug tools** in Settings) the bottom bar has a **Debug** button (F3). On the left a line to type a command or an action on, with what it could become listed as it is typed (Tab completes, Enter runs, Up and Down bring back earlier lines) and every command listed when nothing is typed. A line is a command's ID or name, an action as content writes it (`~ give rope 2`, `~ go to great_hall`, `~ unresolve old_debt`, `~ wolf.met = 3`), `play <scene>`, `fight <creature>` or `event <id>`; it is checked like content before it runs. On the right every declared value and each event's resolved and active flags, looked up by parts of the name and changed by hand; values that differ from their start are marked. What is done there is noted among the last steps a bug report sends.
+- **Debug commands.** `== command` with `debug: yes` is an author's test or skip command: never among a place's actions, run from the Debug window.
+- **Hunting by name.** `by name: yes` in `hunt_rules` gives the Hunt window a box to type what is hunted for: a place, an event or a creature. A place or an event is found with a visible roll (`search bonus`, `search bonus modifiers`, `search target`, `search label`, `search certain when`); a place is then travelled to and known, an event plays. Texts: `tracks`, `searching`, `place found`, `event found`, `place not found`, `event not found`, `search fight`, and an answer for each way such a hunt ends with nothing met. `events listed when:` lists the zone's events in the window.
+- `player.milk_item` and `player.cum_item` read the item the strain of the player's torso gives as milk and the strain of their cock as cum (the forms' `milk item` and `cum item`), for `~ give player.milk_item 2`.
+
+**Fixed**
+- A creature of any level can be hunted for: the combat rules' `level limit` kept creatures above it out of the Hunt list, although it is meant for random meetings.
+
 **For tools that load content** (an editor, a checker)
 - Loaded content can be layered: `ContentDB.layer()` gives a copy to load more packs onto, sharing everything already loaded. A tool keeps the packs that do not change and loads only the pack being worked on again after each change. The content below is never altered and can be layered again, also from another thread.
 - `protect_definitions` on a `ContentDB` makes an extension change a copy of the definition it extends, so a tool's own parsed definitions stay as written.
