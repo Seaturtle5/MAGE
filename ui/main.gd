@@ -487,7 +487,7 @@ func _nav_bar() -> Control:
 
 ## The Report button's tooltip: what it is for, or that reports cannot be sent yet.
 func _report_tip() -> String:
-	var problem := FeedbackReport.webhook_problem(str(db.branding().get("feedback webhook", ""))) if db != null else ""
+	var problem := FeedbackReport.sending_problem(str(db.branding().get("feedback webhook", "")), str(db.branding().get("feedback receiver", ""))) if db != null else ""
 	return problem if problem != "" else "Tell us about a bug, or anything else about the game."
 
 
@@ -3598,21 +3598,40 @@ func _open_credits() -> void:
 
 ## The Report a bug window: the player's text, sent with the place, what plays
 ## now, the last steps and the versions (FeedbackReport) to the game pack's
-## `feedback webhook:`.
+## `feedback webhook:`, and with the state of the game, when the player lets
+## it, to its `feedback receiver:`.
 func _open_report() -> ReportView:
 	var view := get_viewport_rect().size
-	var box := _open_overlay("Report a bug", true, Vector2(minf(860, view.x - 60), minf(700, view.y - 60)))
+	var box := _open_overlay("Report a bug", true, Vector2(minf(860, view.x - 60), minf(760, view.y - 60)))
 	overlay_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	var report := ReportView.new()
 	report.size_flags_vertical = SIZE_EXPAND_FILL
 	box.size_flags_vertical = SIZE_EXPAND_FILL
 	box.add_child(report)
 	var playing: Game = game if game != null and game.settings.started else null
-	report.setup(str(db.branding().get("feedback webhook", "")),
-		func(text: String, discord: String) -> Dictionary:
-			return FeedbackReport.gather(db, playing, text, TitleScreen.engine_version(), discord),
-		overlay_footer, _close_overlay)
+	var b := db.branding()
+	report.setup(str(b.get("feedback webhook", "")),
+		func(text: String, discord: String, options: Dictionary) -> Dictionary:
+			if options.get("state", false):
+				options["client"] = _report_client()
+			return FeedbackReport.gather(db, playing, text, TitleScreen.engine_version(), discord, options),
+		overlay_footer, _close_overlay, str(b.get("feedback receiver", "")), playing != null)
 	return report
+
+
+## What a report with the state of the game tells about the screen: the
+## window's size, the interface size, the theme, whether Debug tools are on,
+## and which packs are not the game's own (the player's, or given at the start).
+func _report_client() -> Dictionary:
+	var shipped: Array = _content_folders([]).slice(0, -1)  # without the player's own folder
+	var own: Array = []
+	for p: Dictionary in db.packs:
+		if not shipped.any(func(folder: String) -> bool: return str(p.path).begins_with(folder)):
+			own.append(str(p.id))
+	var window := get_window().size
+	return {"window": "%dx%d" % [window.x, window.y], "ui_scale": roundi(float(prefs.get_value("display", "ui_scale", 1.0)) * 100),
+		"theme": "Light" if FsTheme.light else "Dark", "fullscreen": bool(prefs.get_value("display", "fullscreen", false)),
+		"debug_tools": _debug_tools(), "own_packs": own}
 
 
 ## The game pack's `start notice:`, shown once the packs have loaded, with OK.
@@ -3747,7 +3766,8 @@ func _take_screenshot() -> void:
 					_drain()
 			"report":
 				# The open Report a bug window: "report text Words", "report name Discord name",
-				# "report details" (show what is sent), "report send" (to the pack's address; screenshot
+				# "report details" (show what is sent), "report kind bug|suggestion|feedback", "report state on|off",
+				# "report save on|off" (the tick boxes), "report send" (to the pack's address; screenshot
 				# runs use it only with no address), "report sending|sent|offline|refused" (as the answer shows).
 				var view := _report_view()
 				if view == null:
@@ -3762,6 +3782,14 @@ func _take_screenshot() -> void:
 						view.name_field.text = rest
 					"details":
 						view._toggle_details()
+					"kind":
+						if view.kind_buttons.has(rest):
+							view.kind_buttons[rest].button_pressed = true
+							view._set_kind(rest)
+					"state":
+						view.state_box.button_pressed = rest != "off"
+					"save":
+						view.save_box.button_pressed = rest != "off"
 					"send":
 						if not view.can_send():
 							view.send()

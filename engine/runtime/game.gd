@@ -67,13 +67,18 @@ func emit(event: Dictionary) -> void:
 	match event.get("type"):
 		"title":
 			feedback.scene_title = str(event.get("text", ""))
+			feedback.note_text(feedback.scene_title)
 		"choices":
 			feedback.choice_labels = Array(event.get("options", [])).map(func(o): return str(o.get("text", "")) if o is Dictionary else str(o))
+		"notice":
+			feedback.note_text(str(event.get("text", "")))
 	# The rest of a sentence split by a condition joins the paragraph it belongs to.
-	if event.get("type") == "paragraph" and not output.is_empty() and output[-1].get("type") == "paragraph" \
-			and TextTemplate.continues(event.spans):
-		output[-1].spans = output[-1].spans + event.spans
-		return
+	if event.get("type") == "paragraph":
+		var joins: bool = not output.is_empty() and output[-1].get("type") == "paragraph" and TextTemplate.continues(event.spans)
+		feedback.note_text(TextTemplate.plain(event.spans), joins)
+		if joins:
+			output[-1].spans = output[-1].spans + event.spans
+			return
 	output.append(event)
 
 

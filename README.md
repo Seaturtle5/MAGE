@@ -115,7 +115,7 @@ authors: Your name
 requires: base-pack
 ```
 
-The pack that is the game also sets `title`, `subtitle`, `logo`, `background` and `about`, and may set a `start notice` (shown each time the game starts) and a `feedback webhook` (a Discord webhook address that the Report a bug / Feedback button sends players' reports to).
+The pack that is the game also sets `title`, `subtitle`, `logo`, `background` and `about`, and may set a `start notice` (shown each time the game starts), a `feedback webhook` (a Discord webhook address that the Report a bug / Feedback button sends players' short reports to) and a `feedback receiver` (an address of your own that gets the whole report as JSON, with the state of the game and a save when the player allows it).
 
 Content files are meant to be read and written without programming. A short example from the test pack:
 

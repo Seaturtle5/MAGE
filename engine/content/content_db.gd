@@ -15,7 +15,7 @@ const SCHEMA := {
 	"pack": {"name": "text", "version": "text", "authors": "text", "requires": "list", "license": "text",
 		"title": "text", "subtitle": "text", "logo": "text", "background": "text", "about": "text",
 		"menu icons": "list", "loading": "text", "loading frames": "text", "art": "text",
-		"start notice": "text", "start notice title": "text", "feedback webhook": "text"},
+		"start notice": "text", "start notice title": "text", "feedback webhook": "text", "feedback receiver": "text"},
 	"hunt_rules": {"hunt when": "text", "target weight": "text", "target weight modifiers": "fields", "others when": "text",
 		"other skipped when": "text", "kindred when": "text", "kindred chance": "text", "not found": "script", "by name": "text", "events listed when": "text", "tracks": "text",
 		"searching": "text", "search bonus": "text", "search bonus modifiers": "fields", "search target": "text", "search label": "text",
@@ -212,6 +212,9 @@ var _map_layout: MapLayout = null
 var art_images: Dictionary = {}
 ## Art packs the player switched off: their pictures and image files are not used.
 var art_off: Array = []
+## The text values a player types into (`~ ask <value>: ...`), noted while the
+## content is checked: "owner.name" -> true. A bug report never shares them.
+var asked: Dictionary = {}
 var _folder_of: Dictionary = {}  ## pack path -> index of the folder it was found in
 ## event -> {outcome: resolution number} (`outcomes: fed = 1`, or an outcome named outcome_N)
 var outcome_numbers: Dictionary = {}
@@ -276,6 +279,7 @@ func layer() -> ContentDB:
 	top.roles = roles.duplicate()
 	top.art_images = art_images.duplicate()
 	top.art_off = art_off.duplicate()
+	top.asked = asked.duplicate()
 	top._folder_of = _folder_of.duplicate()
 	top.outcome_numbers = outcome_numbers.duplicate()
 	top._programs = _programs.duplicate()
@@ -453,15 +457,15 @@ func _visit(id: String, found: Dictionary, state: Dictionary, order: Array) -> v
 ## Title, subtitle, logo, background and about text for the title and
 ## credits screens: from the last loaded pack that sets a title (the game
 ## pack). Also its `version`, the `start notice` shown once the packs have
-## loaded (with its `start notice title`) and the `feedback webhook` the
-## Report a bug window sends to.
+## loaded (with its `start notice title`), and the `feedback webhook` and
+## `feedback receiver` the Report a bug window sends to.
 func branding() -> Dictionary:
 	var out := {}
 	for p: Dictionary in packs:
 		var d: FscParser.Definition = p.def
 		if d.fields.has("title"):
 			out = {"pack": p.id, "path": p.path}
-			for key in ["title", "subtitle", "logo", "background", "about", "version", "start notice title", "feedback webhook"]:
+			for key in ["title", "subtitle", "logo", "background", "about", "version", "start notice title", "feedback webhook", "feedback receiver"]:
 				out[key] = d.fields[key].value if d.fields.has(key) else ""
 			out["start notice"] = long_text(d.fields["start notice"]) if d.fields.has("start notice") else ""
 			out["menu icons"] = _list(d, "menu icons")  # pictures shown beside a hovered menu entry

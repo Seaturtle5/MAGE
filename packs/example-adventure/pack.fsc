@@ -20,9 +20,13 @@ about: A tiny example game that comes with the engine. Copy its pack folder to s
 // (`start notice title:` and a long `start notice:` with **bold**, *italic* and
 // web addresses as links), and give `feedback webhook:` a Discord webhook address
 // that the Report a bug / Feedback button sends players' reports to. Without one,
-// the report window says that reports cannot be sent yet. For example:
+// the report window says that reports cannot be sent yet. `feedback receiver:` is
+// an address of your own (a tracker's intake) that gets the whole report as JSON:
+// only with one can a player add the state of the game and a save to a report.
+// For example:
 //
 // start notice title: Welcome
 // start notice:
 //     This is a test build. Tell us what you think with the Report a bug button.
 // feedback webhook: PASTE-WEBHOOK-URL-HERE
+// feedback receiver: PASTE-WEBHOOK-URL-HERE

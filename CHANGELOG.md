@@ -5,6 +5,15 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 ## Next version (not built yet)
 
 **New**
+- Report window: the player says whether it is a bug, a suggestion or other feedback.
+- `feedback receiver:` in the game's pack: an address of your own that gets every report as JSON (a POST; any 2xx answer is success).
+- Report window, with a receiver: "Include the state of my game" (on until switched off): packs, the player's values, feats, items, every changed value, events, content settings, the screen, 30 steps and the text shown last.
+- Report window, with a receiver: "Attach a save of this moment" (off until switched on): a save that loads like any other.
+- Reports never hold the player's name, the journal's notes or a text the player typed into a value (`~ ask`).
+- "Show exactly what is sent" shows the whole report as it goes to the receiver.
+- Each report has its own number, sent to Discord and the receiver alike; a receiver can use it to take a repeated report once.
+- The Discord message stays short: it never holds the state or the save, and now names the kind of report, the operating system and the report's number.
+- A report goes to every address the game has; when one took it and the other failed, the other gets one more try.
 - Debug window: a Debug button on the bottom bar (F3) while Debug tools are switched on in Settings.
 - Debug window, left: a line for a command or an action (`~ give rope 2`, `play <scene>`, `fight <creature>`, `event <id>`), with suggestions while typing, Tab to complete and every command listed.
 - Debug window, right: every value and each event's resolved and active flags, looked up by name and changed by hand; changed ones are marked.

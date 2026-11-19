@@ -1743,6 +1743,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 			_check_template(e.prompt, line, "")
 		"ask":
 			_check_path(e.path, line)
+			db.asked[e.path] = true  # typed by the player: never part of a bug report
 			if e.path.begins_with("player.") and not db.values.has(e.path):
 				_err(line, "~ ask stores text: give it a declared text value, not the player value '%s'." % e.path)
 			_check_template(e.prompt, line, "")
