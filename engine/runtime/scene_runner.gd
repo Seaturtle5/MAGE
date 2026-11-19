@@ -1119,9 +1119,21 @@ func _finish_fight() -> void:
 			return
 	var field := "defeated" if fallback == "won" else "victory" if fallback == "lost" else ""
 	if field != "" and game.content.program(ins.creature + "#" + field) != null:
-		_push(ins.creature + "#" + field, {})
+		_push(ins.creature + "#" + field, {"aftermath": field == "defeated"})
+		# The combat rules' `before aftermath` plays after the trophies and before the beaten
+		# creature's scene, and may leave that scene out (`~ no aftermath`).
+		if field == "defeated":
+			_push_if("combat_rules:%s#before aftermath" % CombatSystem.rules_id(game))
 	if not trophies.is_empty():
 		frames.append({"kind": "trophy_choice", "items": trophies})
+
+
+## `~ no aftermath`: the beaten creature's `defeated` scene waiting to play is dropped.
+func skip_aftermath() -> void:
+	for i in range(frames.size() - 1, -1, -1):
+		if frames[i].get("aftermath", false):
+			frames.remove_at(i)
+			return
 
 
 ## The trophies rolled after a win: one to take, or none (the combat rules'
@@ -1911,8 +1923,9 @@ func _scavenge(loc: String) -> bool:
 		run()
 		return true
 	var generic := ScavengeRules.text(game, "generic")
+	# Otherwise one of the zone's scavenging events, the generic find among them
+	# when it is one of the zone's (the original draws from all of them).
 	var others := scavenge_events(zone)
-	others.erase(generic)
 	var chance := ScavengeRules.chance(game)
 	var ev := generic
 	if not others.is_empty() and not game.rng.chance(chance[0], chance[1]):

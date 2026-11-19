@@ -1439,6 +1439,8 @@ func apply(e: Dictionary) -> void:
 			use_cancelled = true
 		"no_fight":
 			fight_cancelled = true
+		"no_aftermath":
+			runner.skip_aftermath()
 		"hunt_extra":
 			HuntSystem.add_extra(self, e.creature, Effect.resolve_amount(e.times, self))
 		"impregnate":

@@ -58,7 +58,7 @@ const SCHEMA := {
 		"male breasts when": "text", "male flat when": "text", "flat chest when": "text",
 		"food infection blocked when": "text", "source": "meta"},
 	"combat_rules": {"kindred when": "text", "kindred parts": "list", "harder rolls when": "text", "level limit": "text", "level limit off when": "text", "unarmed attack": "text", "unarmed damage": "text", "player hits": "text", "flee": "text", "hump lust": "text",
-		"flee fails": "text", "won": "script", "lost": "script", "each round": "script", "before flee": "script",
+		"flee fails": "text", "won": "script", "lost": "script", "before aftermath": "script", "each round": "script", "before flee": "script",
 		"fight starts": "script", "player damage": "script", "avoid": "script", "enemy damage": "script",
 		"before random fight": "script", "creature chance": "text", "creature chance modifiers": "fields",
 		"second fight when": "text", "second fight": "script", "auto action": "text",

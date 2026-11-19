@@ -96,7 +96,9 @@ static func create(game, choices: Dictionary = {}) -> void:
 	_answer(game, choices)
 	# The free feats come last, as in the original: a feat's `gained` can build on the starting numbers.
 	# A feat the answers do not open up (chosen before the main stat was changed) gives way to the default.
-	for f: Dictionary in feat_choices(game):
+	# Each group is looked at after the feats before it are taken: a first feat can close off a second.
+	for i in feat_choices(game).size():
+		var f: Dictionary = feat_choices(game)[i]
 		var offered: Array = f.feats.map(func(x: Dictionary) -> String: return str(x.id))
 		var feat := str(choices.get("feat " + str(f.group), f.default))
 		if feat not in offered:

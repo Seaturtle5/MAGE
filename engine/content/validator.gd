@@ -1702,7 +1702,7 @@ func _check_effect(e: Dictionary, line: int, owner: String) -> void:
 	if e.op not in ["remove_slot", "set", "set_time", "shift_time", "extend_game", "change", "survival", "give", "take", "take_all", "feat", "trait", "companion", "quest",
 			"outcome", "resolve", "activate", "deactivate", "move", "lives_at", "discover", "forget", "use_item", "go", "spend", "sex",
 			"condition", "cancel_use", "ending", "infect", "transform", "reset_human", "schedule", "wear", "remove",
-			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight", "hunt_extra",
+			"wield", "unwield", "resize", "give_one", "meter", "infects_as", "creature_change", "no_fight", "no_aftermath", "hunt_extra",
 			"end_heat", "extend_heat", "drive_heat", "reset_heat", "set_level", "pick", "end_captivity", "form_sex", "grow", "continue_moving",
 			"impregnate", "accept_pregnancy", "give_birth", "record_child", "each_child", "end_pregnancy", "pregnancy_faster",
 			"creature_number", "enemy_attack", "enemy_strike", "fight_result", "player_move", "put", "remove_from", "item_strain", "random_loot",

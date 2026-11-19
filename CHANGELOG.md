@@ -25,15 +25,18 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - Hooks `on: hunting` and `~ hunt may meet <creature> [N times]`: content puts creatures into a hunt.
 - `here.zone` reads the zone the player explores and hunts in.
 - The Debug button is shown by the Settings switch only; `--debug` no longer shows it.
+- `before aftermath:` in `combat_rules` plays after a won fight's trophies; `~ no aftermath` leaves the beaten creature's scene out.
 
 **Fixed**
 - A creature of any level can be hunted for; the level limit is for random meetings only.
 - A tall picture no longer pushes the fight buttons and choices off the bottom of the screen.
 - A long list of choices scrolls instead of being cut off, and is set tighter.
 - A feat picked at the start that the answers no longer open up gives way to the default.
+- At the start each free feat is checked after the one before it is taken, so a first feat can close off a second.
+- Scavenging's special find is drawn from all of the area's scavenging events, the generic find among them.
 
 **Internal**
-- New tests: hunting by name, the Debug window's rules, the feats offered at creation, a feat as bedding.
+- New tests: hunting by name, the Debug window's rules, the feats offered at creation, a feat as bedding, the after-fight question.
 - The scenario player prints choices that have no description.
 
 **For tools that load content**
