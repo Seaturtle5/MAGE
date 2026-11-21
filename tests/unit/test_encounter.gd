@@ -282,3 +282,12 @@ func test_a_scene_can_be_played_a_set_number_of_times_and_set_one_part() -> void
 	game.runner.start("rampage_some")
 	var n := _text().count("Round.")
 	assert_true(n >= 2 and n <= 4, str(n))
+
+
+func test_pick_random_creature_as_a_meeting_parses() -> void:
+	var e := Effect.compile("pick random creature nearby as a meeting")
+	assert_true(e.meeting, "weighted as a random meeting")
+	e = Effect.compile("pick random creature nearby favoring wolf, fox as a meeting")
+	assert_eq(e.favoring, ["wolf", "fox"])
+	assert_true(e.meeting)
+	assert_false(Effect.compile("pick random creature nearby").meeting)

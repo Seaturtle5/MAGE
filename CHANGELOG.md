@@ -12,6 +12,8 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - `[name of here]`: the name of the player's location.
 - Hooks `on: instead of birth`, `on: instead of child` and `on: after birth`, for a story's own births; a birth's litter follows `pregnancy.litter` when a hook changes it.
 - Feats: `bonuses when:`, a condition for the feat's bonus fields to count.
+- `~ pick random creature ... as a meeting`: the pick is weighted as a random meeting is (the combat rules' kindred).
+- `survival_rules`: `morale limit:`, `morale limit modifiers:` and `morale reset modifiers:` (the top of morale was fixed in the engine as charisma plus perception).
 
 **Fixed**
 - `== extend text X` and `== extend scene X` add their lines after the original's (they were ignored).

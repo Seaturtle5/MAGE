@@ -155,7 +155,7 @@ static var _rules: Array = [
 	["go", RegEx.create_from_string("^go to (\\w+)$")],
 	["infect_part", RegEx.create_from_string("^infect with player (head|torso|body|skin|tail|cock|cunt|face)$")],
 	["infect_picked", RegEx.create_from_string("^infect picked creature( keeping sex)?$")],
-	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|anywhere|in \\w+))?(?: favoring ([a-z0-9_, ]+))?$")],
+	["pick", RegEx.create_from_string("^pick random creature(?: tagged (\\w+))?(?: (nearby or outside|nearby|anywhere|in \\w+))?(?: favoring ([a-z0-9_, ]+))?( as a meeting)?$")],
 	# "~ infect collection.entry": the creature or form a value holds.
 	["infect", RegEx.create_from_string("^infect ([a-z_][a-z0-9_]*(?:\\.[a-z0-9_]+)*)(?: (.+?) times?)?( keeping sex)?$")],
 	["transform", RegEx.create_from_string("^transform into (\\w+)$")],
@@ -534,11 +534,14 @@ static func _match(s: String) -> Dictionary:
 				return {"op": "infect", "form": "@picked", "times": {"value": {"op": "num", "v": 1}}, "keep_sex": m.get_string(1) != ""}
 			"pick":
 				var favored: Array = []
-				for c in m.get_string(3).split(",", false):
+				var fav_text := m.get_string(3)
+				# "... as a meeting": weighted as a random meeting is (the combat rules' kindred).
+				var meeting := m.get_string(4) != "" or fav_text.ends_with(" as a meeting")
+				for c in fav_text.trim_suffix(" as a meeting").split(",", false):
 					favored.append(c.strip_edges())
 				var where := m.get_string(2)
 				return {"op": "pick", "tag": m.get_string(1), "zone": "" if where.begins_with("nearby") else where.trim_prefix("in "),
-					"with_outside": where == "nearby or outside", "favoring": favored}
+					"with_outside": where == "nearby or outside", "favoring": favored, "meeting": meeting}
 			"infect":
 				var times := amount(m.get_string(2)) if m.get_string(2) != "" else {"value": {"op": "num", "v": 1}}
 				if times.has("error"):

@@ -29,6 +29,29 @@ static func rules(game) -> FscParser.Definition:
 	return null if definitions.is_empty() else definitions.values()[0]
 
 
+## A rules field that is an expression, as a number.
+static func _number(game, field: String, fallback: String) -> int:
+	var e := Expr.parse(text(game, field, fallback))
+	return 0 if e.has("error") else Expr._num(Expr.evaluate(e, game))
+
+
+## The sum of a rules field's `condition: amount` lines whose condition holds.
+static func _modifiers(game, field: String) -> int:
+	var d: FscParser.Definition = rules(game)
+	var total := 0
+	if d == null or not d.fields.has(field):
+		return 0
+	for l: FscParser.Line in d.fields[field].children:
+		if l.is_blank() or not ":" in l.text:
+			continue
+		var p := l.text.rsplit(":", true, 1)
+		if Condition.evaluate(Condition.compile(p[0].strip_edges()), game):
+			var amount := Expr.parse(CompanionSystem.amount_text(p[1]))
+			if not amount.has("error"):
+				total += Expr._num(Expr.evaluate(amount, game))
+	return total
+
+
 static func text(game, field: String, fallback: String = "") -> String:
 	var r := rules(game)
 	return fallback if r == null else game.content.typed_value("survival_rules", r.id, field, fallback)
@@ -94,8 +117,10 @@ static func tick(game) -> void:
 			var hint_at := int(text(game, "starving hint at", "50"))
 			if hunger > hint_at or thirst > hint_at:
 				say(game, text(game, "starving hint"))
-		var maxmorale := int(game.value("player.charisma")) + int(game.value("player.perception"))
-		if game.role("morale") != "" and game.role_number("morale") > maxmorale + int(game.value("player.level")):
+		# The rules' `morale limit` (default: charisma plus perception) with its modifiers; morale
+		# above that plus the level, plus `morale reset modifiers`, falls back to it.
+		var maxmorale := _number(game, "morale limit", "player.charisma + player.perception") + _modifiers(game, "morale limit modifiers")
+		if game.role("morale") != "" and game.role_number("morale") > maxmorale + int(game.value("player.level")) + _modifiers(game, "morale reset modifiers"):
 			say(game, text(game, "morale normalized"))
 			game.set_value(game.role("morale"), maxmorale)
 	var corruption := 0

@@ -28,7 +28,7 @@ const SCHEMA := {
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",
 		"lust descriptions": "fields", "humanity ending": "text", "rescue ending": "text", "anticipation within": "text",
 		"rescue anticipation": "text", "rescue after": "text", "healing": "script", "hunger rises": "script", "thirst rises": "script", "source": "meta",
-		"no rescue when": "text"},
+		"no rescue when": "text", "morale limit": "text", "morale limit modifiers": "fields", "morale reset modifiers": "fields"},
 	"scenario": {"name": "text", "description": "text", "start": "text", "intro": "script", "setup": "script", "source": "meta"},
 	# Character creation (CreationSystem): the new-game choices and the scripts around them.
 	"creation_rules": {"choices": "list", "feats": "fields", "before": "script", "after": "script", "source": "meta"},

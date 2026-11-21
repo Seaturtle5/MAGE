@@ -2067,7 +2067,7 @@ func _explore_location(zone: String, bonus: int) -> bool:
 ## (or the named one), with the tag if given (on the creature or its form), the
 ## favored ones counted twice. With none there, the scene falls back to the
 ## outside; "a creature is picked" is false when none can be found.
-func pick_creature(tag: String, zone: String, favoring: Array, with_outside: bool = false) -> void:
+func pick_creature(tag: String, zone: String, favoring: Array, with_outside: bool = false, meeting: bool = false) -> void:
 	game.state.values.erase("picked.creature")
 	if zone == "anywhere":
 		# Any infectious creature that lives somewhere and is not banned (the original's weak random infection).
@@ -2106,6 +2106,10 @@ func pick_creature(tag: String, zone: String, favoring: Array, with_outside: boo
 			pool.append(id)
 			if id in favoring:
 				pool.append(id)
+			if meeting and CombatSystem.holds(game, "kindred when"):
+				# Weighted as a random meeting: once more for each part of the player of its strain.
+				for _i in CombatSystem.kindred(game, id):
+					pool.append(id)
 		if not pool.is_empty():
 			var picked: String = pool[game.rng.range_int(0, pool.size() - 1)]
 			game.state.values["picked.creature"] = picked

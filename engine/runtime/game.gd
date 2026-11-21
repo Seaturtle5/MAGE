@@ -1399,7 +1399,7 @@ func apply(e: Dictionary) -> void:
 			if not state.combat.is_empty():
 				state.combat["infects_as"] = e.creature
 		"pick":
-			runner.pick_creature(e.tag, e.zone, e.favoring, e.get("with_outside", false))
+			runner.pick_creature(e.tag, e.zone, e.favoring, e.get("with_outside", false), e.get("meeting", false))
 			var picked := str(state.values.get("picked.creature", ""))
 			if picked != "":
 				BodySystem.remember_strain(self, creature_field(picked, "form", picked))
