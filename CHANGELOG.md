@@ -4,6 +4,8 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 
 ## Next version (not built yet)
 
+## 1.0.2 (2026-11-21)
+
 **New**
 - `picked.feat`: after `~ choose feat`, the feat the player took, empty after Skip or when nothing was offered.
 - `[not yet implemented]` on a choice or menu option: shown greyed out with "Not yet implemented" under it, and it cannot be picked.
