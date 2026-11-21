@@ -792,6 +792,9 @@ func describe(name: String) -> String:
 		"name":
 			if who == "player":
 				return str(value("player.name"))
+			if who == "here":
+				# "[name of here]": the player's location (the original's [location of Player]).
+				return content.typed_value("location", state.location, "name", state.location)
 			# "[name of event.item]": the name of the thing a value holds.
 			if "." in who:
 				var held := str(value(who))

@@ -22,7 +22,7 @@ const SCHEMA := {
 		"search certain when": "text", "place found": "text", "event found": "text", "place not found": "text", "event not found": "text", "search fight": "text",
 		"nothing found": "text", "wrong time": "text", "wrong area": "text", "creature banned": "text", "place hidden": "text",
 		"place unreachable": "text", "search failed": "text", "event elsewhere": "text", "event too hard": "text",
-		"event resolved": "text", "event not ready": "text", "event inactive": "text", "source": "meta"},
+		"event resolved": "text", "event not ready": "text", "event inactive": "text", "explored nothing": "script", "source": "meta"},
 	"survival_rules": {"natural healing when": "text", "sanity floor when": "text", "hunger warnings": "fields", "thirst warnings": "fields", "starving hint at": "text",
 		"starving hint": "text", "hunger death": "text", "thirst death": "text", "morale normalized": "text",
 		"humanity loss": "text", "journal hint below": "text", "journal hint": "text", "humanity descriptions": "fields",

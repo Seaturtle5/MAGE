@@ -1675,7 +1675,12 @@ func _explore(loc: String, zone: String = "") -> bool:
 		if not paras.is_empty():
 			game.emit({"type": "paragraph", "spans": paras[game.rng.range_int(0, paras.size() - 1)]})
 	else:
-		game.emit({"type": "paragraph", "spans": [{"text": "You wander around for a while but find nothing of interest.", "bold": false, "italic": false, "class": ""}]})
+		# The hunting rules' `explored nothing:` (the original's wandering scenes), else a plain line.
+		var nothing: Program = db.program("hunt_rules:%s#explored nothing" % HuntSystem.rules(game))
+		if nothing != null:
+			frames.append({"kind": "script", "pid": nothing.id, "pc": 0})
+		else:
+			game.emit({"type": "paragraph", "spans": [{"text": "You wander around for a while but find nothing of interest.", "bold": false, "italic": false, "class": ""}]})
 	run()
 	return true
 
