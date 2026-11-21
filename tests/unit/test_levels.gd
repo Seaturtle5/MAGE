@@ -216,12 +216,16 @@ func test_skipping_a_feat_and_gained_scripts() -> void:
 	_do("level up player")
 	game.runner.choose(2)  # level 15: odd, so the feat choice comes straight away
 	assert_false("lucky" in game.state.feats or "unlucky" in game.state.feats)
+	assert_eq(str(game.value("picked.feat")), "", "Skip leaves picked.feat empty")
 	var hp := int(game.value("player.maxhp"))
 	_do("choose feat basic")
 	assert_eq(game.runner.status, "choice")
 	game.runner.choose(0)
 	assert_true("hardy" in game.state.feats)
+	assert_eq(str(game.value("picked.feat")), "hardy", "picked.feat names the feat taken")
 	assert_eq(int(game.value("player.maxhp")), hp + 8, "the feat's gained: script ran")
+	_do("choose feat basic")
+	assert_eq(str(game.value("picked.feat")), "", "nothing offered: picked.feat is empty")
 
 
 func test_interests_default_set_and_pansexual() -> void:

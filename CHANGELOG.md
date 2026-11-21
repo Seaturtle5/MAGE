@@ -4,6 +4,9 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 
 ## Next version (not built yet)
 
+**New**
+- `picked.feat`: after `~ choose feat`, the feat the player took, empty after Skip or when nothing was offered.
+
 ## 1.0.1 (2026-11-19)
 
 **New**

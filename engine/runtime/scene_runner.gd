@@ -960,6 +960,7 @@ func _feat_choice_step(f: Dictionary) -> bool:
 		frames.erase(f)
 		return false
 	f.shown = true
+	game.set_value("picked.feat", "")  # the feat taken, empty after Skip or when none is offered
 	var feats := LevelSystem.offered_feats(game, str(f.group))
 	if feats.is_empty():
 		frames.erase(f)
@@ -1002,6 +1003,7 @@ func choose(index: int) -> bool:
 			game.emit({"type": "paragraph", "spans": game.render(TextTemplate.compile(CombatSystem.rule(game, "no trophy", "")))})
 	elif p.has("feat"):
 		frames.erase(f)
+		game.set_value("picked.feat", str(p.feat))
 		if str(p.feat) != "":
 			game.apply(Effect.compile("feat + %s" % p.feat))
 			_push_if("feat:%s#gained" % p.feat)
