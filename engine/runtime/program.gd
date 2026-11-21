@@ -137,7 +137,7 @@ func _choices(n: Dictionary) -> void:
 		if label.has("error"):
 			_error(o.line, label.error)
 		var opt := {"label": label, "description": o.description, "then_leave": o.then_leave,
-			"always_shown": o.always_shown, "line": o.line, "cond": {}, "to": code.size()}
+			"always_shown": o.always_shown, "not_implemented": o.get("not_implemented", false), "line": o.line, "cond": {}, "to": code.size()}
 		if o.condition != "":
 			opt.cond = _cond(o.condition, o.line)
 		options.append(opt)

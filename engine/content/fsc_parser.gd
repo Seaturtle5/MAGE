@@ -16,7 +16,7 @@ const TAB_WIDTH := 4
 
 static var _header_re := RegEx.create_from_string("^==\\s+(?:(extend|replace)\\s+)?(\\w+)\\s+([a-z0-9_.\\-]+)\\s*$")
 static var _field_re := RegEx.create_from_string("^([A-Za-z][A-Za-z0-9 _]*?)\\s*:(?:\\s+(.*))?$")
-static var _choice_suffix_re := RegEx.create_from_string("\\s*\\[(if [^\\[\\]]+|then leave|always shown|number -?\\d+ to -?\\d+)\\]\\s*$")
+static var _choice_suffix_re := RegEx.create_from_string("\\s*\\[(if [^\\[\\]]+|then leave|always shown|not yet implemented|number -?\\d+ to -?\\d+)\\]\\s*$")
 ## "fight wolf:", "fight goblin (female):", and fights in a row: "fight leopardman 2 times:",
 ## "fight pink_gel, blue_gel, purple_gel:" (until one is lost or fled); "fight wolf away from
 ## home:" meets the creature away from its usual place (`fight is away from home` in its texts).
@@ -389,7 +389,7 @@ class _ScriptParser:
 
 	func option(l: Line) -> Dictionary:
 		var label := l.text.substr(1).strip_edges()
-		var opt := {"line": l.number, "label": "", "description": "", "condition": "", "then_leave": false, "always_shown": false, "number": null}
+		var opt := {"line": l.number, "label": "", "description": "", "condition": "", "then_leave": false, "always_shown": false, "not_implemented": false, "number": null}
 		while true:
 			var m := FscParser._choice_suffix_re.search(label)
 			if m == null:
@@ -402,6 +402,8 @@ class _ScriptParser:
 				opt.then_leave = true
 			elif tag == "always shown":
 				opt.always_shown = true
+			elif tag == "not yet implemented":
+				opt.not_implemented = true
 			else:
 				var parts := tag.split(" ")
 				opt.number = [int(parts[1]), int(parts[3])]

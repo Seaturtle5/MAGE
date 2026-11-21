@@ -9,6 +9,9 @@ extends RefCounted
 ## it needs input: `status` is then "choice" (pick an option) or "continue"
 ## (a page break). With no frames left it is "idle" at a location.
 
+## The note under an option marked `[not yet implemented]`.
+const NOT_IMPLEMENTED := "Not yet implemented"
+
 var game  # Game (untyped to avoid a cyclic class reference)
 var frames: Array = []
 var status := "idle"
@@ -615,6 +618,12 @@ func _offer_choices(f: Dictionary, ins: Dictionary) -> bool:
 	pending = []
 	for o in ins.options:
 		var ok: bool = o.cond.is_empty() or (not o.cond.has("error") and Condition.evaluate(o.cond, game))
+		if o.get("not_implemented", false):
+			# `[not yet implemented]`: shown greyed out with a note, never chosen; its condition still hides it.
+			if ok:
+				shown.append({"text": TextTemplate.plain(game.render(o.label)), "description": NOT_IMPLEMENTED, "enabled": false})
+				pending.append({"to": o.to, "enabled": false})
+			continue
 		if ok or o.always_shown:
 			shown.append({"text": TextTemplate.plain(game.render(o.label)), "description": game.rendered_text(str(o.description)), "enabled": ok})
 			pending.append({"to": o.to, "enabled": ok})
@@ -641,6 +650,11 @@ func _menu_step(m: Dictionary) -> bool:
 		if o.condition != "":
 			var c := Condition.compile(o.condition)
 			ok = not c.has("error") and Condition.evaluate(c, game)
+		if o.get("not_implemented", false):
+			if ok:
+				shown.append({"text": o.label, "description": NOT_IMPLEMENTED, "enabled": false})
+				pending.append({"menu": i, "enabled": false})
+			continue
 		if ok or o.always_shown:
 			shown.append({"text": o.label, "description": game.rendered_text(str(o.description)), "enabled": ok})
 			pending.append({"menu": i, "enabled": ok})
