@@ -11,6 +11,10 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - `hunt_rules`: `explored nothing:`, what exploring says when it finds nothing in a zone without `ambient:` lines.
 - `[name of here]`: the name of the player's location.
 - Hooks `on: instead of birth`, `on: instead of child` and `on: after birth`, for a story's own births; a birth's litter follows `pregnancy.litter` when a hook changes it.
+- Feats: `bonuses when:`, a condition for the feat's bonus fields to count.
+
+**Fixed**
+- `== extend text X` and `== extend scene X` add their lines after the original's (they were ignored).
 
 ## 1.0.1 (2026-11-19)
 

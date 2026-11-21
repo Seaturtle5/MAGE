@@ -10,6 +10,18 @@ const ROOT := "user://engine_gaps_packs"
 const PACK := """== zone plains
 name: Plains
 
+== text marks_line
+Old scars.
+
+== extend text marks_line
+A fresh bite.
+
+== scene greet
+Hello.
+
+== extend scene greet
+Welcome back.
+
 == location field
 name: Field
 zone: plains
@@ -389,3 +401,13 @@ description: A rock.
 	var all := _diagnostics(text, ROOT + "_gear")
 	assert_true(all.any(func(m: String) -> bool: return "'rock' has no weapon field, so it is not a weapon" in m), str(all))
 	assert_true(all.any(func(m: String) -> bool: return "Unknown item 'nosuch'" in m), str(all))
+
+
+func test_an_extension_adds_lines_to_a_text_and_a_scene() -> void:
+	var text := str(game.rendered_text("[marks_line]"))
+	assert_string_contains(text, "Old scars.")
+	assert_string_contains(text, "A fresh bite.", "the extension's line follows")
+	game.take_output()
+	game.runner.start("greet")
+	var out: Array = game.take_output().filter(func(e): return e.type == "paragraph").map(func(e): return TextTemplate.plain(e.spans))
+	assert_eq(out, ["Hello.", "Welcome back."])

@@ -1853,10 +1853,18 @@ func people_at(flag: String) -> int:
 
 
 
+## Whether a feat's bonus fields count now: its `bonuses when:` holds, or it has none
+## (the original's Mugger, which the player switches on and off).
+func feat_bonuses_on(id: String) -> bool:
+	var when: String = content.typed_value("feat", id, "bonuses when", "")
+	return when == "" or Condition.evaluate(Condition.compile(when), self)
+
+
 func feat_bonus(field: String) -> int:
 	var bonus := 0
 	for id in state.feats:
-		bonus += int(content.typed_value("feat", id, field, "0"))
+		if feat_bonuses_on(id):
+			bonus += int(content.typed_value("feat", id, field, "0"))
 	# Game modes chosen at the start carry the same bonuses (Blind Mode's better exploring).
 	for id in settings.mode:
 		if content.has(id, "game_mode"):
@@ -2181,7 +2189,7 @@ func applied_bonuses() -> Dictionary:
 	for key: String in FEAT_BONUSES:
 		var from: Array = []
 		for id: String in state.feats:
-			var n := int(content.typed_value("feat", id, key, "0"))
+			var n := int(content.typed_value("feat", id, key, "0")) if feat_bonuses_on(id) else 0
 			if n != 0:
 				from.append({"name": content.typed_value("feat", id, "name", id), "delta": "%+d" % n})
 		for id: String in settings.mode:

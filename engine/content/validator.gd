@@ -1129,6 +1129,8 @@ func _check_levels() -> void:
 	for id in db.all_of("feat"):
 		var d := db.get_def("feat", id)
 		_path = d.path
+		if d.fields.has("bonuses when"):
+			_check_condition_text(d.fields["bonuses when"].value, d.fields["bonuses when"].line, "feat:" + id)
 		if d.fields.has("available when"):
 			_check_condition_text(d.fields["available when"].value, d.fields["available when"].line, "feat:" + id)
 			if not d.fields.has("group"):

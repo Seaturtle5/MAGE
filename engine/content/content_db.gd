@@ -42,7 +42,7 @@ const SCHEMA := {
 	"help": {"title": "text", "text": "script", "order": "text", "source": "meta"},
 	"game_mode": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text", "scavenge bonus": "text", "carry bonus": "text", "loot bonus": "text", "source": "meta"},
 	"feat": {"name": "text", "description": "text", "exploration bonus": "text", "encounter bonus": "text",
-		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "body text": "text", "group": "text", "available when": "text",
+		"scavenge bonus": "text", "loot bonus": "text", "carry bonus": "text", "bonuses when": "text", "body text": "text", "group": "text", "available when": "text",
 		"rest": "text", "rest text": "text", "gained": "script", "source": "meta", "fight actions": "menu"},
 	"level_rules": {"xp needed": "text", "xp needed modifiers": "fields", "levels when": "text", "level up": "script",
 		"source": "meta"},
@@ -952,6 +952,11 @@ func _finish() -> void:
 				pass  # the definition's own picture wins: an art pack's picture is only a fallback
 			else:
 				error(d.path, f.line, "Field '%s' cannot be extended; use '== replace %s %s' to change it." % [name, d.type, d.id])
+		if d.type in ["scene", "text"] and not d.nodes.is_empty():
+			# "== extend text self_description_marks": its lines follow the text's own.
+			target = _extendable(target)
+			target.nodes = target.nodes + d.nodes
+			_programs.erase(d.id)
 		if not d.options.is_empty() and menus.has(d.id):
 			var menu := _own_menu(d.id)
 			for o in d.options:

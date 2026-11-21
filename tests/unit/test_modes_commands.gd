@@ -45,6 +45,15 @@ name: Tough
 name: Keen
 exploration bonus: 3
 
+== values grabby
+values:
+    on: flag
+
+== feat grabby
+name: Grabby
+loot bonus: 15
+bonuses when: grabby.on
+
 == game_mode sleepless
 name: Sleepless
 
@@ -172,6 +181,13 @@ func test_a_mode_carries_feat_style_bonuses() -> void:
 	assert_eq(game.feat_bonus("exploration bonus"), 0)
 	game.settings.mode = ["keen"]
 	assert_eq(game.feat_bonus("exploration bonus"), 3)
+
+
+func test_a_feat_s_bonuses_count_only_while_bonuses_when_holds() -> void:
+	game.apply(Effect.compile("feat + grabby"))
+	assert_eq(game.feat_bonus("loot bonus"), 0, "switched off")
+	game.set_value("grabby.on", true)
+	assert_eq(game.feat_bonus("loot bonus"), 15)
 
 
 func test_rest_interruptions_follow_the_rules() -> void:
