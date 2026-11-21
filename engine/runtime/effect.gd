@@ -206,7 +206,7 @@ static var _rules: Array = [
 	# play X" and "~ for all companions play X" (every character that can follow the player).
 	["rest", RegEx.create_from_string("^rest$")],
 	["pick_event", RegEx.create_from_string("^pick random event tagged (\\w+)$")],
-	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*)$")],
+	["discover_flagged", RegEx.create_from_string("^discover every place flagged ([a-z][a-z0-9_ ]*?)(?: but not ([a-z][a-z0-9_ ]*))?$")],
 	["resolve_tagged", RegEx.create_from_string("^resolve every event tagged (\\w+)$")],
 	["each_companion_of", RegEx.create_from_string("^for (each tamed companion|all companions) play (\\w[\\w.]*)$")],
 	# "~ for each creature by level play terminal_line" (StorySystem): every creature found somewhere.
@@ -658,7 +658,7 @@ static func _match(s: String) -> Dictionary:
 			"pick_event":
 				return {"op": "pick_event", "tag": m.get_string(1)}
 			"discover_flagged":
-				return {"op": "discover_flagged", "flag": m.get_string(1).strip_edges()}
+				return {"op": "discover_flagged", "flag": m.get_string(1).strip_edges(), "but_not": m.get_string(2).strip_edges()}
 			"resolve_tagged":
 				return {"op": "resolve_tagged", "tag": m.get_string(1)}
 			"each_creature":

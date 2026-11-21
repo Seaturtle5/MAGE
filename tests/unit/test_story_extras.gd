@@ -87,7 +87,7 @@ exits:
 == location hall
 name: Hall
 description: A hall.
-flags: landmark
+flags: landmark, private
 exits:
     west: den, door oak_door
 
@@ -372,6 +372,10 @@ func test_every_place_with_a_flag_and_every_event_with_a_tag() -> void:
 	assert_string_contains(_said(), "Discovered: Den, Hall")
 	game.apply(Effect.compile("discover every place flagged landmark quietly"))
 	assert_eq(_said(), "", "nothing new")
+	game.state.known.clear()
+	game.apply(Effect.compile("discover every place flagged landmark but not private quietly"))
+	assert_true(game.state.known.has("den"))
+	assert_false(game.state.known.has("hall"), "but not the private one")
 	game.apply(Effect.compile("resolve every event tagged landmark_event"))
 	assert_true(game.adjective("landmark_found", "resolved"))
 	assert_false(game.adjective("sweet_dream", "resolved"))

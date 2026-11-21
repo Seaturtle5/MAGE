@@ -14,6 +14,7 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - Feats: `bonuses when:`, a condition for the feat's bonus fields to count.
 - `~ pick random creature ... as a meeting`: the pick is weighted as a random meeting is (the combat rules' kindred).
 - `survival_rules`: `morale limit:`, `morale limit modifiers:` and `morale reset modifiers:` (the top of morale was fixed in the engine as charisma plus perception).
+- `rescue.turn`: the turn the rescue comes, or -1 while none will. `~ discover every place flagged X but not Y` leaves out places with the second flag.
 
 **Fixed**
 - `== extend text X` and `== extend scene X` add their lines after the original's (they were ignored).

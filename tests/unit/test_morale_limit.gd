@@ -65,3 +65,7 @@ func test_a_modifier_raises_the_limit() -> void:
 	game.set_value("player.morale", 40)
 	_turns(3)
 	assert_eq(int(game.value("player.morale")), 24)
+
+
+func test_rescue_turn_is_readable() -> void:
+	assert_eq(int(game.value("rescue.turn")), -1, "these rules set no rescue")

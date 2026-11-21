@@ -142,6 +142,8 @@ func value(path: String) -> Variant:
 				return CompanionSystem.tamed(self).size()
 	if path.begins_with("offspring.") and path.substr(10) in ["with_you", "bunker", "roaming", "total"]:
 		return CompanionSystem.offspring(self, path.substr(10))
+	if path == "rescue.turn":
+		return SurvivalSystem.rescue_turn(self)  # the turn the rescue comes, -1 when it will not
 	if path == "notes.count":
 		return NotesSystem.count(self)  # the player's own notes
 	if path.begins_with("date.") and path.substr(5) in ["year", "month", "day"]:

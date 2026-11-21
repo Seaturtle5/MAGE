@@ -2026,7 +2026,7 @@ func _need(id: String, type: String, line: int) -> void:
 func _check_path(path: String, line: int) -> void:
 	if not _reads.has(path):
 		_reads[path] = [_path, line]
-	if db.values.has(path) or path in ["game.turn", "game.debug", "places.known", "places.total", "picked.creature", "picked.feat", "gift.item", "gift.to", "hunt.name",
+	if db.values.has(path) or path in ["game.turn", "game.debug", "rescue.turn", "places.known", "places.total", "picked.creature", "picked.feat", "gift.item", "gift.to", "hunt.name",
 			"smell.thing", "smell.kind", "notes.count", "date.year", "date.month", "date.day", "note.year", "note.month", "note.day", "note.number",
 			"infection.creature", "storage.item", "storage.item_name", "storage.count", "storage.kinds"]:
 		return

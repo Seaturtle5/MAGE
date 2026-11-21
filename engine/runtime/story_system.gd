@@ -50,6 +50,9 @@ static func apply(game, e: Dictionary) -> bool:
 		"discover_flagged":
 			var found: Array = []
 			for id: String in places_flagged(game, str(e.flag)):
+				# "... but not private": leave out the places with that flag too.
+				if str(e.get("but_not", "")) != "" and str(e.but_not) in game.content.list_field(id, "flags"):
+					continue
 				if not game.state.known.has(id):
 					game.state.known[id] = true
 					found.append(game.content.field_value(id, "name", id))
