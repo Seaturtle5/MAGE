@@ -1792,10 +1792,12 @@ func start_scenario(id: String, name: String = "Player", pronouns: String = "he"
 	CreationSystem.create(self, choices)
 	output.clear()  # creation speaks quietly; the game starts with the scenario
 	start(content.typed_value("scenario", id, "start"))
-	runner.start(id + "#setup")
+	if content.program("scenario:%s#setup" % id) != null:  # typed: another definition may share the ID
+		runner.start("scenario:%s#setup" % id)
 	run_hooks("game starts")  # once per new game, after the scenario's setup (shuffled lists and the like)
 	runner.emit_title(content.typed_value("scenario", id, "name", id))
-	runner.start(id + "#intro")
+	if content.program("scenario:%s#intro" % id) != null:  # typed: another definition may share the ID
+		runner.start("scenario:%s#intro" % id)
 	return true
 
 ## Starts a new game at a location.

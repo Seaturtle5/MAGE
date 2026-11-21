@@ -17,6 +17,7 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 
 **Fixed**
 - `== extend text X` and `== extend scene X` add their lines after the original's (they were ignored).
+- A scenario's `setup` and `intro` play even when another definition shares the scenario's ID; either may be left out.
 
 ## 1.0.1 (2026-11-19)
 
