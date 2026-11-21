@@ -24,6 +24,26 @@ name: MPreg
 == feat sterile
 name: Sterile
 
+== feat storybirth
+name: Story birth
+
+== hook story_birth
+on: instead of birth
+when: player has feat storybirth
+do:
+    STORY BIRTH
+
+== hook story_child
+on: instead of child
+when: player has feat storybirth
+do:
+    STORY CHILD [child.number]
+
+== hook after_the_birth
+on: after birth
+do:
+    HOOK AFTER
+
 == feat fertile
 name: Fertile
 
@@ -365,3 +385,17 @@ offspring gender: mostly male
 	var text := str(db.errors())
 	for part in ["grumpy", "Odds is a chance", "Gestation is a number", "Extra children", "whole number such as", "robot", "nobody", "Offspring gender", "cannot be set"]:
 		assert_string_contains(text, part)
+
+
+func test_hooks_take_the_place_of_a_birth_and_follow_it() -> void:
+	game.apply(Effect.compile("feat + storybirth"))
+	game.runner.start("roll")
+	_text()
+	_turns(5)
+	var out := _turns(1)
+	assert_string_contains(out, "STORY BIRTH")
+	assert_false(out.contains("BIRTH female"), "the rules' birth script does not play")
+	assert_string_contains(out, "STORY CHILD 1")
+	assert_false(out.contains("CHILD 1 "), "nor the rules' child script")
+	assert_string_contains(out, "AFTER 1")
+	assert_true(out.find("AFTER 1") < out.find("HOOK AFTER"), "after birth hooks follow the rules' own")

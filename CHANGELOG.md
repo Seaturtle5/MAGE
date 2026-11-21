@@ -10,6 +10,7 @@ Changes to MAGE, the Modular Adventure Game Engine, for people who make games wi
 - `fight picked.creature:` (or any value holding a creature ID) fights that creature; with none held, the scene goes on.
 - `hunt_rules`: `explored nothing:`, what exploring says when it finds nothing in a zone without `ambient:` lines.
 - `[name of here]`: the name of the player's location.
+- Hooks `on: instead of birth`, `on: instead of child` and `on: after birth`, for a story's own births; a birth's litter follows `pregnancy.litter` when a hook changes it.
 
 ## 1.0.1 (2026-11-19)
 

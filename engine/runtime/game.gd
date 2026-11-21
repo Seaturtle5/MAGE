@@ -1904,7 +1904,7 @@ func pass_turn() -> void:
 ## The moments hooks can run at (`on:` of a hook).
 const HOOK_MOMENTS := ["each turn", "day starts", "night starts", "captivity starts", "captivity round", "after sex", "player hits",
 	"after resting", "instead of resting", "game starts", "while travelling", "infection", "player's turn", "after import",
-	"arriving", "hunting"]
+	"arriving", "hunting", "instead of birth", "instead of child", "after birth"]
 ## Moments about one character: "instead of talking to adam", "instead of sex with adam".
 const HOOK_CHARACTER_MOMENTS := ["instead of talking to ", "instead of sex with "]
 ## Moments about one item: "after using water_bottle" (a use that was not cancelled),

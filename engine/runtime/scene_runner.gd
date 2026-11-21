@@ -150,6 +150,13 @@ func use_item_now(id: String) -> void:
 
 
 ## A birth: its steps run as a frame (see PregnancySystem.birth).
+## The litter of a birth: `pregnancy.litter`, which a hook `instead of birth` may change
+## (a story's own litter size), else the size the birth began with.
+func _birth_litter(f: Dictionary) -> int:
+	var v: Variant = game.value("pregnancy.litter")
+	return int(v) if v != null and int(v) > 0 else int(f.litter)
+
+
 func start_birth(litter: int) -> void:
 	frames.append({"kind": "birth", "step": "birth", "n": 0, "litter": litter})
 	if status == "idle":
@@ -430,16 +437,24 @@ func run() -> void:
 		if f.kind == "birth":
 			# A birth (PregnancySystem): `birth`, then each child's script, then `after birth`.
 			var rid := PregnancySystem.rules(game)
+			# Hooks `instead of birth` and `instead of child` take the place of those
+			# scripts (a story's own births); hooks `after birth` follow the rules' own.
 			if f.step == "birth":
 				f.step = "child"
-				_push_if("pregnancy_rules:%s#birth" % rid)
-			elif f.step == "child" and int(f.n) < int(f.litter):
+				var instead_birth: String = game.hook_instead("instead of birth")
+				_push_if(instead_birth if instead_birth != "" else "pregnancy_rules:%s#birth" % rid)
+			elif f.step == "child" and int(f.n) < _birth_litter(f):
 				f.n = int(f.n) + 1
 				PregnancySystem.make_child(game, int(f.n))
-				_push_if("pregnancy_rules:%s#child" % rid)
+				var instead_child: String = game.hook_instead("instead of child")
+				_push_if(instead_child if instead_child != "" else "pregnancy_rules:%s#child" % rid)
 			elif f.step == "child":
 				f.step = "done"
 				PregnancySystem.after_children(game)
+				var after: Array = game.hooks_for("after birth")
+				after.reverse()
+				for pid: String in after:
+					_push_if(pid)
 				_push_if("pregnancy_rules:%s#after birth" % rid)
 			else:
 				frames.pop_back()
