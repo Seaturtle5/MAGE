@@ -95,6 +95,12 @@ fight imp:
     won:
         Done with the imp.
 
+== scene meet_held
+fight picked.creature:
+    won:
+        Done with whatever it was.
+After the fight.
+
 == scene meet_dragon
 fight dragon:
     won:
@@ -276,3 +282,17 @@ do:
 	var warnings := str(db.diagnostics.filter(func(d: Dictionary) -> bool: return d.severity == "warning"))
 	assert_string_contains(warnings, "no companion: block")
 	assert_false(warnings.contains("only works during a fight"), "a turn hook may end the fight")
+
+
+func test_fight_the_creature_a_value_holds() -> void:
+	game.state.values["picked.creature"] = "imp"
+	game.runner.start("meet_held")
+	assert_eq(game.runner.status, "combat")
+	assert_eq(str(game.state.combat.creature), "imp", "fight picked.creature: meets the creature it holds")
+
+
+func test_fight_a_value_holding_nothing_goes_on() -> void:
+	game.state.values.erase("picked.creature")
+	game.runner.start("meet_held")
+	assert_ne(game.runner.status, "combat")
+	assert_string_contains(_text(), "After the fight.")

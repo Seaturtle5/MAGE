@@ -547,6 +547,16 @@ func run() -> void:
 					ins.creature = CombatSystem.draw(game, pool)
 					VariantSystem.pick(game, ins.creature)
 					_encounter_title(ins.creature)
+				elif "." in str(ins.creature):
+					# `fight picked.creature:`: the creature a value holds (the one `~ pick random
+					# creature` chose); with none, the scene goes on.
+					var held := str(game.value(ins.creature)) if game.value(ins.creature) != null else ""
+					if not game.content.has(held, "creature"):
+						f.pc = ins.after
+						continue
+					ins = ins.duplicate()
+					ins.creature = held
+					VariantSystem.pick(game, ins.creature)
 				else:
 					# `fight goblin (female):` meets that variant; otherwise one is picked.
 					VariantSystem.pick(game, ins.creature, false, ins.variant)

@@ -1638,7 +1638,9 @@ func _check_instruction(ins: Dictionary, owner: String) -> void:
 		"goto", "play":
 			_check_target(ins.target, ins.line)
 		"fight":
-			if ins.creature != "random" and not db.has(ins.creature, "creature"):
+			if "." in str(ins.creature):
+				_check_path(str(ins.creature), ins.line)  # `fight picked.creature:`: the creature a value holds
+			elif ins.creature != "random" and not db.has(ins.creature, "creature"):
 				_err(ins.line, "Creature '%s' does not exist.%s" % [ins.creature, _suggest(ins.creature, _ids("creature"))])
 			elif ins.variant != "" and ins.variant not in VariantSystem.variants(db, ins.creature):
 				_err(ins.line, "%s has no variant '%s'.%s" % [ins.creature, ins.variant, _variant_list(ins.creature)])
